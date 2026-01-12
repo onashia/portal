@@ -9,12 +9,16 @@ class GroupAvatarStack extends ConsumerWidget {
   final List<LimitedUserGroups> groups;
   final int newInstancesCount;
   final VoidCallback? onTap;
+  final double spacing;
+  final int maxStackedCount;
 
   const GroupAvatarStack({
     super.key,
     required this.groups,
     this.newInstancesCount = 0,
     this.onTap,
+    this.spacing = 24.0,
+    this.maxStackedCount = 5,
   });
 
   @override
@@ -23,10 +27,14 @@ class GroupAvatarStack extends ConsumerWidget {
       return _buildEmptyState(context);
     }
 
-    final displayCount = groups.length > 5 ? 5 : groups.length;
-    final overflowCount = groups.length > 5 ? groups.length - 5 : 0;
+    final displayCount = groups.length > maxStackedCount
+        ? maxStackedCount
+        : groups.length;
+    final overflowCount = groups.length > maxStackedCount
+        ? groups.length - maxStackedCount
+        : 0;
 
-    final totalWidth = displayCount * 12.0 + 48;
+    final totalWidth = displayCount * spacing + 48;
 
     return SizedBox(
       width: totalWidth,
@@ -36,7 +44,7 @@ class GroupAvatarStack extends ConsumerWidget {
         children: [
           ...List.generate(displayCount, (index) {
             final group = groups[index];
-            final offset = index * 12.0;
+            final offset = index * spacing;
             return Positioned(
               left: offset,
               child: _buildGroupAvatar(context, ref, group, index),
@@ -44,7 +52,7 @@ class GroupAvatarStack extends ConsumerWidget {
           }),
           if (overflowCount > 0)
             Positioned(
-              left: displayCount * 12.0,
+              left: displayCount * spacing,
               child: _buildOverflowAvatar(context, overflowCount),
             ),
           if (newInstancesCount > 0) _buildNotificationBadge(context),
@@ -90,13 +98,16 @@ class GroupAvatarStack extends ConsumerWidget {
         height: 48,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
           border: Border.all(
             color: Theme.of(context).colorScheme.surface,
             width: 2,
           ),
           boxShadow: [
             BoxShadow(
-              color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.1),
+              color: Theme.of(
+                context,
+              ).colorScheme.shadow.withValues(alpha: 0.1),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),
@@ -109,7 +120,9 @@ class GroupAvatarStack extends ConsumerWidget {
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return Container(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         child: Center(
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
@@ -124,10 +137,7 @@ class GroupAvatarStack extends ConsumerWidget {
                       return SizedBox(
                         width: 48,
                         height: 48,
-                        child: Image.memory(
-                          bytes,
-                          fit: BoxFit.cover,
-                        ),
+                        child: Image.memory(bytes, fit: BoxFit.cover),
                       );
                     }
 
@@ -140,10 +150,7 @@ class GroupAvatarStack extends ConsumerWidget {
     );
   }
 
-  Widget _buildFallbackAvatar(
-    BuildContext context,
-    LimitedUserGroups group,
-  ) {
+  Widget _buildFallbackAvatar(BuildContext context, LimitedUserGroups group) {
     final initials = _getInitials(group.name ?? 'Group');
     return Container(
       decoration: BoxDecoration(
@@ -154,9 +161,9 @@ class GroupAvatarStack extends ConsumerWidget {
         child: Text(
           initials,
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );
@@ -185,9 +192,9 @@ class GroupAvatarStack extends ConsumerWidget {
         child: Text(
           '+$count',
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.bold,
-              ),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );
@@ -207,17 +214,14 @@ class GroupAvatarStack extends ConsumerWidget {
             width: 2,
           ),
         ),
-        constraints: const BoxConstraints(
-          minWidth: 20,
-          minHeight: 20,
-        ),
+        constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
         child: Center(
           child: Text(
             newInstancesCount > 9 ? '9+' : newInstancesCount.toString(),
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       ),
