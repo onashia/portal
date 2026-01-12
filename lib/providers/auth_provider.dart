@@ -328,7 +328,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
         level: 700,
       );
       debugPrint('[AUTH] Calling VRChat API logout...');
-
       await api.auth.logout();
 
       developer.log(

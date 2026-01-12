@@ -1,0 +1,284 @@
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:vrchat_dart/vrchat_dart.dart';
+import 'package:portal/providers/auth_provider.dart';
+import '../providers/group_monitor_provider.dart';
+import '../utils/vrchat_image_utils.dart';
+
+class GroupSelectionPage extends ConsumerStatefulWidget {
+  final String userId;
+
+  const GroupSelectionPage({
+    super.key,
+    required this.userId,
+  });
+
+  @override
+  ConsumerState<GroupSelectionPage> createState() => _GroupSelectionPageState();
+}
+
+class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text.toLowerCase();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<LimitedUserGroups> get _filteredGroups {
+    final monitorState = ref.read(groupMonitorProvider(widget.userId));
+    return monitorState.allGroups.where((group) {
+      final name = (group.name ?? '').toLowerCase();
+      final discriminator = (group.discriminator ?? '').toLowerCase();
+      return name.contains(_searchQuery) ||
+          discriminator.contains(_searchQuery);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final monitorState = ref.watch(groupMonitorProvider(widget.userId));
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Select Groups'),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        actions: [
+          if (monitorState.selectedGroupIds.isNotEmpty)
+            TextButton.icon(
+              onPressed: () {
+                final notifier =
+                    ref.read(groupMonitorProvider(widget.userId).notifier);
+                for (final groupId in monitorState.allGroups.map((g) => g.id!)) {
+                  notifier.toggleGroupSelection(groupId);
+                }
+              },
+              icon: const Icon(Icons.deselect),
+              label: const Text('Deselect All'),
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          _buildSearchBar(context),
+          Expanded(
+            child: monitorState.isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredGroups.isEmpty
+                    ? _buildEmptyState(context)
+                    : _buildGroupGrid(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Search groups...',
+          prefixIcon: const Icon(Icons.search),
+          filled: true,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.group_off,
+              size: 64,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _searchQuery.isEmpty
+                  ? 'No groups found'
+                  : 'No groups match "$_searchQuery"',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You are not a member of any groups',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupGrid(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: GridView.builder(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 3,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: _filteredGroups.length,
+        itemBuilder: (context, index) {
+          final group = _filteredGroups[index];
+          final isSelected =
+              ref.watch(groupMonitorProvider(widget.userId)).selectedGroupIds.contains(group.id);
+
+          return _GroupChip(
+            group: group,
+            isSelected: isSelected,
+            onTap: () {
+              ref.read(groupMonitorProvider(widget.userId).notifier).toggleGroupSelection(
+                    group.id!,
+                  );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _GroupChip extends ConsumerWidget {
+  final LimitedUserGroups group;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _GroupChip({
+    required this.group,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return FilterChip(
+      selected: isSelected,
+      onSelected: (_) => onTap(),
+      avatar: _buildAvatar(context, ref),
+      label: _buildLabel(context),
+      selectedColor: Theme.of(context).colorScheme.primaryContainer,
+      checkmarkColor: Theme.of(context).colorScheme.onPrimaryContainer,
+      side: BorderSide(
+        color: isSelected
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.outline,
+      ),
+    );
+  }
+
+  Widget _buildAvatar(BuildContext context, WidgetRef ref) {
+    final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
+    final imageUrl = hasImage ? group.iconUrl! : '';
+
+    return FutureBuilder<Uint8List?>(
+      future: fetchImageBytesWithAuth(ref, imageUrl),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return CircleAvatar(
+            radius: 16,
+            backgroundColor: _getAvatarColor(group.id ?? ''),
+            child: const SizedBox(
+              width: 8,
+              height: 8,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+
+        final bytes = snapshot.data;
+        if (bytes != null) {
+          return CircleAvatar(
+            radius: 16,
+            backgroundImage: MemoryImage(bytes),
+          );
+        }
+
+        return CircleAvatar(
+          radius: 16,
+          backgroundColor: _getAvatarColor(group.id ?? ''),
+          child: Text(
+            _getInitials(group.name ?? 'Group'),
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLabel(BuildContext context) {
+    final name = group.name ?? 'Unknown Group';
+    final memberCount = group.memberCount ?? 0;
+
+    return Text(
+      '$name\n$memberCount members',
+      overflow: TextOverflow.ellipsis,
+      maxLines: 2,
+      style: Theme.of(context).textTheme.labelSmall,
+    );
+  }
+
+  String _getInitials(String name) {
+    final parts = name.trim().split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.substring(0, name.length > 1 ? 2 : 1).toUpperCase();
+  }
+
+  Color _getAvatarColor(String id) {
+    final colors = [
+      const Color(0xFF6366F1),
+      const Color(0xFF8B5CF6),
+      const Color(0xFFEC4899),
+      const Color(0xFFF43F5E),
+      const Color(0xFFF97316),
+      const Color(0xFFEAB308),
+      const Color(0xFF22C55E),
+      const Color(0xFF10B981),
+      const Color(0xFF06B6D4),
+      const Color(0xFF3B82F6),
+    ];
+
+    final hash = id.hashCode;
+    return colors[hash.abs() % colors.length];
+  }
+}
