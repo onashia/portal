@@ -1,13 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:window_manager/window_manager.dart';
+import 'dart:io';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'pages/login_page.dart';
 import 'pages/dashboard_page.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    await windowManager.ensureInitialized();
+    await windowManager.waitUntilReadyToShow().then((_) async {
+      await windowManager.setTitle('Portal');
+      await windowManager.setSize(const Size(1200, 800));
+      await windowManager.setMinimumSize(const Size(800, 600));
+      await windowManager.center();
+      await windowManager.setAsFrameless();
+      await windowManager.show();
+    });
+  }
+
   runApp(
     const ProviderScope(
       child: PortalApp(),
