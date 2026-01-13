@@ -22,6 +22,8 @@ class DashboardPage extends ConsumerStatefulWidget {
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
   bool _listenerSetup = false;
+  final OverlayPortalController _groupSelectionController =
+      OverlayPortalController();
 
   @override
   void initState() {
@@ -71,106 +73,115 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         .where((g) => monitorState.selectedGroupIds.contains(g.groupId))
         .toList();
 
-    return Scaffold(
-      appBar: CustomTitleBar(
-        title: 'portal.',
-        icon: Icons.tonality,
-        actions: [
-          if (monitorState.newInstances.isNotEmpty)
-            Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.notifications),
-                  tooltip:
-                      'New instances (${monitorState.newInstances.length})',
-                  onPressed: () {
-                    ref
-                        .read(groupMonitorProvider(userId).notifier)
-                        .acknowledgeNewInstances();
-                  },
-                ),
-                if (monitorState.newInstances.isNotEmpty)
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
-                      ),
-                      child: Text(
-                        monitorState.newInstances.length > 9
-                            ? '9+'
-                            : monitorState.newInstances.length.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
+    return OverlayPortal(
+      controller: _groupSelectionController,
+      overlayChildBuilder: (context) => GroupSelectionPage(
+        userId: userId,
+        controller: _groupSelectionController,
+      ),
+      child: Scaffold(
+        appBar: CustomTitleBar(
+          title: 'portal.',
+          icon: Icons.tonality,
+          actions: [
+            if (monitorState.newInstances.isNotEmpty)
+              Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications),
+                    tooltip:
+                        'New instances (${monitorState.newInstances.length})',
+                    onPressed: () {
+                      ref
+                          .read(groupMonitorProvider(userId).notifier)
+                          .acknowledgeNewInstances();
+                    },
+                  ),
+                  if (monitorState.newInstances.isNotEmpty)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        child: Text(
+                          monitorState.newInstances.length > 9
+                              ? '9+'
+                              : monitorState.newInstances.length.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
-            ),
-          IconButton(
-            icon: Icon(
-              themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode,
-            ),
-            tooltip: themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
-            onPressed: () {
-              ref.read(themeProvider.notifier).toggleTheme();
-            },
-          ),
-          if (selectedGroups.isNotEmpty)
+                ],
+              ),
             IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Clear Groups',
-              onPressed: () async {
-                await ref
-                    .read(groupMonitorProvider(userId).notifier)
-                    .clearSelectedGroups();
+              icon: Icon(
+                themeMode == ThemeMode.dark
+                    ? Icons.light_mode
+                    : Icons.dark_mode,
+              ),
+              tooltip: themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
+              onPressed: () {
+                ref.read(themeProvider.notifier).toggleTheme();
               },
             ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-            onPressed: () async {
-              ref
-                  .read(groupMonitorProvider(currentUser.id).notifier)
-                  .stopMonitoring();
-              await ref.read(authProvider.notifier).logout();
-            },
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 800),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildUserCard(context, currentUser),
-                  const SizedBox(height: 24),
-                  _buildGroupMonitoringSection(
-                    context,
-                    currentUser.id,
-                    monitorState,
-                    selectedGroups,
-                  ),
-                  const SizedBox(height: 24),
-                  DebugInfoCard(monitorState: monitorState),
-                ],
+            if (selectedGroups.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Clear Groups',
+                onPressed: () async {
+                  await ref
+                      .read(groupMonitorProvider(userId).notifier)
+                      .clearSelectedGroups();
+                },
+              ),
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'Logout',
+              onPressed: () async {
+                ref
+                    .read(groupMonitorProvider(currentUser.id).notifier)
+                    .stopMonitoring();
+                await ref.read(authProvider.notifier).logout();
+              },
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 800),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildUserCard(context, currentUser),
+                    const SizedBox(height: 24),
+                    _buildGroupMonitoringSection(
+                      context,
+                      currentUser.id,
+                      monitorState,
+                      selectedGroups,
+                    ),
+                    const SizedBox(height: 24),
+                    DebugInfoCard(monitorState: monitorState),
+                  ],
+                ),
               ),
             ),
           ),
@@ -287,12 +298,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   GroupAvatarStack(
                     groups: selectedGroups,
                     onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              GroupSelectionPage(userId: userId),
-                        ),
-                      );
+                      _groupSelectionController.show();
                     },
                   ),
                 const Spacer(),
@@ -301,12 +307,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       ? 'Add Groups'
                       : 'Manage Groups',
                   onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            GroupSelectionPage(userId: userId),
-                      ),
-                    );
+                    _groupSelectionController.show();
                   },
                   icon: Icon(
                     selectedGroups.isEmpty ? Icons.add : Icons.manage_accounts,

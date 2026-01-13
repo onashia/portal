@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
@@ -6,8 +7,13 @@ import '../utils/vrchat_image_utils.dart';
 
 class GroupSelectionPage extends ConsumerStatefulWidget {
   final String userId;
+  final OverlayPortalController controller;
 
-  const GroupSelectionPage({super.key, required this.userId});
+  const GroupSelectionPage({
+    super.key,
+    required this.userId,
+    required this.controller,
+  });
 
   @override
   ConsumerState<GroupSelectionPage> createState() => _GroupSelectionPageState();
@@ -52,14 +58,63 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
   Widget build(BuildContext context) {
     final monitorState = ref.watch(groupMonitorProvider(widget.userId));
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Select Groups'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        actions: [
+    return BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(color: Colors.black.withOpacity(0.2)),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 0,
+            child: Align(
+              alignment: Alignment.center,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 600,
+                  maxHeight: MediaQuery.of(context).size.height * 0.8,
+                ),
+                child: Card(
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildHeader(context, monitorState),
+                      const Divider(height: 1),
+                      _buildSearchBar(context),
+                      Expanded(
+                        child: monitorState.isLoading
+                            ? const Center(child: CircularProgressIndicator())
+                            : _filteredGroups.isEmpty
+                            ? _buildEmptyState(context)
+                            : _buildGroupGrid(context),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, GroupMonitorState monitorState) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Text('Select Groups', style: Theme.of(context).textTheme.titleLarge),
+          const Spacer(),
           if (monitorState.selectedGroupIds.isNotEmpty)
             TextButton.icon(
               onPressed: () {
@@ -75,17 +130,9 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
               icon: const Icon(Icons.deselect),
               label: const Text('Deselect All'),
             ),
-        ],
-      ),
-      body: Column(
-        children: [
-          _buildSearchBar(context),
-          Expanded(
-            child: monitorState.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _filteredGroups.isEmpty
-                ? _buildEmptyState(context)
-                : _buildGroupGrid(context),
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => widget.controller.hide(),
           ),
         ],
       ),
