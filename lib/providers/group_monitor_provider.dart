@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:developer' as developer;
-import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
