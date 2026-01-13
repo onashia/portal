@@ -37,9 +37,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       final userId = authState.currentUser!.id;
 
       await NotificationService().initialize();
-
-      debugPrint('[DASHBOARD_INIT] Calling fetchUserGroups()');
-      ref.read(groupMonitorProvider(userId).notifier).fetchUserGroups();
     }
   }
 

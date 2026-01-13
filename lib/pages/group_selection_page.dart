@@ -25,6 +25,11 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
         _searchQuery = _searchController.text.toLowerCase();
       });
     });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      debugPrint('[GROUP_SELECTION] Fetching user groups');
+      ref.read(groupMonitorProvider(widget.userId).notifier).fetchUserGroups();
+    });
   }
 
   @override
