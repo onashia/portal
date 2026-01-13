@@ -20,6 +20,7 @@ void main() async {
       await windowManager.setMinimumSize(const Size(800, 600));
       await windowManager.center();
       await windowManager.setAsFrameless();
+      await windowManager.setResizable(true);
       await windowManager.show();
     });
   }

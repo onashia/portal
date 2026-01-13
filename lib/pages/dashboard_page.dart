@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
@@ -161,26 +162,28 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             ),
           ],
         ),
-        body: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 800),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildUserCard(context, currentUser),
-                    const SizedBox(height: 24),
-                    _buildGroupMonitoringSection(
-                      context,
-                      currentUser.id,
-                      monitorState,
-                      selectedGroups,
-                    ),
-                    const SizedBox(height: 24),
-                    DebugInfoCard(monitorState: monitorState),
-                  ],
+        body: DragToResizeArea(
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 800),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildUserCard(context, currentUser),
+                      const SizedBox(height: 24),
+                      _buildGroupMonitoringSection(
+                        context,
+                        currentUser.id,
+                        monitorState,
+                        selectedGroups,
+                      ),
+                      const SizedBox(height: 24),
+                      DebugInfoCard(monitorState: monitorState),
+                    ],
+                  ),
                 ),
               ),
             ),
