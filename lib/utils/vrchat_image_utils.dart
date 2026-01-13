@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/auth_provider.dart';
 
 class FileIdInfo {
@@ -55,10 +56,16 @@ Future<Uint8List?> fetchImageBytesWithAuth(
   try {
     final api = ref.read(vrchatApiProvider);
     final fileIdInfo = extractFileIdFromUrl(imageUrl);
+
+    debugPrint('[IMAGE_FETCH] Fetching image from API: $imageUrl');
+
+    ref.read(apiCallCounterProvider.notifier).incrementApiCall();
+
     final response = await api.rawApi.getFilesApi().downloadFileVersion(
       fileId: fileIdInfo.fileId,
       versionId: fileIdInfo.version,
     );
+    debugPrint('[IMAGE_FETCH] Successfully fetched image: $imageUrl');
     return response.data as Uint8List;
   } catch (e) {
     debugPrint('[IMAGE_FETCH] Failed to fetch image: $e');
@@ -100,9 +107,16 @@ class ImageCacheService {
 
     final cacheKey = _getCacheKey(url);
 
+    debugPrint('[IMAGE_CACHE] Checking cache for: $url (key: $cacheKey)');
+
     if (_memoryCache.containsKey(cacheKey)) {
+      debugPrint('[IMAGE_CACHE] Memory cache HIT for: $url');
       return _memoryCache[cacheKey];
     }
+
+    debugPrint(
+      '[IMAGE_CACHE] Memory cache MISS for: $url, checking disk cache',
+    );
 
     await _initialize();
 
@@ -112,6 +126,7 @@ class ImageCacheService {
         if (await file.exists()) {
           final bytes = await file.readAsBytes();
           _memoryCache[cacheKey] = bytes;
+          debugPrint('[IMAGE_CACHE] Disk cache HIT for: $url');
           return bytes;
         }
       } catch (e) {
@@ -119,6 +134,9 @@ class ImageCacheService {
       }
     }
 
+    debugPrint(
+      '[IMAGE_CACHE] Complete cache MISS for: $url, will fetch from API',
+    );
     return null;
   }
 
@@ -221,14 +239,23 @@ class CachedImage extends ConsumerWidget {
   }
 
   Future<Uint8List?> _loadImage(ImageCacheService cacheService) async {
+    debugPrint('[CACHED_IMAGE] _loadImage called for: $imageUrl');
+
     final cachedBytes = await cacheService.getCachedImage(imageUrl);
     if (cachedBytes != null) {
+      debugPrint('[CACHED_IMAGE] Returning cached image for: $imageUrl');
       return cachedBytes;
     }
 
+    debugPrint('[CACHED_IMAGE] Cache miss, fetching from API for: $imageUrl');
     final fetchedBytes = await fetchImageBytesWithAuth(ref, imageUrl);
     if (fetchedBytes != null) {
+      debugPrint(
+        '[CACHED_IMAGE] Successfully fetched, caching image for: $imageUrl',
+      );
       await cacheService.cacheImage(imageUrl, fetchedBytes);
+    } else {
+      debugPrint('[CACHED_IMAGE] Failed to fetch image: $imageUrl');
     }
 
     return fetchedBytes;

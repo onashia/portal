@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'api_call_counter.dart';
 import 'auth_provider.dart';
 import '../models/group_instance_with_group.dart';
 
@@ -106,6 +107,12 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
         'Fetching groups for user: $userId',
         name: 'portal.group_monitor',
       );
+
+      debugPrint(
+        '[API_COUNTER] Incrementing from fetchUserGroups() - Fetching user groups',
+      );
+
+      ref.read(apiCallCounterProvider.notifier).incrementApiCall();
 
       final api = ref.read(vrchatApiProvider);
       final response = await api.rawApi.getUsersApi().getUserGroups(
@@ -252,6 +259,12 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
             'Fetching instances for group: $groupId',
             name: 'portal.group_monitor',
           );
+
+          debugPrint(
+            '[API_COUNTER] Incrementing from fetchGroupInstances() - Fetching instances for group: $groupId',
+          );
+
+          ref.read(apiCallCounterProvider.notifier).incrementApiCall();
 
           final response = await api.rawApi
               .getUsersApi()

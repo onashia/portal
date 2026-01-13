@@ -114,94 +114,10 @@ class GroupInstanceList extends ConsumerWidget {
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 16),
-            _buildDebugInfo(context, state),
           ],
         ),
       ),
     );
-  }
-
-  Widget _buildDebugInfo(BuildContext context, GroupMonitorState state) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.bug_report_outlined,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'Debug Info',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Monitoring: ${state.isMonitoring}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            Text(
-              'Selected Groups: ${state.selectedGroupIds.length}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            Text(
-              'Total Instances: ${state.groupInstances.values.fold<int>(0, (sum, list) => sum + list.length)}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            if (state.groupErrors.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Errors: ${state.groupErrors.length}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.error,
-                ),
-              ),
-              for (final entry in state.groupErrors.entries)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    '• ${_getGroupName(state, entry.key)}: ${entry.value}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
-            if (state.groupInstances.isNotEmpty &&
-                state.groupInstances.values.every((list) => list.isEmpty))
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'All groups returned empty instance lists',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _getGroupName(GroupMonitorState state, String groupId) {
-    final group = state.allGroups.firstWhere(
-      (g) => g.groupId == groupId,
-      orElse: () => LimitedUserGroups(),
-    );
-    return group.name ?? groupId.substring(0, 8);
   }
 }
 

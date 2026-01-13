@@ -8,6 +8,7 @@ import '../providers/group_monitor_provider.dart';
 import '../services/notification_service.dart';
 import '../utils/vrchat_image_utils.dart';
 import '../widgets/custom_title_bar.dart';
+import '../widgets/debug_info_card.dart';
 import '../widgets/group_avatar_stack.dart';
 import '../widgets/group_instance_list.dart';
 import 'group_selection_page.dart';
@@ -25,16 +26,19 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   @override
   void initState() {
     super.initState();
+    debugPrint('[DASHBOARD_INIT] initState() called');
     _initializeDashboard();
   }
 
   Future<void> _initializeDashboard() async {
+    debugPrint('[DASHBOARD_INIT] _initializeDashboard() called');
     final authState = ref.read(authProvider);
     if (authState.currentUser != null) {
       final userId = authState.currentUser!.id;
 
       await NotificationService().initialize();
 
+      debugPrint('[DASHBOARD_INIT] Calling fetchUserGroups()');
       ref.read(groupMonitorProvider(userId).notifier).fetchUserGroups();
     }
   }
@@ -167,6 +171,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                     monitorState,
                     selectedGroups,
                   ),
+                  const SizedBox(height: 24),
+                  DebugInfoCard(monitorState: monitorState),
                 ],
               ),
             ),
@@ -294,7 +300,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   ),
                 const Spacer(),
                 IconButton.filled(
-                  tooltip: selectedGroups.isEmpty ? 'Add Groups' : 'Manage Groups',
+                  tooltip: selectedGroups.isEmpty
+                      ? 'Add Groups'
+                      : 'Manage Groups',
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(

@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
+import 'api_call_counter.dart';
+
 enum AuthStatus {
   initial,
   loading,
@@ -46,8 +48,10 @@ class AuthState {
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final VrchatDart api;
+  final Ref ref;
 
-  AuthNotifier(this.api) : super(AuthState(status: AuthStatus.initial));
+  AuthNotifier(this.api, this.ref)
+    : super(AuthState(status: AuthStatus.initial));
 
   Future<void> login(String username, String password) async {
     state = state.copyWith(status: AuthStatus.loading);
@@ -62,6 +66,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
         level: 700,
       );
       debugPrint('[AUTH] Calling VRChat API login...');
+
+      debugPrint(
+        '[API_COUNTER] Incrementing from login() - Authenticating user',
+      );
+
+      ref.read(apiCallCounterProvider.notifier).incrementApiCall();
 
       final loginResponse = await api.auth.login(
         username: username,
@@ -101,32 +111,30 @@ class AuthNotifier extends StateNotifier<AuthState> {
           );
 
           debugPrint(
-              '[AUTH] Checking AuthResponse properties for 2FA indicator',
-            );
-            debugPrint(
-              '[AUTH] authResponse.requiresTwoFactorAuth: ${authResponse.requiresTwoFactorAuth}',
-            );
+            '[AUTH] Checking AuthResponse properties for 2FA indicator',
+          );
+          debugPrint(
+            '[AUTH] authResponse.requiresTwoFactorAuth: ${authResponse.requiresTwoFactorAuth}',
+          );
 
-            if (authResponse.requiresTwoFactorAuth == true) {
-              developer.log(
-                '2FA is required based on login response',
-                name: 'portal.auth',
-                level: 500,
-              );
-              debugPrint(
-                '[AUTH] 2FA is required - transitioning to 2FA screen',
-              );
-              state = state.copyWith(
-                status: AuthStatus.requires2FA,
-                requiresTwoFactorAuth: true,
-              );
-              return;
-            } else {
-              debugPrint('[AUTH] 2FA is NOT required according to response');
-              debugPrint(
-                '[AUTH] Response succeeded but currentUser is still null - this is unexpected',
-              );
-            }
+          if (authResponse.requiresTwoFactorAuth == true) {
+            developer.log(
+              '2FA is required based on login response',
+              name: 'portal.auth',
+              level: 500,
+            );
+            debugPrint('[AUTH] 2FA is required - transitioning to 2FA screen');
+            state = state.copyWith(
+              status: AuthStatus.requires2FA,
+              requiresTwoFactorAuth: true,
+            );
+            return;
+          } else {
+            debugPrint('[AUTH] 2FA is NOT required according to response');
+            debugPrint(
+              '[AUTH] Response succeeded but currentUser is still null - this is unexpected',
+            );
+          }
         } else {
           debugPrint('[AUTH] Login response failed');
           debugPrint('[AUTH] Failure: $failure');
@@ -197,7 +205,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
           name: 'portal.auth',
           level: 500,
         );
-        debugPrint('[AUTH] 2FA is enabled for user: ${currentUser.displayName}');
+        debugPrint(
+          '[AUTH] 2FA is enabled for user: ${currentUser.displayName}',
+        );
         state = state.copyWith(
           status: AuthStatus.requires2FA,
           requiresTwoFactorAuth: true,
@@ -247,6 +257,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
         level: 700,
       );
       debugPrint('[AUTH] Calling VRChat API verify2fa...');
+
+      debugPrint(
+        '[API_COUNTER] Incrementing from verify2FA() - Verifying two-factor authentication',
+      );
+
+      ref.read(apiCallCounterProvider.notifier).incrementApiCall();
 
       final verify2faResponse = await api.auth.verify2fa(code);
 
@@ -337,6 +353,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
         level: 700,
       );
       debugPrint('[AUTH] Calling VRChat API logout...');
+
+      debugPrint('[API_COUNTER] Incrementing from logout() - Logging out user');
+
+      ref.read(apiCallCounterProvider.notifier).incrementApiCall();
+
       await api.auth.logout();
 
       developer.log(
@@ -427,5 +448,5 @@ final vrchatApiProvider = Provider<VrchatDart>((ref) {
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final api = ref.watch(vrchatApiProvider);
-  return AuthNotifier(api);
+  return AuthNotifier(api, ref);
 });

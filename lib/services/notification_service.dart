@@ -50,9 +50,7 @@ class NotificationService {
     );
   }
 
-  Future<void> showNewInstanceNotification({
-    required int count,
-  }) async {
+  Future<void> showNewInstanceNotification({required int count}) async {
     final title = count == 1 ? 'New Instance Opened' : 'New Instances Opened';
     final body = count == 1
         ? 'A new instance is now available'

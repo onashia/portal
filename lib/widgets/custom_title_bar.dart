@@ -27,8 +27,7 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
 
     final bgColor = backgroundColor ?? theme.colorScheme.surface;
 
-    final fgColor =
-        foregroundColor ?? theme.colorScheme.onSurface;
+    final fgColor = foregroundColor ?? theme.colorScheme.onSurface;
 
     return Container(
       height: 40,
