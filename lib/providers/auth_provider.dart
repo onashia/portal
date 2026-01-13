@@ -52,11 +52,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> login(String username, String password) async {
     state = state.copyWith(status: AuthStatus.loading);
 
-    developer.log(
-      'Login attempt started',
-      name: 'portal.auth',
-      level: 500,
-    );
+    developer.log('Login attempt started', name: 'portal.auth', level: 500);
     debugPrint('[AUTH] Login attempt started for username: $username');
 
     try {
@@ -100,19 +96,27 @@ class AuthNotifier extends StateNotifier<AuthState> {
           debugPrint('[AUTH] Login response succeeded');
           final authResponse = success.data;
           debugPrint('[AUTH] AuthResponse data: $authResponse');
-          debugPrint('[AUTH] AuthResponse data type: ${authResponse.runtimeType}');
+          debugPrint(
+            '[AUTH] AuthResponse data type: ${authResponse.runtimeType}',
+          );
 
           if (authResponse != null) {
-            debugPrint('[AUTH] Checking AuthResponse properties for 2FA indicator');
-            debugPrint('[AUTH] authResponse.requiresTwoFactorAuth: ${authResponse.requiresTwoFactorAuth}');
+            debugPrint(
+              '[AUTH] Checking AuthResponse properties for 2FA indicator',
+            );
+            debugPrint(
+              '[AUTH] authResponse.requiresTwoFactorAuth: ${authResponse.requiresTwoFactorAuth}',
+            );
 
             if (authResponse.requiresTwoFactorAuth == true) {
               developer.log(
-                  '2FA is required based on login response',
-                  name: 'portal.auth',
-                  level: 500,
-                );
-              debugPrint('[AUTH] 2FA is required - transitioning to 2FA screen');
+                '2FA is required based on login response',
+                name: 'portal.auth',
+                level: 500,
+              );
+              debugPrint(
+                '[AUTH] 2FA is required - transitioning to 2FA screen',
+              );
               state = state.copyWith(
                 status: AuthStatus.requires2FA,
                 requiresTwoFactorAuth: true,
@@ -120,7 +124,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
               return;
             } else {
               debugPrint('[AUTH] 2FA is NOT required according to response');
-              debugPrint('[AUTH] Response succeeded but currentUser is still null - this is unexpected');
+              debugPrint(
+                '[AUTH] Response succeeded but currentUser is still null - this is unexpected',
+              );
             }
           } else {
             debugPrint('[AUTH] AuthResponse data is null');
@@ -137,7 +143,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
           final failureMessage = failure.toString().split('\n').first.trim();
           debugPrint('[AUTH] Failure message: $failureMessage');
 
-          final requiresEmailVerification = failureMessage.contains('Check your email') ||
+          final requiresEmailVerification =
+              failureMessage.contains('Check your email') ||
               failureMessage.contains('logging in from somewhere new');
 
           final errorMessage = 'Login failed: $failureMessage';
@@ -163,8 +170,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
           name: 'portal.auth',
           level: 1000,
         );
-        debugPrint('[AUTH] ERROR: currentUser is null after successful API call');
-        debugPrint('[AUTH] This likely means 2FA is required but response handling is incomplete');
+        debugPrint(
+          '[AUTH] ERROR: currentUser is null after successful API call',
+        );
+        debugPrint(
+          '[AUTH] This likely means 2FA is required but response handling is incomplete',
+        );
         state = state.copyWith(
           status: AuthStatus.error,
           errorMessage: 'Login failed: Could not authenticate',
@@ -177,8 +188,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
         name: 'portal.auth',
         level: 500,
       );
-      debugPrint('[AUTH] User authenticated successfully: ${currentUser.username}');
-      debugPrint('[AUTH] User twoFactorAuthEnabled: ${currentUser.twoFactorAuthEnabled}');
+      debugPrint(
+        '[AUTH] User authenticated successfully: ${currentUser.username}',
+      );
+      debugPrint(
+        '[AUTH] User twoFactorAuthEnabled: ${currentUser.twoFactorAuthEnabled}',
+      );
 
       if (currentUser.twoFactorAuthEnabled) {
         developer.log(
@@ -197,7 +212,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
           name: 'portal.auth',
           level: 500,
         );
-        debugPrint('[AUTH] 2FA is not enabled, user fully authenticated: ${currentUser.username}');
+        debugPrint(
+          '[AUTH] 2FA is not enabled, user fully authenticated: ${currentUser.username}',
+        );
         state = state.copyWith(
           status: AuthStatus.authenticated,
           currentUser: currentUser,
@@ -224,11 +241,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> verify2FA(String code) async {
     state = state.copyWith(status: AuthStatus.loading);
 
-    developer.log(
-      '2FA verification started',
-      name: 'portal.auth',
-      level: 500,
-    );
+    developer.log('2FA verification started', name: 'portal.auth', level: 500);
     debugPrint('[AUTH] 2FA verification started');
 
     try {
@@ -278,7 +291,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
           name: 'portal.auth',
           level: 500,
         );
-        debugPrint('[AUTH] 2FA verification successful for user: ${currentUser.displayName}');
+        debugPrint(
+          '[AUTH] 2FA verification successful for user: ${currentUser.displayName}',
+        );
         state = state.copyWith(
           status: AuthStatus.authenticated,
           currentUser: currentUser,
@@ -290,7 +305,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
           name: 'portal.auth',
           level: 1000,
         );
-        debugPrint('[AUTH] ERROR: 2FA verification failed - currentUser is null after successful verify2fa');
+        debugPrint(
+          '[AUTH] ERROR: 2FA verification failed - currentUser is null after successful verify2fa',
+        );
         state = state.copyWith(
           status: AuthStatus.error,
           errorMessage: '2FA verification failed: No user data received',
@@ -314,11 +331,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
-    developer.log(
-      'Logout started',
-      name: 'portal.auth',
-      level: 500,
-    );
+    developer.log('Logout started', name: 'portal.auth', level: 500);
     debugPrint('[AUTH] Logout started');
 
     try {
@@ -370,7 +383,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
           name: 'portal.auth',
           level: 500,
         );
-        debugPrint('[AUTH] Existing session found for user: ${currentUser.username}');
+        debugPrint(
+          '[AUTH] Existing session found for user: ${currentUser.username}',
+        );
         state = state.copyWith(
           status: AuthStatus.authenticated,
           currentUser: currentUser,
@@ -392,7 +407,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         error: e,
         stackTrace: s,
       );
-      debugPrint('[AUTH] ERROR: Failed to check existing session with exception: $e');
+      debugPrint(
+        '[AUTH] ERROR: Failed to check existing session with exception: $e',
+      );
       debugPrint('[AUTH] Stack trace: $s');
       state = state.copyWith(
         status: AuthStatus.unauthenticated,

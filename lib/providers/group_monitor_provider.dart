@@ -55,8 +55,7 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
   static const int _maxBackoffDelay = 300;
   static const int _pollingInterval = 60;
 
-  GroupMonitorNotifier(this.api, this.userId)
-      : super(GroupMonitorState()) {
+  GroupMonitorNotifier(this.api, this.userId) : super(GroupMonitorState()) {
     _loadSelectedGroups();
   }
 
@@ -103,7 +102,9 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
         name: 'portal.group_monitor',
       );
 
-      final response = await api.rawApi.getUsersApi().getUserGroups(userId: userId);
+      final response = await api.rawApi.getUsersApi().getUserGroups(
+        userId: userId,
+      );
       final groups = response.data ?? [];
 
       developer.log(
@@ -111,10 +112,7 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
         name: 'portal.group_monitor',
       );
 
-      state = state.copyWith(
-        allGroups: groups,
-        isLoading: false,
-      );
+      state = state.copyWith(allGroups: groups, isLoading: false);
     } catch (e, s) {
       developer.log(
         'Failed to fetch user groups',
@@ -131,7 +129,9 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
 
   void toggleGroupSelection(String groupId) {
     final newSelection = Set<String>.from(state.selectedGroupIds);
-    final newGroupInstances = Map<String, List<GroupInstance>>.from(state.groupInstances);
+    final newGroupInstances = Map<String, List<GroupInstance>>.from(
+      state.groupInstances,
+    );
 
     if (newSelection.contains(groupId)) {
       newSelection.remove(groupId);
@@ -177,10 +177,7 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
     state = state.copyWith(isMonitoring: false);
     _backoffDelay = 1;
 
-    developer.log(
-      'Stopped monitoring',
-      name: 'portal.group_monitor',
-    );
+    developer.log('Stopped monitoring', name: 'portal.group_monitor');
   }
 
   Future<void> fetchGroupInstances() async {
@@ -203,12 +200,15 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
 
       for (final groupId in state.selectedGroupIds) {
         try {
-          final response = await api.rawApi.getGroupsApi().getGroupInstances(groupId: groupId);
+          final response = await api.rawApi.getGroupsApi().getGroupInstances(
+            groupId: groupId,
+          );
           final instances = response.data ?? [];
 
           final previousInstances = state.groupInstances[groupId] ?? [];
-          final previousInstanceIds =
-              previousInstances.map((i) => i.instanceId).toSet();
+          final previousInstanceIds = previousInstances
+              .map((i) => i.instanceId)
+              .toSet();
 
           for (final instance in instances) {
             if (!previousInstanceIds.contains(instance.instanceId)) {
@@ -255,7 +255,9 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
 
   Future<World?> fetchWorldDetails(String worldId) async {
     try {
-      final response = await api.rawApi.getWorldsApi().getWorld(worldId: worldId);
+      final response = await api.rawApi.getWorldsApi().getWorld(
+        worldId: worldId,
+      );
       return response.data;
     } catch (e, s) {
       developer.log(
@@ -307,8 +309,12 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
   }
 }
 
-final groupMonitorProvider = StateNotifierProvider.family<
-    GroupMonitorNotifier, GroupMonitorState, String>((ref, userId) {
-  final api = ref.watch(vrchatApiProvider);
-  return GroupMonitorNotifier(api, userId);
-});
+final groupMonitorProvider =
+    StateNotifierProvider.family<
+      GroupMonitorNotifier,
+      GroupMonitorState,
+      String
+    >((ref, userId) {
+      final api = ref.watch(vrchatApiProvider);
+      return GroupMonitorNotifier(api, userId);
+    });

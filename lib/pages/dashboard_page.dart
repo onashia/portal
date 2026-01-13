@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
@@ -48,16 +47,17 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
     if (!_listenerSetup && currentUser != null) {
       _listenerSetup = true;
-      ref.listen<GroupMonitorState>(
-        groupMonitorProvider(currentUser.id),
-        (previous, next) {
-          if (previous != null &&
-              next.newInstances.length > previous.newInstances.length) {
-            final newCount = next.newInstances.length - previous.newInstances.length;
-            NotificationService().showNewInstanceNotification(count: newCount);
-          }
-        },
-      );
+      ref.listen<GroupMonitorState>(groupMonitorProvider(currentUser.id), (
+        previous,
+        next,
+      ) {
+        if (previous != null &&
+            next.newInstances.length > previous.newInstances.length) {
+          final newCount =
+              next.newInstances.length - previous.newInstances.length;
+          NotificationService().showNewInstanceNotification(count: newCount);
+        }
+      });
     }
 
     if (currentUser == null) {
@@ -79,9 +79,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.notifications),
-                  tooltip: 'New instances (${monitorState.newInstances.length})',
+                  tooltip:
+                      'New instances (${monitorState.newInstances.length})',
                   onPressed: () {
-                    ref.read(groupMonitorProvider(userId).notifier)
+                    ref
+                        .read(groupMonitorProvider(userId).notifier)
                         .acknowledgeNewInstances();
                   },
                 ),
@@ -130,14 +132,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               icon: const Icon(Icons.refresh),
               tooltip: 'Clear Groups',
               onPressed: () async {
-                await ref.read(groupMonitorProvider(userId).notifier).clearSelectedGroups();
+                await ref
+                    .read(groupMonitorProvider(userId).notifier)
+                    .clearSelectedGroups();
               },
             ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Logout',
             onPressed: () async {
-              ref.read(groupMonitorProvider(currentUser.id).notifier).stopMonitoring();
+              ref
+                  .read(groupMonitorProvider(currentUser.id).notifier)
+                  .stopMonitoring();
               await ref.read(authProvider.notifier).logout();
             },
           ),
@@ -169,67 +175,28 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  Widget _buildUserCard(
-    BuildContext context,
-    CurrentUser currentUser,
-  ) {
+  Widget _buildUserCard(BuildContext context, CurrentUser currentUser) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            Container(
+            CachedImage(
+              imageUrl: _getUserProfileImageUrl(currentUser),
+              ref: ref,
               width: 56,
               height: 56,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .shadow
-                        .withValues(alpha: 0.3),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ClipOval(
-                child: FutureBuilder<Uint8List?>(
-                  future: fetchImageBytesWithAuth(ref, _getUserProfileImageUrl(currentUser)),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Container(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                        child: const Center(
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                      );
-                    }
-
-                    final bytes = snapshot.data;
-                    if (bytes != null) {
-                      return Image.memory(
-                        bytes,
-                        fit: BoxFit.cover,
-                      );
-                    }
-
-                    return Container(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      child: Icon(
-                        Icons.person,
-                        size: 28,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    );
-                  },
+              shape: BoxShape.circle,
+              fallbackIcon: Icons.person,
+              boxShadow: [
+                BoxShadow(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.shadow.withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
                 ),
-              ),
+              ],
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -239,8 +206,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   Text(
                     currentUser.displayName,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Row(
@@ -254,8 +221,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       Text(
                         _getStatusText(currentUser.state),
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: _getStatusColor(context, currentUser.state),
-                            ),
+                          color: _getStatusColor(context, currentUser.state),
+                        ),
                       ),
                     ],
                   ),
@@ -298,7 +265,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 Switch(
                   value: monitorState.isMonitoring,
                   onChanged: (value) {
-                    final notifier = ref.read(groupMonitorProvider(userId).notifier);
+                    final notifier = ref.read(
+                      groupMonitorProvider(userId).notifier,
+                    );
                     if (value) {
                       notifier.startMonitoring();
                     } else {
@@ -317,7 +286,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (context) => GroupSelectionPage(userId: userId),
+                        builder: (context) =>
+                            GroupSelectionPage(userId: userId),
                       ),
                     );
                   },
@@ -329,8 +299,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         ? 'Tap avatars to select groups to monitor'
                         : '${selectedGroups.length} group${selectedGroups.length == 1 ? '' : 's'} selected',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
                 if (selectedGroups.isNotEmpty)
@@ -340,7 +310,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                     onPressed: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (context) => GroupSelectionPage(userId: userId),
+                          builder: (context) =>
+                              GroupSelectionPage(userId: userId),
                         ),
                       );
                     },
@@ -353,7 +324,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             GroupInstanceList(
               userId: userId,
               onRefresh: () {
-                ref.read(groupMonitorProvider(userId).notifier).fetchGroupInstances();
+                ref
+                    .read(groupMonitorProvider(userId).notifier)
+                    .fetchGroupInstances();
               },
             ),
           ],

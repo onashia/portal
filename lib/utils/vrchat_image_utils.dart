@@ -1,6 +1,8 @@
-import 'dart:typed_data';
+import 'dart:io' as io;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:portal/providers/auth_provider.dart';
 
@@ -62,5 +64,293 @@ Future<Uint8List?> fetchImageBytesWithAuth(
   } catch (e) {
     debugPrint('[IMAGE_FETCH] Failed to fetch image: $e');
     return null;
+  }
+}
+
+class ImageCacheService {
+  static final ImageCacheService _instance = ImageCacheService._internal();
+  factory ImageCacheService() => _instance;
+  ImageCacheService._internal();
+
+  final Map<String, Uint8List> _memoryCache = {};
+  io.Directory? _cacheDirectory;
+  bool _isInitialized = false;
+
+  Future<void> _initialize() async {
+    if (_isInitialized) return;
+
+    try {
+      final appDocDir = await getApplicationDocumentsDirectory();
+      _cacheDirectory = io.Directory('${appDocDir.path}/image_cache');
+      if (!await _cacheDirectory!.exists()) {
+        await _cacheDirectory!.create(recursive: true);
+      }
+      _isInitialized = true;
+    } catch (e) {
+      debugPrint('[IMAGE_CACHE] Failed to initialize cache directory: $e');
+    }
+  }
+
+  String _getCacheKey(String url) {
+    final fileIdInfo = extractFileIdFromUrl(url);
+    return '${fileIdInfo.fileId}_${fileIdInfo.version}';
+  }
+
+  Future<Uint8List?> getCachedImage(String url) async {
+    if (url.isEmpty) return null;
+
+    final cacheKey = _getCacheKey(url);
+
+    if (_memoryCache.containsKey(cacheKey)) {
+      return _memoryCache[cacheKey];
+    }
+
+    await _initialize();
+
+    if (_cacheDirectory != null) {
+      try {
+        final file = io.File('${_cacheDirectory!.path}/$cacheKey');
+        if (await file.exists()) {
+          final bytes = await file.readAsBytes();
+          _memoryCache[cacheKey] = bytes;
+          return bytes;
+        }
+      } catch (e) {
+        debugPrint('[IMAGE_CACHE] Failed to read from disk cache: $e');
+      }
+    }
+
+    return null;
+  }
+
+  Future<void> cacheImage(String url, Uint8List bytes) async {
+    if (url.isEmpty) return;
+
+    final cacheKey = _getCacheKey(url);
+
+    _memoryCache[cacheKey] = bytes;
+
+    await _initialize();
+
+    if (_cacheDirectory != null) {
+      try {
+        final file = io.File('${_cacheDirectory!.path}/$cacheKey');
+        await file.writeAsBytes(bytes);
+      } catch (e) {
+        debugPrint('[IMAGE_CACHE] Failed to write to disk cache: $e');
+      }
+    }
+  }
+
+  Future<void> clearCache() async {
+    _memoryCache.clear();
+
+    if (_cacheDirectory != null) {
+      try {
+        if (await _cacheDirectory!.exists()) {
+          await _cacheDirectory!.delete(recursive: true);
+          await _cacheDirectory!.create(recursive: true);
+        }
+      } catch (e) {
+        debugPrint('[IMAGE_CACHE] Failed to clear disk cache: $e');
+      }
+    }
+  }
+}
+
+class CachedImage extends ConsumerWidget {
+  final String imageUrl;
+  final double? width;
+  final double? height;
+  final BoxShape shape;
+  final BoxFit fit;
+  final IconData? fallbackIcon;
+  final Widget? fallbackWidget;
+  final Color? fallbackBackgroundColor;
+  final Color? backgroundColor;
+  final BoxBorder? border;
+  final List<BoxShadow>? boxShadow;
+  final bool showLoadingIndicator;
+  final VoidCallback? onTap;
+
+  const CachedImage({
+    super.key,
+    required this.imageUrl,
+    required this.ref,
+    this.width,
+    this.height,
+    this.shape = BoxShape.rectangle,
+    this.fit = BoxFit.cover,
+    this.fallbackIcon,
+    this.fallbackWidget,
+    this.fallbackBackgroundColor,
+    this.backgroundColor,
+    this.border,
+    this.boxShadow,
+    this.showLoadingIndicator = true,
+    this.onTap,
+  });
+
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (imageUrl.isEmpty) {
+      return _buildFallback(context);
+    }
+
+    final cacheService = ImageCacheService();
+
+    return FutureBuilder<Uint8List?>(
+      future: _loadImage(cacheService),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          if (showLoadingIndicator) {
+            return _buildLoading(context);
+          }
+          return _buildFallback(context);
+        }
+
+        final bytes = snapshot.data;
+        if (bytes != null) {
+          return _buildImage(bytes, context, true);
+        }
+
+        return _buildFallback(context);
+      },
+    );
+  }
+
+  Future<Uint8List?> _loadImage(ImageCacheService cacheService) async {
+    final cachedBytes = await cacheService.getCachedImage(imageUrl);
+    if (cachedBytes != null) {
+      return cachedBytes;
+    }
+
+    final fetchedBytes = await fetchImageBytesWithAuth(ref, imageUrl);
+    if (fetchedBytes != null) {
+      await cacheService.cacheImage(imageUrl, fetchedBytes);
+    }
+
+    return fetchedBytes;
+  }
+
+  Widget _buildImage(
+    Uint8List bytes,
+    BuildContext context,
+    bool applyBackgroundColor,
+  ) {
+    final imageWidget = Image.memory(
+      bytes,
+      width: width,
+      height: height,
+      fit: fit,
+    );
+
+    Widget shapedWidget;
+
+    if (shape == BoxShape.circle) {
+      shapedWidget = ClipOval(
+        child: SizedBox(width: width, height: height, child: imageWidget),
+      );
+    } else {
+      shapedWidget = imageWidget;
+    }
+
+    final container = Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        shape: shape,
+        color: applyBackgroundColor
+            ? (backgroundColor ??
+                  Theme.of(context).colorScheme.surfaceContainerHighest)
+            : null,
+        border: border,
+        boxShadow: boxShadow,
+      ),
+      child: shapedWidget,
+    );
+
+    if (onTap != null) {
+      return GestureDetector(onTap: onTap, child: container);
+    }
+
+    return container;
+  }
+
+  Widget _buildLoading(BuildContext context) {
+    final container = Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        shape: shape,
+        color:
+            fallbackBackgroundColor ??
+            Theme.of(context).colorScheme.surfaceContainerHighest,
+        border: border,
+        boxShadow: boxShadow,
+      ),
+      child: Center(
+        child: SizedBox(
+          width: (width ?? 48) * 0.3,
+          height: (height ?? 48) * 0.3,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+      ),
+    );
+
+    return onTap != null
+        ? GestureDetector(onTap: onTap, child: container)
+        : container;
+  }
+
+  Widget _buildFallback(BuildContext context) {
+    if (fallbackWidget != null) {
+      final container = Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          shape: shape,
+          color:
+              fallbackBackgroundColor ??
+              Theme.of(context).colorScheme.surfaceContainerHighest,
+          border: border,
+          boxShadow: boxShadow,
+        ),
+        child: fallbackWidget,
+      );
+
+      return onTap != null
+          ? GestureDetector(onTap: onTap, child: container)
+          : container;
+    }
+
+    final container = Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        shape: shape,
+        color:
+            fallbackBackgroundColor ??
+            Theme.of(context).colorScheme.surfaceContainerHighest,
+        border: border,
+        boxShadow: boxShadow,
+      ),
+      child: fallbackIcon != null
+          ? Icon(
+              fallbackIcon,
+              size: (width ?? 48) * 0.5,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            )
+          : null,
+    );
+
+    return onTap != null
+        ? GestureDetector(onTap: onTap, child: container)
+        : container;
   }
 }

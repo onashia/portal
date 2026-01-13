@@ -1,8 +1,6 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
-import 'package:portal/providers/auth_provider.dart';
 import 'package:portal/utils/vrchat_image_utils.dart';
 
 class GroupAvatarStack extends ConsumerWidget {
@@ -91,81 +89,41 @@ class GroupAvatarStack extends ConsumerWidget {
   ) {
     final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          border: Border.all(
-            color: Theme.of(context).colorScheme.surface,
-            width: 2,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Theme.of(
-                context,
-              ).colorScheme.shadow.withValues(alpha: 0.1),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: hasImage
-            ? ClipOval(
-                child: FutureBuilder<Uint8List?>(
-                  future: fetchImageBytesWithAuth(ref, group.iconUrl!),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Container(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      );
-                    }
-
-                    final bytes = snapshot.data;
-                    if (bytes != null) {
-                      return SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: Image.memory(bytes, fit: BoxFit.cover),
-                      );
-                    }
-
-                    return _buildFallbackAvatar(context, group);
-                  },
+    return CachedImage(
+      imageUrl: hasImage ? group.iconUrl! : '',
+      ref: ref,
+      width: 48,
+      height: 48,
+      shape: BoxShape.circle,
+      fallbackWidget: hasImage
+          ? null
+          : Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _getAvatarColor(group.id ?? ''),
+              ),
+              child: Center(
+                child: Text(
+                  _getInitials(group.name ?? 'Group'),
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              )
-            : _buildFallbackAvatar(context, group),
+              ),
+            ),
+      border: Border.all(
+        color: Theme.of(context).colorScheme.surface,
+        width: 2,
       ),
-    );
-  }
-
-  Widget _buildFallbackAvatar(BuildContext context, LimitedUserGroups group) {
-    final initials = _getInitials(group.name ?? 'Group');
-    return Container(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: _getAvatarColor(group.id ?? ''),
-      ),
-      child: Center(
-        child: Text(
-          initials,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
+      boxShadow: [
+        BoxShadow(
+          color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.1),
+          blurRadius: 4,
+          offset: const Offset(0, 2),
         ),
-      ),
+      ],
+      onTap: onTap,
     );
   }
 

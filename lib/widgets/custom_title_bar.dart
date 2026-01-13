@@ -26,21 +26,17 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
     final themeMode = ref.watch(themeProvider);
     final isDark = themeMode == ThemeMode.dark;
 
-    final bgColor = backgroundColor ?? 
-        (isDark 
-            ? theme.colorScheme.surface 
-            : theme.colorScheme.surface);
-    
-    final fgColor = foregroundColor ?? 
-        (isDark 
-            ? theme.colorScheme.onSurface 
-            : theme.colorScheme.onSurface);
+    final bgColor =
+        backgroundColor ??
+        (isDark ? theme.colorScheme.surface : theme.colorScheme.surface);
+
+    final fgColor =
+        foregroundColor ??
+        (isDark ? theme.colorScheme.onSurface : theme.colorScheme.onSurface);
 
     return Container(
       height: 40,
-      decoration: BoxDecoration(
-        color: bgColor,
-      ),
+      decoration: BoxDecoration(color: bgColor),
       child: Row(
         children: [
           Expanded(
@@ -161,17 +157,13 @@ class _WindowButtonState extends State<_WindowButton> {
           width: 46,
           height: 40,
           decoration: BoxDecoration(
-            color: _isHovered 
-                ? (widget.isCloseButton 
-                    ? Colors.red 
-                    : widget.hoverColor.withOpacity(0.1))
+            color: _isHovered
+                ? (widget.isCloseButton
+                      ? Colors.red
+                      : widget.hoverColor.withOpacity(0.1))
                 : null,
           ),
-          child: Icon(
-            widget.icon,
-            size: 16,
-            color: widget.foregroundColor,
-          ),
+          child: Icon(widget.icon, size: 16, color: widget.foregroundColor),
         ),
       ),
     );

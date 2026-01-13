@@ -15,7 +15,9 @@ class NotificationService {
   Future<void> initialize() async {
     if (_isInitialized) return;
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
 
     const darwinSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
@@ -93,10 +95,7 @@ class NotificationService {
 
   Future<void> cancelAll() async {
     await _notifications.cancelAll();
-    developer.log(
-      'Cancelled all notifications',
-      name: 'portal.notification',
-    );
+    developer.log('Cancelled all notifications', name: 'portal.notification');
   }
 
   Future<bool> get hasPermission async {
@@ -106,12 +105,9 @@ class NotificationService {
 
     final result = await _notifications
         .resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin>()
-        ?.requestPermissions(
-          alert: true,
-          badge: true,
-          sound: true,
-        );
+          IOSFlutterLocalNotificationsPlugin
+        >()
+        ?.requestPermissions(alert: true, badge: true, sound: true);
 
     return result ?? false;
   }

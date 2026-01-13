@@ -1,18 +1,13 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
-import 'package:portal/providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import '../utils/vrchat_image_utils.dart';
 
 class GroupSelectionPage extends ConsumerStatefulWidget {
   final String userId;
 
-  const GroupSelectionPage({
-    super.key,
-    required this.userId,
-  });
+  const GroupSelectionPage({super.key, required this.userId});
 
   @override
   ConsumerState<GroupSelectionPage> createState() => _GroupSelectionPageState();
@@ -63,9 +58,12 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
           if (monitorState.selectedGroupIds.isNotEmpty)
             TextButton.icon(
               onPressed: () {
-                final notifier =
-                    ref.read(groupMonitorProvider(widget.userId).notifier);
-                for (final groupId in monitorState.allGroups.map((g) => g.id!)) {
+                final notifier = ref.read(
+                  groupMonitorProvider(widget.userId).notifier,
+                );
+                for (final groupId in monitorState.allGroups.map(
+                  (g) => g.id!,
+                )) {
                   notifier.toggleGroupSelection(groupId);
                 }
               },
@@ -81,8 +79,8 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
             child: monitorState.isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredGroups.isEmpty
-                    ? _buildEmptyState(context)
-                    : _buildGroupGrid(context),
+                ? _buildEmptyState(context)
+                : _buildGroupGrid(context),
           ),
         ],
       ),
@@ -98,9 +96,7 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
           hintText: 'Search groups...',
           prefixIcon: const Icon(Icons.search),
           filled: true,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 14,
@@ -134,8 +130,8 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
             Text(
               'You are not a member of any groups',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -156,16 +152,18 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
         itemCount: _filteredGroups.length,
         itemBuilder: (context, index) {
           final group = _filteredGroups[index];
-          final isSelected =
-              ref.watch(groupMonitorProvider(widget.userId)).selectedGroupIds.contains(group.id);
+          final isSelected = ref
+              .watch(groupMonitorProvider(widget.userId))
+              .selectedGroupIds
+              .contains(group.id);
 
           return _GroupChip(
             group: group,
             isSelected: isSelected,
             onTap: () {
-              ref.read(groupMonitorProvider(widget.userId).notifier).toggleGroupSelection(
-                    group.id!,
-                  );
+              ref
+                  .read(groupMonitorProvider(widget.userId).notifier)
+                  .toggleGroupSelection(group.id!);
             },
           );
         },
@@ -204,43 +202,35 @@ class _GroupChip extends ConsumerWidget {
 
   Widget _buildAvatar(BuildContext context, WidgetRef ref) {
     final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
-    final imageUrl = hasImage ? group.iconUrl! : '';
 
-    return FutureBuilder<Uint8List?>(
-      future: fetchImageBytesWithAuth(ref, imageUrl),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return CircleAvatar(
-            radius: 16,
-            backgroundColor: _getAvatarColor(group.id ?? ''),
-            child: const SizedBox(
-              width: 8,
-              height: 8,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          );
-        }
-
-        final bytes = snapshot.data;
-        if (bytes != null) {
-          return CircleAvatar(
-            radius: 16,
-            backgroundImage: MemoryImage(bytes),
-          );
-        }
-
-        return CircleAvatar(
-          radius: 16,
-          backgroundColor: _getAvatarColor(group.id ?? ''),
-          child: Text(
-            _getInitials(group.name ?? 'Group'),
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
+    return CircleAvatar(
+      radius: 16,
+      child: ClipOval(
+        child: CachedImage(
+          imageUrl: hasImage ? group.iconUrl! : '',
+          ref: ref,
+          width: 32,
+          height: 32,
+          fallbackWidget: hasImage
+              ? null
+              : Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _getAvatarColor(group.id ?? ''),
+                  ),
+                  child: Center(
+                    child: Text(
+                      _getInitials(group.name ?? 'Group'),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ),
-          ),
-        );
-      },
+          showLoadingIndicator: false,
+        ),
+      ),
     );
   }
 

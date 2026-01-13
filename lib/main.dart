@@ -24,11 +24,7 @@ void main() async {
     });
   }
 
-  runApp(
-    const ProviderScope(
-      child: PortalApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: PortalApp()));
 }
 
 class PortalApp extends ConsumerWidget {
@@ -56,17 +52,13 @@ class PortalApp extends ConsumerWidget {
       routes: [
         GoRoute(
           path: '/',
-          pageBuilder: (context, state) => MaterialPage(
-                key: state.pageKey,
-                child: const LoginPage(),
-              ),
+          pageBuilder: (context, state) =>
+              MaterialPage(key: state.pageKey, child: const LoginPage()),
         ),
         GoRoute(
           path: '/dashboard',
-          pageBuilder: (context, state) => MaterialPage(
-                key: state.pageKey,
-                child: const DashboardPage(),
-              ),
+          pageBuilder: (context, state) =>
+              MaterialPage(key: state.pageKey, child: const DashboardPage()),
         ),
       ],
     );

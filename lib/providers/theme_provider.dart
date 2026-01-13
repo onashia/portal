@@ -16,7 +16,7 @@ class ThemeNotifier extends StateNotifier<ThemeMode> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final themeString = prefs.getString(_themeKey);
-      
+
       if (themeString != null) {
         state = ThemeMode.values.firstWhere(
           (mode) => mode.name == themeString,

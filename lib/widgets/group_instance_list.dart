@@ -1,37 +1,8 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
-import 'package:portal/providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import 'package:portal/utils/vrchat_image_utils.dart';
-
-Future<Image> fetchImageWithAuth(
-  WidgetRef ref,
-  String imageUrl, {
-  double? width,
-  double? height,
-  BoxFit fit = BoxFit.cover,
-}) async {
-  try {
-    final api = ref.read(vrchatApiProvider);
-    final fileIdInfo = extractFileIdFromUrl(imageUrl);
-    final response = await api.rawApi.getFilesApi().downloadFileVersion(
-      fileId: fileIdInfo.fileId,
-      versionId: fileIdInfo.version,
-    );
-    final bytes = response.data as Uint8List;
-    return Image.memory(
-      bytes,
-      width: width,
-      height: height,
-      fit: fit,
-    );
-  } catch (e) {
-    debugPrint('[IMAGE_FETCH] Failed to fetch image: $e');
-    rethrow;
-  }
-}
 
 class GroupInstanceList extends ConsumerWidget {
   final VoidCallback onRefresh;
@@ -47,7 +18,9 @@ class GroupInstanceList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final monitorState = ref.watch(groupMonitorProvider(userId));
 
-    final allInstances = monitorState.groupInstances.values.expand((e) => e).toList();
+    final allInstances = monitorState.groupInstances.values
+        .expand((e) => e)
+        .toList();
 
     if (allInstances.isEmpty) {
       return _buildEmptyState(context, monitorState);
@@ -73,10 +46,7 @@ class GroupInstanceList extends ConsumerWidget {
     );
   }
 
-  Widget _buildEmptyState(
-    BuildContext context,
-    GroupMonitorState state,
-  ) {
+  Widget _buildEmptyState(BuildContext context, GroupMonitorState state) {
     if (state.selectedGroupIds.isEmpty) {
       return Center(
         child: Padding(
@@ -98,8 +68,8 @@ class GroupInstanceList extends ConsumerWidget {
               Text(
                 'Select groups to monitor for new instances',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -130,8 +100,8 @@ class GroupInstanceList extends ConsumerWidget {
                   ? 'No instances are currently open for your selected groups'
                   : 'Start monitoring to see open instances',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -222,50 +192,17 @@ class _InstanceCard extends ConsumerWidget {
     final thumbnailUrl = world?.thumbnailImageUrl;
 
     if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
-      return FutureBuilder<Image>(
-        future: fetchImageWithAuth(
-          ref,
-          thumbnailUrl,
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: CachedImage(
+          imageUrl: thumbnailUrl,
+          ref: ref,
           width: 64,
           height: 64,
           fit: BoxFit.cover,
+          fallbackWidget: _buildThumbnailFallback(context),
+          showLoadingIndicator: true,
         ),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              ),
-              child: Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            );
-          }
-
-          if (snapshot.hasError) {
-            return _buildThumbnailFallback(context);
-          }
-
-          final image = snapshot.data;
-          if (image != null) {
-            return SizedBox(
-              width: 64,
-              height: 64,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: image,
-              ),
-            );
-          }
-
-          return _buildThumbnailFallback(context);
-        },
       );
     }
 
@@ -290,8 +227,8 @@ class _InstanceCard extends ConsumerWidget {
         child: Text(
           group.name ?? 'Unknown Group',
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           overflow: TextOverflow.ellipsis,
           maxLines: 1,
         ),
@@ -300,34 +237,27 @@ class _InstanceCard extends ConsumerWidget {
 
     return Row(
       children: [
-        FutureBuilder<Image>(
-          future: fetchImageWithAuth(
-            ref,
-            group.iconUrl!,
+        ClipOval(
+          child: SizedBox(
             width: 16,
             height: 16,
-            fit: BoxFit.cover,
+            child: CachedImage(
+              imageUrl: group.iconUrl!,
+              ref: ref,
+              width: 16,
+              height: 16,
+              fit: BoxFit.cover,
+              showLoadingIndicator: false,
+            ),
           ),
-          builder: (context, snapshot) {
-            if (snapshot.hasData && snapshot.data != null) {
-              return ClipOval(
-                child: SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: snapshot.data!,
-                ),
-              );
-            }
-            return const SizedBox.shrink();
-          },
         ),
         const SizedBox(width: 6),
         Flexible(
           child: Text(
             group.name ?? 'Unknown Group',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
             overflow: TextOverflow.ellipsis,
             maxLines: 1,
           ),
@@ -343,9 +273,9 @@ class _InstanceCard extends ConsumerWidget {
             child: Text(
               'NEW',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    fontWeight: FontWeight.bold,
-                  ),
+                color: Theme.of(context).colorScheme.onPrimary,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -357,18 +287,15 @@ class _InstanceCard extends ConsumerWidget {
     final worldName = world?.name ?? 'Unknown World';
     return Text(
       worldName,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+      style: Theme.of(
+        context,
+      ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
       overflow: TextOverflow.ellipsis,
       maxLines: 1,
     );
   }
 
-  Widget _buildInstanceInfo(
-    BuildContext context,
-    GroupInstance instance,
-  ) {
+  Widget _buildInstanceInfo(BuildContext context, GroupInstance instance) {
     return Row(
       children: [
         Icon(
@@ -381,9 +308,9 @@ class _InstanceCard extends ConsumerWidget {
           child: Text(
             instance.location,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontFamily: 'monospace',
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontFamily: 'monospace',
+            ),
             overflow: TextOverflow.ellipsis,
             maxLines: 1,
           ),
@@ -392,10 +319,7 @@ class _InstanceCard extends ConsumerWidget {
     );
   }
 
-  Widget _buildMemberCount(
-    BuildContext context,
-    GroupInstance instance,
-  ) {
+  Widget _buildMemberCount(BuildContext context, GroupInstance instance) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -414,9 +338,9 @@ class _InstanceCard extends ConsumerWidget {
           Text(
             instance.memberCount.toString(),
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSecondaryContainer,
-                  fontWeight: FontWeight.bold,
-                ),
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),

@@ -31,12 +31,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final authState = ref.read(authProvider);
 
     if (authState.requiresTwoFactorAuth) {
-      await ref.read(authProvider.notifier).verify2FA(_twoFactorController.text);
+      await ref
+          .read(authProvider.notifier)
+          .verify2FA(_twoFactorController.text);
     } else {
-      await ref.read(authProvider.notifier).login(
-        _usernameController.text,
-        _passwordController.text,
-      );
+      await ref
+          .read(authProvider.notifier)
+          .login(_usernameController.text, _passwordController.text);
     }
   }
 
@@ -94,8 +95,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             ? 'Enter your verification code'
                             : 'Sign in to your VRChat account',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 32),
@@ -156,10 +157,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .errorContainer
-                                .withValues(alpha: 0.1),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.errorContainer.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: Theme.of(context).colorScheme.error,
@@ -201,11 +201,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                   color: Colors.white,
                                 ),
                               )
-                            : Text(authState.status == AuthStatus.requiresEmailVerification
-                                ? 'Retry Login'
-                                : authState.requiresTwoFactorAuth
+                            : Text(
+                                authState.status ==
+                                        AuthStatus.requiresEmailVerification
+                                    ? 'Retry Login'
+                                    : authState.requiresTwoFactorAuth
                                     ? 'Verify'
-                                    : 'Sign In'),
+                                    : 'Sign In',
+                              ),
                       ),
                       if (authState.requiresTwoFactorAuth) ...[
                         const SizedBox(height: 16),
