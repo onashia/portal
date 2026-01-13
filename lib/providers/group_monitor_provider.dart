@@ -1,18 +1,22 @@
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_provider.dart';
+import '../models/group_instance_with_group.dart';
 
 class GroupMonitorState {
   final List<LimitedUserGroups> allGroups;
   final Set<String> selectedGroupIds;
-  final Map<String, List<GroupInstance>> groupInstances;
-  final List<GroupInstance> newInstances;
+  final Map<String, List<GroupInstanceWithGroup>> groupInstances;
+  final List<GroupInstanceWithGroup> newInstances;
   final bool isMonitoring;
   final bool isLoading;
   final String? errorMessage;
+  final Map<String, String> groupErrors;
 
   GroupMonitorState({
     this.allGroups = const [],
@@ -22,16 +26,18 @@ class GroupMonitorState {
     this.isMonitoring = false,
     this.isLoading = false,
     this.errorMessage,
+    this.groupErrors = const {},
   });
 
   GroupMonitorState copyWith({
     List<LimitedUserGroups>? allGroups,
     Set<String>? selectedGroupIds,
-    Map<String, List<GroupInstance>>? groupInstances,
-    List<GroupInstance>? newInstances,
+    Map<String, List<GroupInstanceWithGroup>>? groupInstances,
+    List<GroupInstanceWithGroup>? newInstances,
     bool? isMonitoring,
     bool? isLoading,
     String? errorMessage,
+    Map<String, String>? groupErrors,
   }) {
     return GroupMonitorState(
       allGroups: allGroups ?? this.allGroups,
@@ -41,19 +47,20 @@ class GroupMonitorState {
       isMonitoring: isMonitoring ?? this.isMonitoring,
       isLoading: isLoading ?? this.isLoading,
       errorMessage: errorMessage ?? this.errorMessage,
+      groupErrors: groupErrors ?? this.groupErrors,
     );
   }
 }
 
 class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
-  final VrchatDart api;
+  final Ref ref;
   final String userId;
   Timer? _pollingTimer;
   int _backoffDelay = 1;
   static const int _maxBackoffDelay = 300;
   static const int _pollingInterval = 60;
 
-  GroupMonitorNotifier(this.api, this.userId) : super(GroupMonitorState()) {
+  GroupMonitorNotifier(this.ref, this.userId) : super(GroupMonitorState()) {
     _loadSelectedGroups();
   }
 
@@ -100,6 +107,7 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
         name: 'portal.group_monitor',
       );
 
+      final api = ref.read(vrchatApiProvider);
       final response = await api.rawApi.getUsersApi().getUserGroups(
         userId: userId,
       );
@@ -127,13 +135,15 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
 
   void toggleGroupSelection(String groupId) {
     final newSelection = Set<String>.from(state.selectedGroupIds);
-    final newGroupInstances = Map<String, List<GroupInstance>>.from(
+    final newGroupInstances = Map<String, List<GroupInstanceWithGroup>>.from(
       state.groupInstances,
     );
+    final newGroupErrors = Map<String, String>.from(state.groupErrors);
 
     if (newSelection.contains(groupId)) {
       newSelection.remove(groupId);
       newGroupInstances.remove(groupId);
+      newGroupErrors.remove(groupId);
     } else {
       newSelection.add(groupId);
     }
@@ -141,6 +151,7 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
     state = state.copyWith(
       selectedGroupIds: newSelection,
       groupInstances: newGroupInstances,
+      groupErrors: newGroupErrors,
     );
 
     _saveSelectedGroups();
@@ -151,7 +162,19 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
   }
 
   void startMonitoring() {
-    if (state.isMonitoring) return;
+    debugPrint('[MONITOR] startMonitoring() called for userId: $userId');
+    developer.log(
+      'startMonitoring() called for userId: $userId',
+      name: 'portal.group_monitor',
+    );
+
+    if (state.isMonitoring) {
+      developer.log(
+        'Already monitoring, skipping startMonitoring()',
+        name: 'portal.group_monitor',
+      );
+      return;
+    }
 
     state = state.copyWith(isMonitoring: true);
     developer.log(
@@ -159,12 +182,26 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
       name: 'portal.group_monitor',
     );
 
-    _pollingTimer = Timer.periodic(
-      const Duration(seconds: _pollingInterval),
-      (_) => fetchGroupInstances(),
-    );
+    try {
+      _pollingTimer = Timer.periodic(
+        const Duration(seconds: _pollingInterval),
+        (_) => fetchGroupInstances(),
+      );
 
-    fetchGroupInstances();
+      developer.log(
+        'Timer created, calling fetchGroupInstances() immediately',
+        name: 'portal.group_monitor',
+      );
+
+      fetchGroupInstances();
+    } catch (e, s) {
+      developer.log(
+        'Failed to start monitoring',
+        name: 'portal.group_monitor',
+        error: e,
+        stackTrace: s,
+      );
+    }
   }
 
   void stopMonitoring() {
@@ -179,6 +216,15 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
   }
 
   Future<void> fetchGroupInstances() async {
+    debugPrint('[MONITOR] fetchGroupInstances() called');
+    debugPrint(
+      '[MONITOR] state.selectedGroupIds.length: ${state.selectedGroupIds.length}',
+    );
+    debugPrint('[MONITOR] state.selectedGroupIds: ${state.selectedGroupIds}');
+    developer.log('fetchGroupInstances() called', name: 'portal.group_monitor');
+
+    debugPrint('[MONITOR] About to check if selectedGroupIds is empty');
+
     if (state.selectedGroupIds.isEmpty) {
       developer.log(
         'No groups selected, skipping instance fetch',
@@ -188,46 +234,85 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
     }
 
     try {
+      debugPrint('[MONITOR] Entering try block');
       developer.log(
         'Fetching instances for ${state.selectedGroupIds.length} groups',
         name: 'portal.group_monitor',
       );
 
-      final newInstances = <GroupInstance>[];
-      final newGroupInstances = <String, List<GroupInstance>>{};
+      final api = ref.read(vrchatApiProvider);
+      final newInstances = <GroupInstanceWithGroup>[];
+      final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
+      final newGroupErrors = <String, String>{};
 
       for (final groupId in state.selectedGroupIds) {
         try {
-          final response = await api.rawApi.getGroupsApi().getGroupInstances(
-            groupId: groupId,
+          debugPrint('[MONITOR] Processing groupId: $groupId');
+          developer.log(
+            'Fetching instances for group: $groupId',
+            name: 'portal.group_monitor',
           );
-          final instances = response.data ?? [];
 
-          final previousInstances = state.groupInstances[groupId] ?? [];
-          final previousInstanceIds = previousInstances
-              .map((i) => i.instanceId)
-              .toSet();
+          final response = await api.rawApi
+              .getUsersApi()
+              .getUserGroupInstancesForGroup(userId: userId, groupId: groupId);
 
-          for (final instance in instances) {
-            if (!previousInstanceIds.contains(instance.instanceId)) {
-              newInstances.add(instance);
+          developer.log(
+            'API Response for group $groupId - Status: ${response.statusCode}, Data length: ${response.data?.instances?.length}',
+            name: 'portal.group_monitor',
+          );
+
+          final instances = response.data?.instances ?? [];
+
+          developer.log(
+            'Group $groupId returned ${instances.length} instances',
+            name: 'portal.group_monitor',
+          );
+
+          if (instances.isNotEmpty) {
+            for (final instance in instances) {
+              developer.log(
+                'Instance - ID: ${instance.instanceId}, Location: ${instance.location}, Members: ${instance.nUsers}, World: ${instance.world.id}',
+                name: 'portal.group_monitor',
+              );
             }
           }
 
-          newGroupInstances[groupId] = instances;
+          final previousInstances = state.groupInstances[groupId] ?? [];
+          final previousInstanceIds = previousInstances
+              .map((i) => i.instance.instanceId)
+              .toSet();
+
+          for (final instance in instances) {
+            final instanceWithGroup = GroupInstanceWithGroup(
+              instance: instance,
+              groupId: groupId,
+            );
+            if (!previousInstanceIds.contains(instance.instanceId)) {
+              newInstances.add(instanceWithGroup);
+            }
+          }
+
+          newGroupInstances[groupId] = instances
+              .map((i) => GroupInstanceWithGroup(instance: i, groupId: groupId))
+              .toList();
         } catch (e, s) {
+          final errorMessage = e.toString();
           developer.log(
-            'Failed to fetch instances for group $groupId',
+            'Failed to fetch instances for group $groupId: $errorMessage',
             name: 'portal.group_monitor',
             error: e,
             stackTrace: s,
           );
+          newGroupErrors[groupId] = errorMessage;
+          newGroupInstances[groupId] = [];
         }
       }
 
       state = state.copyWith(
         groupInstances: newGroupInstances,
         newInstances: [...state.newInstances, ...newInstances],
+        groupErrors: newGroupErrors,
       );
 
       _backoffDelay = 1;
@@ -253,6 +338,7 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
 
   Future<World?> fetchWorldDetails(String worldId) async {
     try {
+      final api = ref.read(vrchatApiProvider);
       final response = await api.rawApi.getWorldsApi().getWorld(
         worldId: worldId,
       );
@@ -285,6 +371,7 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
         selectedGroupIds: {},
         groupInstances: {},
         newInstances: [],
+        groupErrors: {},
       );
 
       developer.log(
@@ -313,6 +400,5 @@ final groupMonitorProvider =
       GroupMonitorState,
       String
     >((ref, userId) {
-      final api = ref.watch(vrchatApiProvider);
-      return GroupMonitorNotifier(api, userId);
+      return GroupMonitorNotifier(ref, userId);
     });

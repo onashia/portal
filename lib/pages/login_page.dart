@@ -47,7 +47,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     return Scaffold(
       appBar: CustomTitleBar(
-        title: 'Portal',
+        title: 'portal.',
+        icon: Icons.tonality,
         actions: [
           IconButton(
             icon: Icon(

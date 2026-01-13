@@ -62,7 +62,7 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
                   groupMonitorProvider(widget.userId).notifier,
                 );
                 for (final groupId in monitorState.allGroups.map(
-                  (g) => g.id!,
+                  (g) => g.groupId!,
                 )) {
                   notifier.toggleGroupSelection(groupId);
                 }
@@ -155,7 +155,7 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
           final isSelected = ref
               .watch(groupMonitorProvider(widget.userId))
               .selectedGroupIds
-              .contains(group.id);
+              .contains(group.groupId);
 
           return _GroupChip(
             group: group,
@@ -163,7 +163,7 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
             onTap: () {
               ref
                   .read(groupMonitorProvider(widget.userId).notifier)
-                  .toggleGroupSelection(group.id!);
+                  .toggleGroupSelection(group.groupId!);
             },
           );
         },

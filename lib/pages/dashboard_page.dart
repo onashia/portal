@@ -67,12 +67,13 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final userId = currentUser.id;
     final monitorState = ref.watch(groupMonitorProvider(userId));
     final selectedGroups = monitorState.allGroups
-        .where((g) => monitorState.selectedGroupIds.contains(g.id))
+        .where((g) => monitorState.selectedGroupIds.contains(g.groupId))
         .toList();
 
     return Scaffold(
       appBar: CustomTitleBar(
-        title: 'Dashboard',
+        title: 'portal.',
+        icon: Icons.tonality,
         actions: [
           if (monitorState.newInstances.isNotEmpty)
             Stack(
@@ -236,9 +237,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   }
 
   String _getUserProfileImageUrl(CurrentUser currentUser) {
-    if (currentUser.profilePicOverrideThumbnail != null &&
-        currentUser.profilePicOverrideThumbnail!.isNotEmpty) {
-      return currentUser.profilePicOverrideThumbnail!;
+    if (currentUser.profilePicOverrideThumbnail.isNotEmpty) {
+      return currentUser.profilePicOverrideThumbnail;
     }
     return currentUser.currentAvatarThumbnailImageUrl;
   }
@@ -280,34 +280,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             const SizedBox(height: 16),
             Row(
               children: [
-                GroupAvatarStack(
-                  groups: selectedGroups,
-                  newInstancesCount: monitorState.newInstances.length,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            GroupSelectionPage(userId: userId),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Text(
-                    selectedGroups.isEmpty
-                        ? 'Tap avatars to select groups to monitor'
-                        : '${selectedGroups.length} group${selectedGroups.length == 1 ? '' : 's'} selected',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
                 if (selectedGroups.isNotEmpty)
-                  IconButton.outlined(
-                    icon: const Icon(Icons.manage_accounts),
-                    tooltip: 'Manage Groups',
-                    onPressed: () {
+                  GroupAvatarStack(
+                    groups: selectedGroups,
+                    onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (context) =>
@@ -316,6 +292,21 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       );
                     },
                   ),
+                const Spacer(),
+                IconButton.filled(
+                  tooltip: selectedGroups.isEmpty ? 'Add Groups' : 'Manage Groups',
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            GroupSelectionPage(userId: userId),
+                      ),
+                    );
+                  },
+                  icon: Icon(
+                    selectedGroups.isEmpty ? Icons.add : Icons.manage_accounts,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 16),

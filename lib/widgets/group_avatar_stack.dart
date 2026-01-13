@@ -5,7 +5,6 @@ import 'package:portal/utils/vrchat_image_utils.dart';
 
 class GroupAvatarStack extends ConsumerWidget {
   final List<LimitedUserGroups> groups;
-  final int newInstancesCount;
   final VoidCallback? onTap;
   final double spacing;
   final int maxStackedCount;
@@ -13,7 +12,6 @@ class GroupAvatarStack extends ConsumerWidget {
   const GroupAvatarStack({
     super.key,
     required this.groups,
-    this.newInstancesCount = 0,
     this.onTap,
     this.spacing = 24.0,
     this.maxStackedCount = 5,
@@ -22,7 +20,7 @@ class GroupAvatarStack extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (groups.isEmpty) {
-      return _buildEmptyState(context);
+      return const SizedBox.shrink();
     }
 
     final displayCount = groups.length > maxStackedCount
@@ -53,30 +51,7 @@ class GroupAvatarStack extends ConsumerWidget {
               left: displayCount * spacing,
               child: _buildOverflowAvatar(context, overflowCount),
             ),
-          if (newInstancesCount > 0) _buildNotificationBadge(context),
         ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 2,
-          ),
-        ),
-        child: Icon(
-          Icons.add,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
       ),
     );
   }
@@ -152,34 +127,6 @@ class GroupAvatarStack extends ConsumerWidget {
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
             fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNotificationBadge(BuildContext context) {
-    return Positioned(
-      top: -4,
-      right: 4,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.error,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: Theme.of(context).colorScheme.surface,
-            width: 2,
-          ),
-        ),
-        constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-        child: Center(
-          child: Text(
-            newInstancesCount > 9 ? '9+' : newInstancesCount.toString(),
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
           ),
         ),
       ),

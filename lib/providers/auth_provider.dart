@@ -100,8 +100,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
             '[AUTH] AuthResponse data type: ${authResponse.runtimeType}',
           );
 
-          if (authResponse != null) {
-            debugPrint(
+          debugPrint(
               '[AUTH] Checking AuthResponse properties for 2FA indicator',
             );
             debugPrint(
@@ -128,9 +127,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
                 '[AUTH] Response succeeded but currentUser is still null - this is unexpected',
               );
             }
-          } else {
-            debugPrint('[AUTH] AuthResponse data is null');
-          }
         } else {
           debugPrint('[AUTH] Login response failed');
           debugPrint('[AUTH] Failure: $failure');
@@ -184,12 +180,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
       }
 
       developer.log(
-        'User authenticated successfully: ${currentUser.username}',
+        'User authenticated successfully: ${currentUser.displayName}',
         name: 'portal.auth',
         level: 500,
       );
       debugPrint(
-        '[AUTH] User authenticated successfully: ${currentUser.username}',
+        '[AUTH] User authenticated successfully: ${currentUser.displayName}',
       );
       debugPrint(
         '[AUTH] User twoFactorAuthEnabled: ${currentUser.twoFactorAuthEnabled}',
@@ -197,23 +193,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       if (currentUser.twoFactorAuthEnabled) {
         developer.log(
-          '2FA is enabled for user: ${currentUser.username}',
+          '2FA is enabled for user: ${currentUser.displayName}',
           name: 'portal.auth',
           level: 500,
         );
-        debugPrint('[AUTH] 2FA is enabled for user: ${currentUser.username}');
+        debugPrint('[AUTH] 2FA is enabled for user: ${currentUser.displayName}');
         state = state.copyWith(
           status: AuthStatus.requires2FA,
           requiresTwoFactorAuth: true,
         );
       } else {
         developer.log(
-          '2FA is not enabled, user fully authenticated: ${currentUser.username}',
+          '2FA is not enabled, user fully authenticated: ${currentUser.displayName}',
           name: 'portal.auth',
           level: 500,
         );
         debugPrint(
-          '[AUTH] 2FA is not enabled, user fully authenticated: ${currentUser.username}',
+          '[AUTH] 2FA is not enabled, user fully authenticated: ${currentUser.displayName}',
         );
         state = state.copyWith(
           status: AuthStatus.authenticated,
@@ -379,12 +375,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final currentUser = api.auth.currentUser;
       if (currentUser != null) {
         developer.log(
-          'Existing session found for user: ${currentUser.username}',
+          'Existing session found for user: ${currentUser.displayName}',
           name: 'portal.auth',
           level: 500,
         );
         debugPrint(
-          '[AUTH] Existing session found for user: ${currentUser.username}',
+          '[AUTH] Existing session found for user: ${currentUser.displayName}',
         );
         state = state.copyWith(
           status: AuthStatus.authenticated,
