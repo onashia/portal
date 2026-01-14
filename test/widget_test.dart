@@ -14,6 +14,6 @@ void main() {
   testWidgets('Portal app loads', (WidgetTester tester) async {
     await tester.pumpWidget(const ProviderScope(child: PortalApp()));
 
-    expect(find.text('Portal'), findsOneWidget);
+    expect(find.text('portal.'), findsOneWidget);
   });
 }

@@ -56,9 +56,9 @@ class GroupMonitorState {
 }
 
 class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
-  final String userId;
+  final String arg;
 
-  GroupMonitorNotifier(this.userId);
+  GroupMonitorNotifier(this.arg);
 
   @override
   GroupMonitorState build() {
@@ -110,7 +110,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
       final api = ref.read(vrchatApiProvider);
       final response = await api.rawApi.getUsersApi().getUserGroups(
-        userId: userId,
+        userId: arg,
       );
       final groups = response.data ?? [];
 
@@ -241,7 +241,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         ref.read(apiCallCounterProvider.notifier).incrementApiCall();
         try {
           return await api.rawApi.getUsersApi().getUserGroupInstancesForGroup(
-            userId: userId,
+            userId: arg,
             groupId: groupId,
           );
         } catch (e, s) {
@@ -387,5 +387,5 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
 final groupMonitorProvider =
     NotifierProvider.family<GroupMonitorNotifier, GroupMonitorState, String>(
-      (userId) => GroupMonitorNotifier(userId),
+      (arg) => GroupMonitorNotifier(arg),
     );

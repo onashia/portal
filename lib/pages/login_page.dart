@@ -151,7 +151,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           Text(
                             authState.requiresTwoFactorAuth
                                 ? 'Two-Factor Authentication'
-                                : 'Welcome to Portal',
+                                : 'Welcome to portal.',
                             style: Theme.of(context).textTheme.headlineMedium,
                             textAlign: TextAlign.center,
                           ),

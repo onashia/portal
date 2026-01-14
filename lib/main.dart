@@ -15,7 +15,7 @@ void main() async {
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     await windowManager.ensureInitialized();
     await windowManager.waitUntilReadyToShow().then((_) async {
-      await windowManager.setTitle('Portal');
+      await windowManager.setTitle('portal.');
       await windowManager.setSize(const Size(1200, 800));
       await windowManager.setMinimumSize(const Size(800, 600));
       await windowManager.center();
@@ -68,7 +68,7 @@ class PortalApp extends ConsumerWidget {
     );
 
     return MaterialApp.router(
-      title: 'Portal',
+      title: 'portal.',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,

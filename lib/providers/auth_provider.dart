@@ -159,7 +159,7 @@ final vrchatApiProvider = Provider<VrchatDart>((ref) {
   // This ensures authentication state is shared across all providers
   return VrchatDart(
     userAgent: VrchatUserAgent(
-      applicationName: 'Portal',
+      applicationName: 'portal.',
       version: '1.0.0',
       contactInfo: 'hails-pixels-9w@icloud.com',
     ),

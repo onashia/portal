@@ -126,7 +126,17 @@ class ImageCacheService {
   Future<Uint8List?> getCachedImage(String url) async {
     if (url.isEmpty) return null;
 
-    final cacheKey = _getCacheKey(url);
+    final String cacheKey;
+    try {
+      cacheKey = _getCacheKey(url);
+    } catch (e) {
+      AppLogger.error(
+        'Could not get cache key for URL: $url',
+        subCategory: 'image_cache',
+        error: e,
+      );
+      return null;
+    }
 
     AppLogger.debug(
       'Checking cache for: $url (key: $cacheKey)',
@@ -177,7 +187,17 @@ class ImageCacheService {
   Future<void> cacheImage(String url, Uint8List bytes) async {
     if (url.isEmpty) return;
 
-    final cacheKey = _getCacheKey(url);
+    final String cacheKey;
+    try {
+      cacheKey = _getCacheKey(url);
+    } catch (e) {
+      AppLogger.error(
+        'Could not get cache key for URL: $url',
+        subCategory: 'image_cache',
+        error: e,
+      );
+      return;
+    }
 
     // Store in both caches for maximum availability
     _memoryCache.put(cacheKey, bytes);
