@@ -161,7 +161,7 @@ final vrchatApiProvider = Provider<VrchatDart>((ref) {
     userAgent: VrchatUserAgent(
       applicationName: 'Portal',
       version: '1.0.0',
-      contactInfo: 'portal@onashia.com',
+      contactInfo: 'hails-pixels-9w@icloud.com',
     ),
   );
 });
