@@ -119,15 +119,10 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
           const Spacer(),
           if (monitorState.selectedGroupIds.isNotEmpty)
             TextButton.icon(
-              onPressed: () {
-                final notifier = ref.read(
-                  groupMonitorProvider(widget.userId).notifier,
-                );
-                for (final groupId in monitorState.allGroups.map(
-                  (g) => g.groupId!,
-                )) {
-                  notifier.toggleGroupSelection(groupId);
-                }
+              onPressed: () async {
+                await ref
+                    .read(groupMonitorProvider(widget.userId).notifier)
+                    .clearSelectedGroups();
               },
               icon: const Icon(Icons.deselect),
               label: const Text('Deselect All'),
