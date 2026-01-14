@@ -173,7 +173,6 @@ class _GroupInstancesSection extends ConsumerWidget {
               height: 24,
               child: CachedImage(
                 imageUrl: group.iconUrl!,
-                ref: ref,
                 width: 24,
                 height: 24,
                 fit: BoxFit.cover,
@@ -281,7 +280,6 @@ class _InstanceCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(12),
         child: CachedImage(
           imageUrl: thumbnailUrl,
-          ref: ref,
           width: 64,
           height: 64,
           fit: BoxFit.cover,
@@ -328,7 +326,6 @@ class _InstanceCard extends ConsumerWidget {
             height: 16,
             child: CachedImage(
               imageUrl: group.iconUrl!,
-              ref: ref,
               width: 16,
               height: 16,
               fit: BoxFit.cover,

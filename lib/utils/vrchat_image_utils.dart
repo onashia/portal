@@ -202,7 +202,6 @@ class CachedImage extends ConsumerWidget {
   const CachedImage({
     super.key,
     required this.imageUrl,
-    required this.ref,
     this.width,
     this.height,
     this.shape = BoxShape.rectangle,
@@ -217,8 +216,6 @@ class CachedImage extends ConsumerWidget {
     this.onTap,
   });
 
-  final WidgetRef ref;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (imageUrl.isEmpty) {
@@ -228,7 +225,7 @@ class CachedImage extends ConsumerWidget {
     final cacheService = ImageCacheService();
 
     return FutureBuilder<Uint8List?>(
-      future: _loadImage(cacheService),
+      future: _loadImage(cacheService, ref),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           if (showLoadingIndicator) {
@@ -247,7 +244,10 @@ class CachedImage extends ConsumerWidget {
     );
   }
 
-  Future<Uint8List?> _loadImage(ImageCacheService cacheService) async {
+  Future<Uint8List?> _loadImage(
+    ImageCacheService cacheService,
+    WidgetRef ref,
+  ) async {
     debugPrint('[CACHED_IMAGE] _loadImage called for: $imageUrl');
 
     final cachedBytes = await cacheService.getCachedImage(imageUrl);

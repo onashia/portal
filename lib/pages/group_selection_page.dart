@@ -257,7 +257,6 @@ class _GroupChip extends ConsumerWidget {
       child: ClipOval(
         child: CachedImage(
           imageUrl: hasImage ? group.iconUrl! : '',
-          ref: ref,
           width: 32,
           height: 32,
           fallbackWidget: hasImage

@@ -224,7 +224,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           children: [
             CachedImage(
               imageUrl: _getUserProfileImageUrl(currentUser),
-              ref: ref,
               width: 56,
               height: 56,
               shape: BoxShape.circle,

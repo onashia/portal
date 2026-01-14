@@ -68,7 +68,6 @@ class GroupAvatarStack extends ConsumerWidget {
 
     return CachedImage(
       imageUrl: hasImage ? group.iconUrl! : '',
-      ref: ref,
       width: 48,
       height: 48,
       shape: BoxShape.circle,
