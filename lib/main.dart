@@ -15,20 +15,17 @@ void main() async {
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     await windowManager.ensureInitialized();
     await windowManager.waitUntilReadyToShow().then((_) async {
-      await windowManager.setTitle('Portal');
+      await windowManager.setTitle('portal.');
       await windowManager.setSize(const Size(1200, 800));
       await windowManager.setMinimumSize(const Size(800, 600));
       await windowManager.center();
       await windowManager.setAsFrameless();
+      await windowManager.setResizable(true);
       await windowManager.show();
     });
   }
 
-  runApp(
-    const ProviderScope(
-      child: PortalApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: PortalApp()));
 }
 
 class PortalApp extends ConsumerWidget {
@@ -37,16 +34,19 @@ class PortalApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeProvider);
-    final authState = ref.watch(authProvider);
+    final authValue = ref.watch(authProvider);
 
     final router = GoRouter(
       initialLocation: '/',
+      // Authentication guard: redirect based on auth state
       redirect: (context, state) {
-        if (authState.status == AuthStatus.authenticated) {
+        if (authValue.value?.status == AuthStatus.authenticated) {
+          // Authenticated users cannot stay on login page
           if (state.matchedLocation == '/') {
             return '/dashboard';
           }
         } else {
+          // Unauthenticated users cannot access dashboard
           if (state.matchedLocation == '/dashboard') {
             return '/';
           }
@@ -56,23 +56,19 @@ class PortalApp extends ConsumerWidget {
       routes: [
         GoRoute(
           path: '/',
-          pageBuilder: (context, state) => MaterialPage(
-                key: state.pageKey,
-                child: const LoginPage(),
-              ),
+          pageBuilder: (context, state) =>
+              MaterialPage(key: state.pageKey, child: const LoginPage()),
         ),
         GoRoute(
           path: '/dashboard',
-          pageBuilder: (context, state) => MaterialPage(
-                key: state.pageKey,
-                child: const DashboardPage(),
-              ),
+          pageBuilder: (context, state) =>
+              MaterialPage(key: state.pageKey, child: const DashboardPage()),
         ),
       ],
     );
 
     return MaterialApp.router(
-      title: 'Portal',
+      title: 'portal.',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,

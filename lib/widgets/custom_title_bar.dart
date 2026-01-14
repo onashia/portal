@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
-import '../providers/theme_provider.dart';
 
 class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
   final String title;
+  final IconData? icon;
   final List<Widget>? actions;
   final Color? backgroundColor;
   final Color? foregroundColor;
@@ -12,6 +12,7 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
   const CustomTitleBar({
     super.key,
     required this.title,
+    this.icon,
     this.actions,
     this.backgroundColor,
     this.foregroundColor,
@@ -23,32 +24,27 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final themeMode = ref.watch(themeProvider);
-    final isDark = themeMode == ThemeMode.dark;
 
-    final bgColor = backgroundColor ?? 
-        (isDark 
-            ? theme.colorScheme.surface 
-            : theme.colorScheme.surface);
-    
-    final fgColor = foregroundColor ?? 
-        (isDark 
-            ? theme.colorScheme.onSurface 
-            : theme.colorScheme.onSurface);
+    final bgColor = backgroundColor ?? theme.colorScheme.surface;
+
+    final fgColor = foregroundColor ?? theme.colorScheme.onSurface;
 
     return Container(
       height: 40,
-      decoration: BoxDecoration(
-        color: bgColor,
-      ),
+      decoration: BoxDecoration(color: bgColor),
       child: Row(
         children: [
           Expanded(
+            // Enables window dragging from title area
             child: DragToMoveArea(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
+                    if (icon != null) ...[
+                      Icon(icon, size: 18, color: fgColor),
+                      const SizedBox(width: 8),
+                    ],
                     Text(
                       title,
                       style: theme.textTheme.bodyMedium?.copyWith(
@@ -64,7 +60,7 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
           if (actions != null) ...actions!,
           _WindowButtons(
             foregroundColor: fgColor,
-            hoverColor: theme.hoverColor,
+            hoverColor: theme.colorScheme.onSurface.withValues(alpha: 0.1),
           ),
         ],
       ),
@@ -161,17 +157,13 @@ class _WindowButtonState extends State<_WindowButton> {
           width: 46,
           height: 40,
           decoration: BoxDecoration(
-            color: _isHovered 
-                ? (widget.isCloseButton 
-                    ? Colors.red 
-                    : widget.hoverColor.withOpacity(0.1))
+            color: _isHovered
+                ? (widget.isCloseButton
+                      ? Colors.red
+                      : widget.hoverColor.withValues(alpha: 0.1))
                 : null,
           ),
-          child: Icon(
-            widget.icon,
-            size: 16,
-            color: widget.foregroundColor,
-          ),
+          child: Icon(widget.icon, size: 16, color: widget.foregroundColor),
         ),
       ),
     );

@@ -12,12 +12,8 @@ import 'package:portal/main.dart';
 
 void main() {
   testWidgets('Portal app loads', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      const ProviderScope(
-        child: PortalApp(),
-      ),
-    );
-    
-    expect(find.text('Portal'), findsOneWidget);
+    await tester.pumpWidget(const ProviderScope(child: PortalApp()));
+
+    expect(find.text('portal.'), findsOneWidget);
   });
 }

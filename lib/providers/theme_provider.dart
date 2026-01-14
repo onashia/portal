@@ -1,22 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum ThemeModeType { light, dark, system }
+import '../utils/app_logger.dart';
 
-class ThemeNotifier extends StateNotifier<ThemeMode> {
+class ThemeNotifier extends Notifier<ThemeMode> {
   static const _themeKey = 'theme_mode';
 
-  ThemeNotifier() : super(ThemeMode.system) {
+  @override
+  ThemeMode build() {
     _loadTheme();
+    return ThemeMode.system;
   }
 
   Future<void> _loadTheme() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final themeString = prefs.getString(_themeKey);
-      
+
       if (themeString != null) {
         state = ThemeMode.values.firstWhere(
           (mode) => mode.name == themeString,
@@ -24,7 +25,7 @@ class ThemeNotifier extends StateNotifier<ThemeMode> {
         );
       }
     } catch (e) {
-      debugPrint('Error loading theme: $e');
+      AppLogger.error('Error loading theme', subCategory: 'theme', error: e);
     }
   }
 
@@ -34,7 +35,7 @@ class ThemeNotifier extends StateNotifier<ThemeMode> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_themeKey, mode.name);
     } catch (e) {
-      debugPrint('Error saving theme: $e');
+      AppLogger.error('Error saving theme', subCategory: 'theme', error: e);
     }
   }
 
@@ -44,6 +45,6 @@ class ThemeNotifier extends StateNotifier<ThemeMode> {
   }
 }
 
-final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeMode>((ref) {
-  return ThemeNotifier();
-});
+final themeProvider = NotifierProvider<ThemeNotifier, ThemeMode>(
+  ThemeNotifier.new,
+);
