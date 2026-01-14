@@ -5,6 +5,7 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 import '../providers/group_monitor_provider.dart';
 import '../utils/group_utils.dart';
 import '../utils/vrchat_image_utils.dart';
+import '../utils/app_logger.dart';
 
 class GroupSelectionPage extends ConsumerStatefulWidget {
   final String userId;
@@ -34,7 +35,10 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      debugPrint('[GROUP_SELECTION] Fetching user groups');
+      AppLogger.debug(
+        'Fetching user groups',
+        subCategory: 'group_selection',
+      );
       ref.read(groupMonitorProvider(widget.userId).notifier).fetchUserGroups();
     });
   }

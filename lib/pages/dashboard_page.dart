@@ -12,6 +12,7 @@ import '../widgets/custom_title_bar.dart';
 import '../widgets/debug_info_card.dart';
 import '../widgets/group_avatar_stack.dart';
 import '../widgets/group_instance_list.dart';
+import '../utils/app_logger.dart';
 import 'group_selection_page.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
@@ -28,12 +29,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   @override
   void initState() {
     super.initState();
-    debugPrint('[DASHBOARD_INIT] initState() called');
+    AppLogger.debug(
+      'Dashboard initialized',
+      subCategory: 'dashboard',
+    );
     _initializeDashboard();
   }
 
   Future<void> _initializeDashboard() async {
-    debugPrint('[DASHBOARD_INIT] _initializeDashboard() called');
+    AppLogger.debug(
+      'Initializing dashboard',
+      subCategory: 'dashboard',
+    );
     final authValue = ref.read(authProvider);
     authValue.when(
       data: (authState) async {

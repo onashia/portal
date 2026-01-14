@@ -236,19 +236,31 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
       final newGroupErrors = <String, String>{};
 
-      for (final groupId in state.selectedGroupIds) {
+      final futures = state.selectedGroupIds.map((groupId) async {
+        ref.read(apiCallCounterProvider.notifier).incrementApiCall();
+        return api.rawApi
+            .getUsersApi()
+            .getUserGroupInstancesForGroup(userId: userId, groupId: groupId);
+      }).toList();
+
+      final responses = await Future.wait(futures, eagerError: true);
+
+      for (int i = 0; i < responses.length; i++) {
+        final groupId = state.selectedGroupIds.elementAt(i);
+        final response = responses[i];
+
         try {
-          AppLogger.debug(
-            'Fetching instances for group',
-            subCategory: 'group_monitor',
-          );
-
-          ref.read(apiCallCounterProvider.notifier).incrementApiCall();
-
-          final response = await api.rawApi
-              .getUsersApi()
-              .getUserGroupInstancesForGroup(
-                  userId: userId, groupId: groupId);
+          if (response is Exception) {
+            final errorMessage = response.toString();
+            AppLogger.error(
+              'Failed to fetch instances for group',
+              subCategory: 'group_monitor',
+              error: response,
+            );
+            newGroupErrors[groupId] = errorMessage;
+            newGroupInstances[groupId] = [];
+            continue;
+          }
 
           final instances = response.data?.instances ?? [];
 

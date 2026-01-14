@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/app_logger.dart';
+
 class ThemeNotifier extends Notifier<ThemeMode> {
   static const _themeKey = 'theme_mode';
 
@@ -23,7 +25,11 @@ class ThemeNotifier extends Notifier<ThemeMode> {
         );
       }
     } catch (e) {
-      debugPrint('Error loading theme: $e');
+      AppLogger.error(
+        'Error loading theme',
+        subCategory: 'theme',
+        error: e,
+      );
     }
   }
 
@@ -33,7 +39,11 @@ class ThemeNotifier extends Notifier<ThemeMode> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_themeKey, mode.name);
     } catch (e) {
-      debugPrint('Error saving theme: $e');
+      AppLogger.error(
+        'Error saving theme',
+        subCategory: 'theme',
+        error: e,
+      );
     }
   }
 
