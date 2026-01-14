@@ -23,6 +23,8 @@ class GroupUtils {
   }
 
   static Color getAvatarColor(LimitedUserGroups group) {
+    // Use hash to generate consistent, deterministic colors for each group
+    // This ensures the same group always gets the same color across sessions
     final name = group.name ?? '';
     final discriminator = group.discriminator ?? '';
 
@@ -39,9 +41,11 @@ class GroupUtils {
       return Colors.grey;
     }
 
+    // Hash the string to get a consistent hue value (0-360)
     final hash = inputString.hashCode;
     final hue = (hash.abs() % 360).toDouble();
 
+    // Fixed saturation and lightness for consistent appearance across all colors
     return HSLColor.fromAHSL(1.0, hue / 360, 0.7, 0.6).toColor();
   }
 }

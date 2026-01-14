@@ -35,6 +35,7 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
       child: Row(
         children: [
           Expanded(
+            // Enables window dragging from title area
             child: DragToMoveArea(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),

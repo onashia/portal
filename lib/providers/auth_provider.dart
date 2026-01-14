@@ -63,6 +63,8 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
     final result = await _authService.login(username, password);
 
+    // Handle all possible authentication outcomes
+    // VRChat API may require 2FA, email verification, or fail with error
     switch (result.status) {
       case AuthResultStatus.success:
         state = AsyncData(
@@ -150,6 +152,8 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 }
 
 final vrchatApiProvider = Provider<VrchatDart>((ref) {
+  // Single shared API instance for the entire application
+  // This ensures authentication state is shared across all providers
   return VrchatDart(
     userAgent: VrchatUserAgent(
       applicationName: 'Portal',

@@ -3,6 +3,7 @@ import 'dart:collection';
 class LRUCache<K, V> {
   final int maxSize;
   final Map<K, _CacheNode<K, V>> _cache = {};
+  // LinkedHashMap maintains insertion order, enabling LRU tracking
   final LinkedHashMap<K, _CacheNode<K, V>> _lru = LinkedHashMap();
 
   LRUCache({required this.maxSize});
@@ -10,6 +11,7 @@ class LRUCache<K, V> {
   V? get(K key) {
     final node = _cache[key];
     if (node != null) {
+      // Move to end to mark as recently used
       _lru.remove(key);
       _lru[key] = node;
       return node.value;
@@ -21,9 +23,11 @@ class LRUCache<K, V> {
     final node = _CacheNode(key, value);
 
     if (_cache.containsKey(key)) {
+      // Update existing: remove and re-add to mark as recently used
       _lru.remove(key);
       _cache.remove(key);
     } else if (_lru.length >= maxSize) {
+      // Evict least recently used item (first in LinkedHashMap)
       final oldestKey = _lru.keys.first;
       _lru.remove(oldestKey);
       _cache.remove(oldestKey);

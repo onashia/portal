@@ -144,6 +144,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
     if (newSelection.contains(groupId)) {
       newSelection.remove(groupId);
+      // Clear cached data for deselected group to free memory
       newGroupInstances.remove(groupId);
       newGroupErrors.remove(groupId);
     } else {
@@ -188,6 +189,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         (_) => fetchGroupInstances(),
       );
 
+      // Initial fetch to populate data immediately
       fetchGroupInstances();
     } catch (e, s) {
       AppLogger.error(
@@ -236,6 +238,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
       final newGroupErrors = <String, String>{};
 
+      // Fetch all groups in parallel for better performance
       final futures = state.selectedGroupIds.map((groupId) async {
         ref.read(apiCallCounterProvider.notifier).incrementApiCall();
         return api.rawApi
@@ -243,6 +246,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
             .getUserGroupInstancesForGroup(userId: userId, groupId: groupId);
       }).toList();
 
+      // Use eagerError to fail fast if any request fails
       final responses = await Future.wait(futures, eagerError: true);
 
       for (int i = 0; i < responses.length; i++) {
@@ -257,6 +261,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
               subCategory: 'group_monitor',
               error: response,
             );
+            // Track error per-group so UI can display specific failures
             newGroupErrors[groupId] = errorMessage;
             newGroupInstances[groupId] = [];
             continue;
@@ -269,11 +274,13 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
             subCategory: 'group_monitor',
           );
 
+          // Compare with previous fetch to identify new instances
           final previousInstances = state.groupInstances[groupId] ?? [];
           final previousInstanceIds = previousInstances
               .map((i) => i.instance.instanceId)
               .toSet();
 
+          // Track instances that weren't in previous fetch
           for (final instance in instances) {
             final instanceWithGroup = GroupInstanceWithGroup(
               instance: instance,
@@ -295,6 +302,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
             error: e,
             stackTrace: s,
           );
+          // Track error per-group so UI can display specific failures
           newGroupErrors[groupId] = errorMessage;
           newGroupInstances[groupId] = [];
         }
@@ -302,10 +310,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
       state = state.copyWith(
         groupInstances: newGroupInstances,
+        // Accumulate new instances across all polls until acknowledged
         newInstances: [...state.newInstances, ...newInstances],
         groupErrors: newGroupErrors,
       );
 
+      // Reset backoff on successful fetch
       _backoffDelay = 1;
 
       if (newInstances.isNotEmpty) {
@@ -321,6 +331,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         error: e,
         stackTrace: s,
       );
+      // Exponential backoff: delay before retry, doubling each time
+      // Prevents overwhelming the API on transient failures
       await Future.delayed(Duration(seconds: _backoffDelay));
       _backoffDelay = (_backoffDelay * 2).clamp(1, AppConstants.maxBackoffDelay);
     }

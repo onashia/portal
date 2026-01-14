@@ -23,6 +23,8 @@ FileIdInfo extractFileIdFromUrl(String url) {
 
   final pathSegments = uri.pathSegments;
 
+  // VRChat URLs contain file IDs in path segments like: /.../file_abc123/2
+  // We search for segments starting with 'file_' and optionally parse version
   for (int i = 0; i < pathSegments.length; i++) {
     final segment = pathSegments[i];
 
@@ -31,6 +33,7 @@ FileIdInfo extractFileIdFromUrl(String url) {
 
       int version = 1;
 
+      // Version is optional and appears as next segment if present
       if (i + 1 < pathSegments.length) {
         final nextSegment = pathSegments[i + 1];
         final parsedVersion = int.tryParse(nextSegment);
@@ -149,10 +152,12 @@ class ImageCacheService {
 
     final cacheKey = _getCacheKey(url);
 
+    // Store in both caches for maximum availability
     _memoryCache.put(cacheKey, bytes);
 
     await _initialize();
 
+    // Persist to disk for app restarts
     if (_cacheDirectory != null) {
       try {
         final file = io.File('${_cacheDirectory!.path}/$cacheKey');

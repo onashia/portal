@@ -96,6 +96,8 @@ class NotificationService {
   }
 
   Future<bool> get hasPermission async {
+    // Android permissions are automatically granted at runtime
+    // iOS requires explicit user permission request
     if (defaultTargetPlatform == TargetPlatform.android) {
       return true;
     }

@@ -38,12 +38,15 @@ class PortalApp extends ConsumerWidget {
 
     final router = GoRouter(
       initialLocation: '/',
+      // Authentication guard: redirect based on auth state
       redirect: (context, state) {
         if (authValue.value?.status == AuthStatus.authenticated) {
+          // Authenticated users cannot stay on login page
           if (state.matchedLocation == '/') {
             return '/dashboard';
           }
         } else {
+          // Unauthenticated users cannot access dashboard
           if (state.matchedLocation == '/dashboard') {
             return '/';
           }
