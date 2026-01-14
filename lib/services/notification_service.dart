@@ -1,6 +1,7 @@
-import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+import '../utils/app_logger.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -37,16 +38,16 @@ class NotificationService {
 
     _isInitialized = true;
 
-    developer.log(
+    AppLogger.info(
       'Notification service initialized',
-      name: 'portal.notification',
+      subCategory: 'notification',
     );
   }
 
   void _onNotificationTap(NotificationResponse response) {
-    developer.log(
+    AppLogger.info(
       'Notification tapped: ${response.payload}',
-      name: 'portal.notification',
+      subCategory: 'notification',
     );
   }
 
@@ -84,15 +85,15 @@ class NotificationService {
       payload: 'new_instances',
     );
 
-    developer.log(
+    AppLogger.info(
       'Showed notification: $title - $body',
-      name: 'portal.notification',
+      subCategory: 'notification',
     );
   }
 
   Future<void> cancelAll() async {
     await _notifications.cancelAll();
-    developer.log('Cancelled all notifications', name: 'portal.notification');
+    AppLogger.info('Cancelled all notifications', subCategory: 'notification');
   }
 
   Future<bool> get hasPermission async {
