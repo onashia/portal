@@ -113,7 +113,10 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
             );
           } else {
             state = AsyncData(
-              AuthState(status: AuthStatus.error, errorMessage: errorMessage),
+              AuthState(
+                status: AuthStatus.error,
+                errorMessage: errorMessage,
+              ),
             );
           }
           return;
@@ -148,7 +151,10 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           subCategory: 'auth',
         );
         state = AsyncData(
-          AuthState(status: AuthStatus.authenticated, currentUser: currentUser),
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: currentUser,
+          ),
         );
       }
     } catch (e, s) {
@@ -275,7 +281,10 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       if (currentUser != null) {
         AppLogger.info('Existing session found', subCategory: 'auth');
         state = AsyncData(
-          AuthState(status: AuthStatus.authenticated, currentUser: currentUser),
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: currentUser,
+          ),
         );
       } else {
         AppLogger.info('No existing session found', subCategory: 'auth');
@@ -308,6 +317,5 @@ final vrchatApiProvider = Provider<VrchatDart>((ref) {
   );
 });
 
-final authProvider = AsyncNotifierProvider<AuthNotifier, AuthState>(
-  AuthNotifier.new,
-);
+final authProvider =
+    AsyncNotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);

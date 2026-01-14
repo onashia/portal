@@ -99,7 +99,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   }
 
   Future<void> fetchUserGroups() async {
-    state = state.copyWith(isLoading: true, errorMessage: null);
+    state = state.copyWith(
+      isLoading: true,
+      errorMessage: null,
+    );
 
     try {
       AppLogger.debug('Fetching groups for user', subCategory: 'group_monitor');
@@ -244,7 +247,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
           final response = await api.rawApi
               .getUsersApi()
-              .getUserGroupInstancesForGroup(userId: userId, groupId: groupId);
+              .getUserGroupInstancesForGroup(
+                  userId: userId, groupId: groupId);
 
           final instances = response.data?.instances ?? [];
 
@@ -306,10 +310,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         stackTrace: s,
       );
       await Future.delayed(Duration(seconds: _backoffDelay));
-      _backoffDelay = (_backoffDelay * 2).clamp(
-        1,
-        AppConstants.maxBackoffDelay,
-      );
+      _backoffDelay = (_backoffDelay * 2).clamp(1, AppConstants.maxBackoffDelay);
     }
   }
 
@@ -367,5 +368,5 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
 final groupMonitorProvider =
     NotifierProvider.family<GroupMonitorNotifier, GroupMonitorState, String>(
-      (userId) => GroupMonitorNotifier(userId),
-    );
+  (userId) => GroupMonitorNotifier(userId),
+);
