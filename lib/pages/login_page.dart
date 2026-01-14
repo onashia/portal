@@ -29,24 +29,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Future<void> _handleSubmit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final authValue = ref.read(authProvider);
+    final authState = ref.read(authProvider).value;
+    if (authState == null) return;
 
-    authValue.when(
-      data: (authState) async {
-        if (authState.requiresTwoFactorAuth) {
-          final code = _twoFactorController.text;
-          await ref.read(authProvider.notifier).verify2FA(code);
-          _twoFactorController.clear();
-        } else {
-          await ref
-              .read(authProvider.notifier)
-              .login(_usernameController.text, _passwordController.text);
-          _passwordController.clear();
-        }
-      },
-      loading: () {},
-      error: (error, stack) {},
-    );
+    if (authState.requiresTwoFactorAuth) {
+      final code = _twoFactorController.text;
+      await ref.read(authProvider.notifier).verify2FA(code);
+      _twoFactorController.clear();
+    } else {
+      await ref
+          .read(authProvider.notifier)
+          .login(_usernameController.text, _passwordController.text);
+      _passwordController.clear();
+    }
   }
 
   @override
