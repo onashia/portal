@@ -22,7 +22,6 @@ class DashboardPage extends ConsumerStatefulWidget {
 }
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
-  bool _listenerSetup = false;
   final OverlayPortalController _groupSelectionController =
       OverlayPortalController();
 
@@ -35,161 +34,185 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
   Future<void> _initializeDashboard() async {
     debugPrint('[DASHBOARD_INIT] _initializeDashboard() called');
-    final authState = ref.read(authProvider);
-    if (authState.currentUser != null) {
-      final userId = authState.currentUser!.id;
-
-      await NotificationService().initialize();
-    }
+    final authValue = ref.read(authProvider);
+    authValue.when(
+      data: (authState) async {
+        if (authState.currentUser != null) {
+          await NotificationService().initialize();
+        }
+      },
+      loading: () {},
+      error: (error, stack) {},
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authProvider);
-    final currentUser = authState.currentUser;
+    final authValue = ref.watch(authProvider);
     final themeMode = ref.watch(themeProvider);
 
-    if (!_listenerSetup && currentUser != null) {
-      _listenerSetup = true;
-      ref.listen<GroupMonitorState>(groupMonitorProvider(currentUser.id), (
-        previous,
-        next,
-      ) {
-        if (previous != null &&
-            next.newInstances.length > previous.newInstances.length) {
-          final newCount =
-              next.newInstances.length - previous.newInstances.length;
-          NotificationService().showNewInstanceNotification(count: newCount);
-        }
-      });
-    }
-
-    if (currentUser == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    final userId = currentUser.id;
-    final monitorState = ref.watch(groupMonitorProvider(userId));
-    final selectedGroups = monitorState.allGroups
-        .where((g) => monitorState.selectedGroupIds.contains(g.groupId))
-        .toList();
-
-    return OverlayPortal(
-      controller: _groupSelectionController,
-      overlayChildBuilder: (context) => GroupSelectionPage(
-        userId: userId,
-        controller: _groupSelectionController,
+    return authValue.when(
+      loading: () => const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          ),
+      error: (error, stack) => Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  size: 64,
+                  color: Colors.red,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'An error occurred',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  error.toString(),
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      child: Scaffold(
-        appBar: CustomTitleBar(
-          title: 'portal.',
-          icon: Icons.tonality,
-          actions: [
-            if (monitorState.newInstances.isNotEmpty)
-              Stack(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.notifications),
-                    tooltip:
-                        'New instances (${monitorState.newInstances.length})',
-                    onPressed: () {
-                      ref
-                          .read(groupMonitorProvider(userId).notifier)
-                          .acknowledgeNewInstances();
-                    },
-                  ),
-                  if (monitorState.newInstances.isNotEmpty)
-                    Positioned(
-                      right: 8,
-                      top: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 18,
-                          minHeight: 18,
-                        ),
-                        child: Text(
-                          monitorState.newInstances.length > 9
-                              ? '9+'
-                              : monitorState.newInstances.length.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
+      data: (authState) {
+        final currentUser = authState.currentUser;
+
+        if (currentUser == null) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+
+        final userId = currentUser.id;
+        final monitorState = ref.watch(groupMonitorProvider(userId));
+        final selectedGroups = monitorState.allGroups
+            .where((g) => monitorState.selectedGroupIds.contains(g.groupId))
+            .toList();
+
+        return OverlayPortal(
+          controller: _groupSelectionController,
+          overlayChildBuilder: (context) => GroupSelectionPage(
+            userId: userId,
+            controller: _groupSelectionController,
+          ),
+          child: Scaffold(
+            appBar: CustomTitleBar(
+              title: 'portal.',
+              icon: Icons.tonality,
+              actions: [
+                if (monitorState.newInstances.isNotEmpty)
+                  Stack(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.notifications),
+                        tooltip:
+                            'New instances (${monitorState.newInstances.length})',
+                        onPressed: () {
+                          ref
+                              .read(groupMonitorProvider(userId).notifier)
+                              .acknowledgeNewInstances();
+                        },
+                      ),
+                      if (monitorState.newInstances.isNotEmpty)
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 18,
+                              minHeight: 18,
+                            ),
+                            child: Text(
+                              monitorState.newInstances.length > 9
+                                  ? '9+'
+                                  : monitorState.newInstances.length.toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ),
+                    ],
+                  ),
+                IconButton(
+                  icon: Icon(
+                    themeMode == ThemeMode.dark
+                        ? Icons.light_mode
+                        : Icons.dark_mode,
+                  ),
+                  tooltip: themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
+                  onPressed: () {
+                    ref.read(themeProvider.notifier).toggleTheme();
+                  },
+                ),
+                if (selectedGroups.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    tooltip: 'Clear Groups',
+                    onPressed: () async {
+                      await ref
+                          .read(groupMonitorProvider(userId).notifier)
+                          .clearSelectedGroups();
+                    },
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.logout),
+                  tooltip: 'Logout',
+                  onPressed: () async {
+                    ref
+                          .read(groupMonitorProvider(userId).notifier)
+                          .stopMonitoring();
+                    await ref.read(authProvider.notifier).logout();
+                  },
+                ),
+              ],
+            ),
+            body: DragToResizeArea(
+              child: SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 800),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildUserCard(context, currentUser),
+                          const SizedBox(height: 24),
+                          _buildGroupMonitoringSection(
+                            context,
+                            userId,
+                            monitorState,
+                            selectedGroups,
+                          ),
+                          const SizedBox(height: 24),
+                          DebugInfoCard(monitorState: monitorState),
+                        ],
                       ),
                     ),
-                ],
-              ),
-            IconButton(
-              icon: Icon(
-                themeMode == ThemeMode.dark
-                    ? Icons.light_mode
-                    : Icons.dark_mode,
-              ),
-              tooltip: themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
-              onPressed: () {
-                ref.read(themeProvider.notifier).toggleTheme();
-              },
-            ),
-            if (selectedGroups.isNotEmpty)
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Clear Groups',
-                onPressed: () async {
-                  await ref
-                      .read(groupMonitorProvider(userId).notifier)
-                      .clearSelectedGroups();
-                },
-              ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'Logout',
-              onPressed: () async {
-                ref
-                    .read(groupMonitorProvider(currentUser.id).notifier)
-                    .stopMonitoring();
-                await ref.read(authProvider.notifier).logout();
-              },
-            ),
-          ],
-        ),
-        body: DragToResizeArea(
-          child: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 800),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildUserCard(context, currentUser),
-                      const SizedBox(height: 24),
-                      _buildGroupMonitoringSection(
-                        context,
-                        currentUser.id,
-                        monitorState,
-                        selectedGroups,
-                      ),
-                      const SizedBox(height: 24),
-                      DebugInfoCard(monitorState: monitorState),
-                    ],
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -208,9 +231,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               fallbackIcon: Icons.person,
               boxShadow: [
                 BoxShadow(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.shadow.withValues(alpha: 0.3),
+                  color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.3),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -282,9 +303,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 Switch(
                   value: monitorState.isMonitoring,
                   onChanged: (value) {
-                    final notifier = ref.read(
-                      groupMonitorProvider(userId).notifier,
-                    );
+                    final notifier =
+                        ref.read(groupMonitorProvider(userId).notifier);
                     if (value) {
                       notifier.startMonitoring();
                     } else {

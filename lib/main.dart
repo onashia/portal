@@ -34,12 +34,12 @@ class PortalApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeProvider);
-    final authState = ref.watch(authProvider);
+    final authValue = ref.watch(authProvider);
 
     final router = GoRouter(
       initialLocation: '/',
       redirect: (context, state) {
-        if (authState.status == AuthStatus.authenticated) {
+        if (authValue.value?.status == AuthStatus.authenticated) {
           if (state.matchedLocation == '/') {
             return '/dashboard';
           }

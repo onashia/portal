@@ -1,13 +1,13 @@
 import 'dart:async';
-import 'dart:developer' as developer;
-import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../constants/app_constants.dart';
+import '../utils/app_logger.dart';
+import '../models/group_instance_with_group.dart';
 import 'api_call_counter.dart';
 import 'auth_provider.dart';
-import '../models/group_instance_with_group.dart';
 
 class GroupMonitorState {
   final List<LimitedUserGroups> allGroups;
@@ -53,16 +53,15 @@ class GroupMonitorState {
   }
 }
 
-class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
-  final Ref ref;
+class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   final String userId;
-  Timer? _pollingTimer;
-  int _backoffDelay = 1;
-  static const int _maxBackoffDelay = 300;
-  static const int _pollingInterval = 60;
 
-  GroupMonitorNotifier(this.ref, this.userId) : super(GroupMonitorState()) {
+  GroupMonitorNotifier(this.userId);
+
+  @override
+  GroupMonitorState build() {
     _loadSelectedGroups();
+    return GroupMonitorState();
   }
 
   Future<void> _loadSelectedGroups() async {
@@ -70,14 +69,14 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
       final prefs = await SharedPreferences.getInstance();
       final selectedIds = prefs.getStringList('selectedGroupIds') ?? [];
       state = state.copyWith(selectedGroupIds: selectedIds.toSet());
-      developer.log(
+      AppLogger.debug(
         'Loaded ${selectedIds.length} selected groups from storage',
-        name: 'portal.group_monitor',
+        subCategory: 'group_monitor',
       );
     } catch (e) {
-      developer.log(
+      AppLogger.error(
         'Failed to load selected groups',
-        name: 'portal.group_monitor',
+        subCategory: 'group_monitor',
         error: e,
       );
     }
@@ -91,9 +90,9 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
         state.selectedGroupIds.toList(),
       );
     } catch (e) {
-      developer.log(
+      AppLogger.error(
         'Failed to save selected groups',
-        name: 'portal.group_monitor',
+        subCategory: 'group_monitor',
         error: e,
       );
     }
@@ -103,14 +102,7 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
     state = state.copyWith(isLoading: true, errorMessage: null);
 
     try {
-      developer.log(
-        'Fetching groups for user: $userId',
-        name: 'portal.group_monitor',
-      );
-
-      debugPrint(
-        '[API_COUNTER] Incrementing from fetchUserGroups() - Fetching user groups',
-      );
+      AppLogger.debug('Fetching groups for user', subCategory: 'group_monitor');
 
       ref.read(apiCallCounterProvider.notifier).incrementApiCall();
 
@@ -120,16 +112,16 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
       );
       final groups = response.data ?? [];
 
-      developer.log(
+      AppLogger.info(
         'Fetched ${groups.length} groups',
-        name: 'portal.group_monitor',
+        subCategory: 'group_monitor',
       );
 
       state = state.copyWith(allGroups: groups, isLoading: false);
     } catch (e, s) {
-      developer.log(
+      AppLogger.error(
         'Failed to fetch user groups',
-        name: 'portal.group_monitor',
+        subCategory: 'group_monitor',
         error: e,
         stackTrace: s,
       );
@@ -160,54 +152,48 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
       groupInstances: newGroupInstances,
       groupErrors: newGroupErrors,
     );
-
     _saveSelectedGroups();
-    developer.log(
-      'Toggled group $groupId, now ${newSelection.length} selected',
-      name: 'portal.group_monitor',
+    AppLogger.debug(
+      'Toggled group, now ${newSelection.length} selected',
+      subCategory: 'group_monitor',
     );
   }
 
+  Timer? _pollingTimer;
+  int _backoffDelay = 1;
+
   void startMonitoring() {
-    debugPrint('[MONITOR] startMonitoring() called for userId: $userId');
-    developer.log(
-      'startMonitoring() called for userId: $userId',
-      name: 'portal.group_monitor',
-    );
+    AppLogger.info('Starting monitoring', subCategory: 'group_monitor');
 
     if (state.isMonitoring) {
-      developer.log(
-        'Already monitoring, skipping startMonitoring()',
-        name: 'portal.group_monitor',
+      AppLogger.warning(
+        'Already monitoring, skipping start',
+        subCategory: 'group_monitor',
       );
       return;
     }
 
     state = state.copyWith(isMonitoring: true);
-    developer.log(
+    AppLogger.info(
       'Started monitoring ${state.selectedGroupIds.length} groups',
-      name: 'portal.group_monitor',
+      subCategory: 'group_monitor',
     );
 
     try {
       _pollingTimer = Timer.periodic(
-        const Duration(seconds: _pollingInterval),
+        Duration(seconds: AppConstants.pollingIntervalSeconds),
         (_) => fetchGroupInstances(),
-      );
-
-      developer.log(
-        'Timer created, calling fetchGroupInstances() immediately',
-        name: 'portal.group_monitor',
       );
 
       fetchGroupInstances();
     } catch (e, s) {
-      developer.log(
+      AppLogger.error(
         'Failed to start monitoring',
-        name: 'portal.group_monitor',
+        subCategory: 'group_monitor',
         error: e,
         stackTrace: s,
       );
+      state = state.copyWith(isMonitoring: false);
     }
   }
 
@@ -219,32 +205,27 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
     state = state.copyWith(isMonitoring: false);
     _backoffDelay = 1;
 
-    developer.log('Stopped monitoring', name: 'portal.group_monitor');
+    AppLogger.info('Stopped monitoring', subCategory: 'group_monitor');
   }
 
   Future<void> fetchGroupInstances() async {
-    debugPrint('[MONITOR] fetchGroupInstances() called');
-    debugPrint(
-      '[MONITOR] state.selectedGroupIds.length: ${state.selectedGroupIds.length}',
+    AppLogger.debug(
+      'fetchGroupInstances() called',
+      subCategory: 'group_monitor',
     );
-    debugPrint('[MONITOR] state.selectedGroupIds: ${state.selectedGroupIds}');
-    developer.log('fetchGroupInstances() called', name: 'portal.group_monitor');
-
-    debugPrint('[MONITOR] About to check if selectedGroupIds is empty');
 
     if (state.selectedGroupIds.isEmpty) {
-      developer.log(
+      AppLogger.warning(
         'No groups selected, skipping instance fetch',
-        name: 'portal.group_monitor',
+        subCategory: 'group_monitor',
       );
       return;
     }
 
     try {
-      debugPrint('[MONITOR] Entering try block');
-      developer.log(
+      AppLogger.debug(
         'Fetching instances for ${state.selectedGroupIds.length} groups',
-        name: 'portal.group_monitor',
+        subCategory: 'group_monitor',
       );
 
       final api = ref.read(vrchatApiProvider);
@@ -254,14 +235,9 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
 
       for (final groupId in state.selectedGroupIds) {
         try {
-          debugPrint('[MONITOR] Processing groupId: $groupId');
-          developer.log(
-            'Fetching instances for group: $groupId',
-            name: 'portal.group_monitor',
-          );
-
-          debugPrint(
-            '[API_COUNTER] Incrementing from fetchGroupInstances() - Fetching instances for group: $groupId',
+          AppLogger.debug(
+            'Fetching instances for group',
+            subCategory: 'group_monitor',
           );
 
           ref.read(apiCallCounterProvider.notifier).incrementApiCall();
@@ -270,26 +246,12 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
               .getUsersApi()
               .getUserGroupInstancesForGroup(userId: userId, groupId: groupId);
 
-          developer.log(
-            'API Response for group $groupId - Status: ${response.statusCode}, Data length: ${response.data?.instances?.length}',
-            name: 'portal.group_monitor',
-          );
-
           final instances = response.data?.instances ?? [];
 
-          developer.log(
-            'Group $groupId returned ${instances.length} instances',
-            name: 'portal.group_monitor',
+          AppLogger.debug(
+            'Group returned ${instances.length} instances',
+            subCategory: 'group_monitor',
           );
-
-          if (instances.isNotEmpty) {
-            for (final instance in instances) {
-              developer.log(
-                'Instance - ID: ${instance.instanceId}, Location: ${instance.location}, Members: ${instance.nUsers}, World: ${instance.world.id}',
-                name: 'portal.group_monitor',
-              );
-            }
-          }
 
           final previousInstances = state.groupInstances[groupId] ?? [];
           final previousInstanceIds = previousInstances
@@ -311,9 +273,9 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
               .toList();
         } catch (e, s) {
           final errorMessage = e.toString();
-          developer.log(
-            'Failed to fetch instances for group $groupId: $errorMessage',
-            name: 'portal.group_monitor',
+          AppLogger.error(
+            'Failed to fetch instances for group',
+            subCategory: 'group_monitor',
             error: e,
             stackTrace: s,
           );
@@ -331,21 +293,23 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
       _backoffDelay = 1;
 
       if (newInstances.isNotEmpty) {
-        developer.log(
+        AppLogger.info(
           'Found ${newInstances.length} new instances',
-          name: 'portal.group_monitor',
+          subCategory: 'group_monitor',
         );
       }
     } catch (e, s) {
-      developer.log(
+      AppLogger.error(
         'Failed to fetch group instances',
-        name: 'portal.group_monitor',
+        subCategory: 'group_monitor',
         error: e,
         stackTrace: s,
       );
-
       await Future.delayed(Duration(seconds: _backoffDelay));
-      _backoffDelay = (_backoffDelay * 2).clamp(1, _maxBackoffDelay);
+      _backoffDelay = (_backoffDelay * 2).clamp(
+        1,
+        AppConstants.maxBackoffDelay,
+      );
     }
   }
 
@@ -357,9 +321,9 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
       );
       return response.data;
     } catch (e, s) {
-      developer.log(
-        'Failed to fetch world details for $worldId',
-        name: 'portal.group_monitor',
+      AppLogger.error(
+        'Failed to fetch world details',
+        subCategory: 'group_monitor',
         error: e,
         stackTrace: s,
       );
@@ -369,9 +333,9 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
 
   void acknowledgeNewInstances() {
     state = state.copyWith(newInstances: []);
-    developer.log(
+    AppLogger.debug(
       'Acknowledged all new instances',
-      name: 'portal.group_monitor',
+      subCategory: 'group_monitor',
     );
   }
 
@@ -387,31 +351,21 @@ class GroupMonitorNotifier extends StateNotifier<GroupMonitorState> {
         groupErrors: {},
       );
 
-      developer.log(
+      AppLogger.debug(
         'Cleared all selected groups from storage',
-        name: 'portal.group_monitor',
+        subCategory: 'group_monitor',
       );
     } catch (e) {
-      developer.log(
+      AppLogger.error(
         'Failed to clear selected groups',
-        name: 'portal.group_monitor',
+        subCategory: 'group_monitor',
         error: e,
       );
     }
   }
-
-  @override
-  void dispose() {
-    stopMonitoring();
-    super.dispose();
-  }
 }
 
 final groupMonitorProvider =
-    StateNotifierProvider.family<
-      GroupMonitorNotifier,
-      GroupMonitorState,
-      String
-    >((ref, userId) {
-      return GroupMonitorNotifier(ref, userId);
-    });
+    NotifierProvider.family<GroupMonitorNotifier, GroupMonitorState, String>(
+      (userId) => GroupMonitorNotifier(userId),
+    );

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/auth_provider.dart';
+import 'lru_cache.dart';
 
 class FileIdInfo {
   final String fileId;
@@ -78,7 +79,9 @@ class ImageCacheService {
   factory ImageCacheService() => _instance;
   ImageCacheService._internal();
 
-  final Map<String, Uint8List> _memoryCache = {};
+  final LRUCache<String, Uint8List> _memoryCache = LRUCache<String, Uint8List>(
+    maxSize: 100,
+  );
   io.Directory? _cacheDirectory;
   bool _isInitialized = false;
 
@@ -109,9 +112,10 @@ class ImageCacheService {
 
     debugPrint('[IMAGE_CACHE] Checking cache for: $url (key: $cacheKey)');
 
-    if (_memoryCache.containsKey(cacheKey)) {
+    final cachedBytes = _memoryCache.get(cacheKey);
+    if (cachedBytes != null) {
       debugPrint('[IMAGE_CACHE] Memory cache HIT for: $url');
-      return _memoryCache[cacheKey];
+      return cachedBytes;
     }
 
     debugPrint(
@@ -125,7 +129,7 @@ class ImageCacheService {
         final file = io.File('${_cacheDirectory!.path}/$cacheKey');
         if (await file.exists()) {
           final bytes = await file.readAsBytes();
-          _memoryCache[cacheKey] = bytes;
+          _memoryCache.put(cacheKey, bytes);
           debugPrint('[IMAGE_CACHE] Disk cache HIT for: $url');
           return bytes;
         }
@@ -145,7 +149,7 @@ class ImageCacheService {
 
     final cacheKey = _getCacheKey(url);
 
-    _memoryCache[cacheKey] = bytes;
+    _memoryCache.put(cacheKey, bytes);
 
     await _initialize();
 

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:vrchat_dart/vrchat_dart.dart';
+import 'package:portal/utils/group_utils.dart';
 import 'package:portal/utils/vrchat_image_utils.dart';
+import 'package:portal/constants/app_constants.dart';
+import 'package:vrchat_dart/vrchat_dart.dart';
 
 class GroupAvatarStack extends ConsumerWidget {
   final List<LimitedUserGroups> groups;
@@ -13,8 +15,8 @@ class GroupAvatarStack extends ConsumerWidget {
     super.key,
     required this.groups,
     this.onTap,
-    this.spacing = 24.0,
-    this.maxStackedCount = 5,
+    this.spacing = AppConstants.defaultSpacing,
+    this.maxStackedCount = AppConstants.maxStackedAvatars,
   });
 
   @override
@@ -75,12 +77,12 @@ class GroupAvatarStack extends ConsumerWidget {
           : Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _getAvatarColor(group.id ?? ''),
+                color: GroupUtils.getAvatarColor(group),
               ),
               child: Center(
                 child: Text(
-                  _getInitials(group.name ?? 'Group'),
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  GroupUtils.getInitials(group),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
                   ),
@@ -104,58 +106,24 @@ class GroupAvatarStack extends ConsumerWidget {
 
   Widget _buildOverflowAvatar(BuildContext context, int count) {
     return Container(
-      width: 48,
-      height: 48,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        border: Border.all(
-          color: Theme.of(context).colorScheme.surface,
-          width: 2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: Theme.of(context).colorScheme.primary,
+      ),
+      constraints: const BoxConstraints(
+        minWidth: 48,
+        minHeight: 48,
       ),
       child: Center(
         child: Text(
-          '+$count',
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          count > 9 ? '9+' : count.toString(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
             fontWeight: FontWeight.bold,
           ),
         ),
       ),
     );
-  }
-
-  String _getInitials(String name) {
-    final parts = name.trim().split(' ');
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return name.substring(0, name.length > 1 ? 2 : 1).toUpperCase();
-  }
-
-  Color _getAvatarColor(String id) {
-    final colors = [
-      const Color(0xFF6366F1),
-      const Color(0xFF8B5CF6),
-      const Color(0xFFEC4899),
-      const Color(0xFFF43F5E),
-      const Color(0xFFF97316),
-      const Color(0xFFEAB308),
-      const Color(0xFF22C55E),
-      const Color(0xFF10B981),
-      const Color(0xFF06B6D4),
-      const Color(0xFF3B82F6),
-    ];
-
-    final hash = id.hashCode;
-    return colors[hash.abs() % colors.length];
   }
 }

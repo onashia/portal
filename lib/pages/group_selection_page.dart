@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../providers/group_monitor_provider.dart';
+import '../utils/group_utils.dart';
 import '../utils/vrchat_image_utils.dart';
 
 class GroupSelectionPage extends ConsumerStatefulWidget {
@@ -64,7 +65,7 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
         children: [
           Positioned.fill(
             child: IgnorePointer(
-              child: Container(color: Colors.black.withOpacity(0.2)),
+              child: Container(color: Colors.black.withValues(alpha: 0.2)),
             ),
           ),
           Positioned(
@@ -268,11 +269,11 @@ class _GroupChip extends ConsumerWidget {
               : Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: _getAvatarColor(group.id ?? ''),
+                    color: GroupUtils.getAvatarColor(group),
                   ),
                   child: Center(
                     child: Text(
-                      _getInitials(group.name ?? 'Group'),
+                      GroupUtils.getInitials(group),
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -296,31 +297,5 @@ class _GroupChip extends ConsumerWidget {
       maxLines: 2,
       style: Theme.of(context).textTheme.labelSmall,
     );
-  }
-
-  String _getInitials(String name) {
-    final parts = name.trim().split(' ');
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return name.substring(0, name.length > 1 ? 2 : 1).toUpperCase();
-  }
-
-  Color _getAvatarColor(String id) {
-    final colors = [
-      const Color(0xFF6366F1),
-      const Color(0xFF8B5CF6),
-      const Color(0xFFEC4899),
-      const Color(0xFFF43F5E),
-      const Color(0xFFF97316),
-      const Color(0xFFEAB308),
-      const Color(0xFF22C55E),
-      const Color(0xFF10B981),
-      const Color(0xFF06B6D4),
-      const Color(0xFF3B82F6),
-    ];
-
-    final hash = id.hashCode;
-    return colors[hash.abs() % colors.length];
   }
 }

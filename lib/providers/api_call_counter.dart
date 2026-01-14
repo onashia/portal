@@ -1,4 +1,4 @@
-import 'package:flutter_riverpod/legacy.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class ApiCallCounterState {
   final int totalCalls;
@@ -10,8 +10,9 @@ class ApiCallCounterState {
   }
 }
 
-class ApiCallCounterNotifier extends StateNotifier<ApiCallCounterState> {
-  ApiCallCounterNotifier() : super(const ApiCallCounterState());
+class ApiCallCounterNotifier extends Notifier<ApiCallCounterState> {
+  @override
+  ApiCallCounterState build() => const ApiCallCounterState();
 
   void incrementApiCall() {
     state = state.copyWith(totalCalls: state.totalCalls + 1);
@@ -23,6 +24,6 @@ class ApiCallCounterNotifier extends StateNotifier<ApiCallCounterState> {
 }
 
 final apiCallCounterProvider =
-    StateNotifierProvider<ApiCallCounterNotifier, ApiCallCounterState>((ref) {
-      return ApiCallCounterNotifier();
-    });
+    NotifierProvider<ApiCallCounterNotifier, ApiCallCounterState>(
+      ApiCallCounterNotifier.new,
+    );
