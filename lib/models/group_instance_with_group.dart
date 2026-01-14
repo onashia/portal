@@ -1,10 +1,12 @@
 import 'package:vrchat_dart/vrchat_dart.dart';
+import 'package:flutter/foundation.dart';
 
+@immutable
 class GroupInstanceWithGroup {
   final Instance instance;
   final String groupId;
 
-  GroupInstanceWithGroup({required this.instance, required this.groupId});
+  const GroupInstanceWithGroup({required this.instance, required this.groupId});
 
   @override
   bool operator ==(Object other) =>
