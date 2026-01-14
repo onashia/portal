@@ -96,8 +96,8 @@ class DebugInfoCard extends ConsumerWidget {
   String _getGroupName(GroupMonitorState state, String groupId) {
     final group = state.allGroups.firstWhere(
       (g) => g.groupId == groupId,
-      orElse: () => throw Exception('Group not found'),
+      orElse: () => null as dynamic,
     );
-    return group.name ?? groupId.substring(0, 8);
+    return group?.name ?? groupId.substring(0, 8);
   }
 }
