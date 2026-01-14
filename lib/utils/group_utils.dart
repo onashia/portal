@@ -12,8 +12,7 @@ class GroupUtils {
         return name.substring(0, name.length > 1 ? 2 : 1).toUpperCase();
       }
     }
-    if (group.discriminator != null &&
-        group.discriminator!.isNotEmpty) {
+    if (group.discriminator != null && group.discriminator!.isNotEmpty) {
       return group.discriminator!.toUpperCase();
     }
     if (group.groupId != null && group.groupId!.isNotEmpty) {

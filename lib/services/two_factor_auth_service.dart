@@ -1,10 +1,7 @@
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../utils/app_logger.dart';
 
-enum TwoFactorAuthResultStatus {
-  success,
-  failure,
-}
+enum TwoFactorAuthResultStatus { success, failure }
 
 class TwoFactorAuthResult {
   final TwoFactorAuthResultStatus status;

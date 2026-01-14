@@ -35,10 +35,7 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      AppLogger.debug(
-        'Fetching user groups',
-        subCategory: 'group_selection',
-      );
+      AppLogger.debug('Fetching user groups', subCategory: 'group_selection');
       ref.read(groupMonitorProvider(widget.userId).notifier).fetchUserGroups();
     });
   }

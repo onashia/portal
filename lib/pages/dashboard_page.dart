@@ -29,18 +29,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   @override
   void initState() {
     super.initState();
-    AppLogger.debug(
-      'Dashboard initialized',
-      subCategory: 'dashboard',
-    );
+    AppLogger.debug('Dashboard initialized', subCategory: 'dashboard');
     _initializeDashboard();
   }
 
   Future<void> _initializeDashboard() async {
-    AppLogger.debug(
-      'Initializing dashboard',
-      subCategory: 'dashboard',
-    );
+    AppLogger.debug('Initializing dashboard', subCategory: 'dashboard');
     final authValue = ref.read(authProvider);
     authValue.when(
       data: (authState) async {
@@ -59,9 +53,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final themeMode = ref.watch(themeProvider);
 
     return authValue.when(
-      loading: () => const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (error, stack) => Scaffold(
         body: Center(
           child: Padding(
@@ -69,11 +62,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 64,
-                  color: Colors.red,
-                ),
+                const Icon(Icons.error_outline, size: 64, color: Colors.red),
                 const SizedBox(height: 16),
                 Text(
                   'An error occurred',
@@ -93,7 +82,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         final currentUser = authState.currentUser;
 
         if (currentUser == null) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
         final userId = currentUser.id;
@@ -163,7 +154,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         ? Icons.light_mode
                         : Icons.dark_mode,
                   ),
-                  tooltip: themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
+                  tooltip: themeMode == ThemeMode.dark
+                      ? 'Light Mode'
+                      : 'Dark Mode',
                   onPressed: () {
                     ref.read(themeProvider.notifier).toggleTheme();
                   },
@@ -183,8 +176,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   tooltip: 'Logout',
                   onPressed: () async {
                     ref
-                          .read(groupMonitorProvider(userId).notifier)
-                          .stopMonitoring();
+                        .read(groupMonitorProvider(userId).notifier)
+                        .stopMonitoring();
                     await ref.read(authProvider.notifier).logout();
                   },
                 ),
@@ -238,7 +231,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               fallbackIcon: Icons.person,
               boxShadow: [
                 BoxShadow(
-                  color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.3),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.shadow.withValues(alpha: 0.3),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -310,8 +305,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 Switch(
                   value: monitorState.isMonitoring,
                   onChanged: (value) {
-                    final notifier =
-                        ref.read(groupMonitorProvider(userId).notifier);
+                    final notifier = ref.read(
+                      groupMonitorProvider(userId).notifier,
+                    );
                     if (value) {
                       notifier.startMonitoring();
                     } else {

@@ -117,10 +117,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       );
     } else {
       state = AsyncData(
-        AuthState(
-          status: AuthStatus.error,
-          errorMessage: result.errorMessage,
-        ),
+        AuthState(status: AuthStatus.error, errorMessage: result.errorMessage),
       );
     }
   }
@@ -163,5 +160,6 @@ final vrchatApiProvider = Provider<VrchatDart>((ref) {
   );
 });
 
-final authProvider =
-    AsyncNotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
+final authProvider = AsyncNotifierProvider<AuthNotifier, AuthState>(
+  AuthNotifier.new,
+);

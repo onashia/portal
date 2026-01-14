@@ -110,10 +110,7 @@ class GroupAvatarStack extends ConsumerWidget {
         shape: BoxShape.circle,
         color: Theme.of(context).colorScheme.primary,
       ),
-      constraints: const BoxConstraints(
-        minWidth: 48,
-        minHeight: 48,
-      ),
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
       child: Center(
         child: Text(
           count > 9 ? '9+' : count.toString(),

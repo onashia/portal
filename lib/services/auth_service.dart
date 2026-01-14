@@ -13,11 +13,7 @@ class AuthResult {
   final String? errorMessage;
   final CurrentUser? currentUser;
 
-  AuthResult({
-    required this.status,
-    this.errorMessage,
-    this.currentUser,
-  });
+  AuthResult({required this.status, this.errorMessage, this.currentUser});
 }
 
 class AuthService {
@@ -59,9 +55,7 @@ class AuthService {
               '2FA is required based on login response',
               subCategory: 'auth',
             );
-            return AuthResult(
-              status: AuthResultStatus.requires2FA,
-            );
+            return AuthResult(status: AuthResultStatus.requires2FA);
           }
         } else {
           AppLogger.error('Login response failed', subCategory: 'auth');
@@ -99,9 +93,7 @@ class AuthService {
 
       if (currentUser.twoFactorAuthEnabled) {
         AppLogger.info('2FA is enabled for user', subCategory: 'auth');
-        return AuthResult(
-          status: AuthResultStatus.requires2FA,
-        );
+        return AuthResult(status: AuthResultStatus.requires2FA);
       } else {
         AppLogger.info(
           '2FA is not enabled, user fully authenticated',
@@ -139,9 +131,7 @@ class AuthService {
         subCategory: 'auth',
       );
 
-      return AuthResult(
-        status: AuthResultStatus.success,
-      );
+      return AuthResult(status: AuthResultStatus.success);
     } catch (e, s) {
       AppLogger.error(
         'Logout failed with exception',
@@ -170,9 +160,7 @@ class AuthService {
         );
       } else {
         AppLogger.info('No existing session found', subCategory: 'auth');
-        return AuthResult(
-          status: AuthResultStatus.failure,
-        );
+        return AuthResult(status: AuthResultStatus.failure);
       }
     } catch (e, s) {
       AppLogger.error(

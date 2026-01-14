@@ -25,4 +25,5 @@ class ApiCallCounterNotifier extends Notifier<ApiCallCounterState> {
 
 final apiCallCounterProvider =
     NotifierProvider<ApiCallCounterNotifier, ApiCallCounterState>(
-        ApiCallCounterNotifier.new);
+      ApiCallCounterNotifier.new,
+    );

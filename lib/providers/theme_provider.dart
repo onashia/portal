@@ -25,11 +25,7 @@ class ThemeNotifier extends Notifier<ThemeMode> {
         );
       }
     } catch (e) {
-      AppLogger.error(
-        'Error loading theme',
-        subCategory: 'theme',
-        error: e,
-      );
+      AppLogger.error('Error loading theme', subCategory: 'theme', error: e);
     }
   }
 
@@ -39,11 +35,7 @@ class ThemeNotifier extends Notifier<ThemeMode> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_themeKey, mode.name);
     } catch (e) {
-      AppLogger.error(
-        'Error saving theme',
-        subCategory: 'theme',
-        error: e,
-      );
+      AppLogger.error('Error saving theme', subCategory: 'theme', error: e);
     }
   }
 
@@ -53,4 +45,6 @@ class ThemeNotifier extends Notifier<ThemeMode> {
   }
 }
 
-final themeProvider = NotifierProvider<ThemeNotifier, ThemeMode>(ThemeNotifier.new);
+final themeProvider = NotifierProvider<ThemeNotifier, ThemeMode>(
+  ThemeNotifier.new,
+);

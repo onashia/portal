@@ -99,10 +99,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   }
 
   Future<void> fetchUserGroups() async {
-    state = state.copyWith(
-      isLoading: true,
-      errorMessage: null,
-    );
+    state = state.copyWith(isLoading: true, errorMessage: null);
 
     try {
       AppLogger.debug('Fetching groups for user', subCategory: 'group_monitor');
@@ -238,74 +235,61 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
       final newGroupErrors = <String, String>{};
 
-      // Fetch all groups in parallel for better performance
       final futures = state.selectedGroupIds.map((groupId) async {
         ref.read(apiCallCounterProvider.notifier).incrementApiCall();
-        return api.rawApi
-            .getUsersApi()
-            .getUserGroupInstancesForGroup(userId: userId, groupId: groupId);
+        try {
+          return await api.rawApi.getUsersApi().getUserGroupInstancesForGroup(
+            userId: userId,
+            groupId: groupId,
+          );
+        } catch (e) {
+          return null;
+        }
       }).toList();
 
-      // Use eagerError to fail fast if any request fails
-      final responses = await Future.wait(futures, eagerError: true);
+      final responses = await Future.wait(futures);
 
       for (int i = 0; i < responses.length; i++) {
         final groupId = state.selectedGroupIds.elementAt(i);
         final response = responses[i];
 
-        try {
-          if (response is Exception) {
-            final errorMessage = response.toString();
-            AppLogger.error(
-              'Failed to fetch instances for group',
-              subCategory: 'group_monitor',
-              error: response,
-            );
-            // Track error per-group so UI can display specific failures
-            newGroupErrors[groupId] = errorMessage;
-            newGroupInstances[groupId] = [];
-            continue;
-          }
-
-          final instances = response.data?.instances ?? [];
-
-          AppLogger.debug(
-            'Group returned ${instances.length} instances',
-            subCategory: 'group_monitor',
-          );
-
-          // Compare with previous fetch to identify new instances
-          final previousInstances = state.groupInstances[groupId] ?? [];
-          final previousInstanceIds = previousInstances
-              .map((i) => i.instance.instanceId)
-              .toSet();
-
-          // Track instances that weren't in previous fetch
-          for (final instance in instances) {
-            final instanceWithGroup = GroupInstanceWithGroup(
-              instance: instance,
-              groupId: groupId,
-            );
-            if (!previousInstanceIds.contains(instance.instanceId)) {
-              newInstances.add(instanceWithGroup);
-            }
-          }
-
-          newGroupInstances[groupId] = instances
-              .map((i) => GroupInstanceWithGroup(instance: i, groupId: groupId))
-              .toList();
-        } catch (e, s) {
-          final errorMessage = e.toString();
+        if (response == null) {
           AppLogger.error(
             'Failed to fetch instances for group',
             subCategory: 'group_monitor',
-            error: e,
-            stackTrace: s,
           );
-          // Track error per-group so UI can display specific failures
-          newGroupErrors[groupId] = errorMessage;
-          newGroupInstances[groupId] = [];
+          newGroupErrors[groupId] = 'Failed to fetch instances';
+          newGroupInstances[groupId] = state.groupInstances[groupId] ?? [];
+          continue;
         }
+
+        final instances = response.data?.instances ?? [];
+
+        AppLogger.debug(
+          'Group returned ${instances.length} instances',
+          subCategory: 'group_monitor',
+        );
+
+        // Compare with previous fetch to identify new instances
+        final previousInstances = state.groupInstances[groupId] ?? [];
+        final previousInstanceIds = previousInstances
+            .map((i) => i.instance.instanceId)
+            .toSet();
+
+        // Track instances that weren't in previous fetch
+        for (final instance in instances) {
+          final instanceWithGroup = GroupInstanceWithGroup(
+            instance: instance,
+            groupId: groupId,
+          );
+          if (!previousInstanceIds.contains(instance.instanceId)) {
+            newInstances.add(instanceWithGroup);
+          }
+        }
+
+        newGroupInstances[groupId] = instances
+            .map((i) => GroupInstanceWithGroup(instance: i, groupId: groupId))
+            .toList();
       }
 
       state = state.copyWith(
@@ -334,7 +318,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       // Exponential backoff: delay before retry, doubling each time
       // Prevents overwhelming the API on transient failures
       await Future.delayed(Duration(seconds: _backoffDelay));
-      _backoffDelay = (_backoffDelay * 2).clamp(1, AppConstants.maxBackoffDelay);
+      _backoffDelay = (_backoffDelay * 2).clamp(
+        1,
+        AppConstants.maxBackoffDelay,
+      );
     }
   }
 
@@ -392,5 +379,5 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
 final groupMonitorProvider =
     NotifierProvider.family<GroupMonitorNotifier, GroupMonitorState, String>(
-  (userId) => GroupMonitorNotifier(userId),
-);
+      (userId) => GroupMonitorNotifier(userId),
+    );
