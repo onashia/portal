@@ -45,6 +45,6 @@ class GroupUtils {
     final hue = (hash.abs() % 360).toDouble();
 
     // Fixed saturation and lightness for consistent appearance across all colors
-    return HSLColor.fromAHSL(1.0, hue / 360, 0.7, 0.6).toColor();
+    return HSLColor.fromAHSL(1.0, hue, 0.7, 0.6).toColor();
   }
 }

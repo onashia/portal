@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/auth_provider.dart';
+import 'package:portal/utils/app_logger.dart';
 import 'lru_cache.dart';
 
 class FileIdInfo {
@@ -61,7 +62,10 @@ Future<Uint8List?> fetchImageBytesWithAuth(
     final api = ref.read(vrchatApiProvider);
     final fileIdInfo = extractFileIdFromUrl(imageUrl);
 
-    debugPrint('[IMAGE_FETCH] Fetching image from API: $imageUrl');
+    AppLogger.debug(
+      'Fetching image from API: $imageUrl',
+      subCategory: 'image_fetch',
+    );
 
     ref.read(apiCallCounterProvider.notifier).incrementApiCall();
 
@@ -69,10 +73,17 @@ Future<Uint8List?> fetchImageBytesWithAuth(
       fileId: fileIdInfo.fileId,
       versionId: fileIdInfo.version,
     );
-    debugPrint('[IMAGE_FETCH] Successfully fetched image: $imageUrl');
+    AppLogger.debug(
+      'Successfully fetched image: $imageUrl',
+      subCategory: 'image_fetch',
+    );
     return response.data as Uint8List;
   } catch (e) {
-    debugPrint('[IMAGE_FETCH] Failed to fetch image: $e');
+    AppLogger.error(
+      'Failed to fetch image: $e',
+      subCategory: 'image_fetch',
+      error: e,
+    );
     return null;
   }
 }
@@ -99,7 +110,11 @@ class ImageCacheService {
       }
       _isInitialized = true;
     } catch (e) {
-      debugPrint('[IMAGE_CACHE] Failed to initialize cache directory: $e');
+      AppLogger.error(
+        'Failed to initialize cache directory: $e',
+        subCategory: 'image_cache',
+        error: e,
+      );
     }
   }
 
@@ -113,16 +128,20 @@ class ImageCacheService {
 
     final cacheKey = _getCacheKey(url);
 
-    debugPrint('[IMAGE_CACHE] Checking cache for: $url (key: $cacheKey)');
+    AppLogger.debug(
+      'Checking cache for: $url (key: $cacheKey)',
+      subCategory: 'image_cache',
+    );
 
     final cachedBytes = _memoryCache.get(cacheKey);
     if (cachedBytes != null) {
-      debugPrint('[IMAGE_CACHE] Memory cache HIT for: $url');
+      AppLogger.debug('Memory cache HIT for: $url', subCategory: 'image_cache');
       return cachedBytes;
     }
 
-    debugPrint(
-      '[IMAGE_CACHE] Memory cache MISS for: $url, checking disk cache',
+    AppLogger.debug(
+      'Memory cache MISS for: $url, checking disk cache',
+      subCategory: 'image_cache',
     );
 
     await _initialize();
@@ -133,16 +152,24 @@ class ImageCacheService {
         if (await file.exists()) {
           final bytes = await file.readAsBytes();
           _memoryCache.put(cacheKey, bytes);
-          debugPrint('[IMAGE_CACHE] Disk cache HIT for: $url');
+          AppLogger.debug(
+            'Disk cache HIT for: $url',
+            subCategory: 'image_cache',
+          );
           return bytes;
         }
       } catch (e) {
-        debugPrint('[IMAGE_CACHE] Failed to read from disk cache: $e');
+        AppLogger.error(
+          'Failed to read from disk cache: $e',
+          subCategory: 'image_cache',
+          error: e,
+        );
       }
     }
 
-    debugPrint(
-      '[IMAGE_CACHE] Complete cache MISS for: $url, will fetch from API',
+    AppLogger.debug(
+      'Complete cache MISS for: $url, will fetch from API',
+      subCategory: 'image_cache',
     );
     return null;
   }
@@ -163,7 +190,11 @@ class ImageCacheService {
         final file = io.File('${_cacheDirectory!.path}/$cacheKey');
         await file.writeAsBytes(bytes);
       } catch (e) {
-        debugPrint('[IMAGE_CACHE] Failed to write to disk cache: $e');
+        AppLogger.error(
+          'Failed to write to disk cache: $e',
+          subCategory: 'image_cache',
+          error: e,
+        );
       }
     }
   }
@@ -178,7 +209,11 @@ class ImageCacheService {
           await _cacheDirectory!.create(recursive: true);
         }
       } catch (e) {
-        debugPrint('[IMAGE_CACHE] Failed to clear disk cache: $e');
+        AppLogger.error(
+          'Failed to clear disk cache: $e',
+          subCategory: 'image_cache',
+          error: e,
+        );
       }
     }
   }
@@ -248,23 +283,36 @@ class CachedImage extends ConsumerWidget {
     ImageCacheService cacheService,
     WidgetRef ref,
   ) async {
-    debugPrint('[CACHED_IMAGE] _loadImage called for: $imageUrl');
+    AppLogger.debug(
+      '_loadImage called for: $imageUrl',
+      subCategory: 'cached_image',
+    );
 
     final cachedBytes = await cacheService.getCachedImage(imageUrl);
     if (cachedBytes != null) {
-      debugPrint('[CACHED_IMAGE] Returning cached image for: $imageUrl');
+      AppLogger.debug(
+        'Returning cached image for: $imageUrl',
+        subCategory: 'cached_image',
+      );
       return cachedBytes;
     }
 
-    debugPrint('[CACHED_IMAGE] Cache miss, fetching from API for: $imageUrl');
+    AppLogger.debug(
+      'Cache miss, fetching from API for: $imageUrl',
+      subCategory: 'cached_image',
+    );
     final fetchedBytes = await fetchImageBytesWithAuth(ref, imageUrl);
     if (fetchedBytes != null) {
-      debugPrint(
-        '[CACHED_IMAGE] Successfully fetched, caching image for: $imageUrl',
+      AppLogger.debug(
+        'Successfully fetched, caching image for: $imageUrl',
+        subCategory: 'cached_image',
       );
       await cacheService.cacheImage(imageUrl, fetchedBytes);
     } else {
-      debugPrint('[CACHED_IMAGE] Failed to fetch image: $imageUrl');
+      AppLogger.debug(
+        'Failed to fetch image: $imageUrl',
+        subCategory: 'cached_image',
+      );
     }
 
     return fetchedBytes;

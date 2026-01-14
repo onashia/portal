@@ -244,7 +244,13 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
             userId: userId,
             groupId: groupId,
           );
-        } catch (e) {
+        } catch (e, s) {
+          AppLogger.error(
+            'Failed to fetch instances for group $groupId',
+            subCategory: 'group_monitor',
+            error: e,
+            stackTrace: s,
+          );
           return null;
         }
       }).toList();

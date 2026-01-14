@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
@@ -30,21 +29,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   void initState() {
     super.initState();
     AppLogger.debug('Dashboard initialized', subCategory: 'dashboard');
-    _initializeDashboard();
-  }
-
-  Future<void> _initializeDashboard() async {
-    AppLogger.debug('Initializing dashboard', subCategory: 'dashboard');
-    final authValue = ref.read(authProvider);
-    authValue.when(
-      data: (authState) async {
-        if (authState.currentUser != null) {
-          await NotificationService().initialize();
-        }
-      },
-      loading: () {},
-      error: (error, stack) {},
-    );
+    NotificationService().initialize();
   }
 
   @override

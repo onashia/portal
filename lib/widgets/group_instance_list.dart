@@ -33,12 +33,10 @@ class GroupInstanceList extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: _GroupInstancesSection(
-              group: groupsWithInstances[i].value.isEmpty
-                  ? LimitedUserGroups()
-                  : monitorState.allGroups.firstWhere(
-                      (g) => g.groupId == groupsWithInstances[i].key,
-                      orElse: () => LimitedUserGroups(),
-                    ),
+              group: monitorState.allGroups.firstWhere(
+                (g) => g.groupId == groupsWithInstances[i].key,
+                orElse: () => LimitedUserGroups(),
+              ),
               groupId: groupsWithInstances[i].key,
               instances: groupsWithInstances[i].value,
               newInstances: monitorState.newInstances,

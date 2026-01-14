@@ -46,19 +46,15 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
     super.dispose();
   }
 
-  List<LimitedUserGroups> get _filteredGroups {
-    final monitorState = ref.read(groupMonitorProvider(widget.userId));
-    return monitorState.allGroups.where((group) {
+  @override
+  Widget build(BuildContext context) {
+    final monitorState = ref.watch(groupMonitorProvider(widget.userId));
+    final filteredGroups = monitorState.allGroups.where((group) {
       final name = (group.name ?? '').toLowerCase();
       final discriminator = (group.discriminator ?? '').toLowerCase();
       return name.contains(_searchQuery) ||
           discriminator.contains(_searchQuery);
     }).toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final monitorState = ref.watch(groupMonitorProvider(widget.userId));
 
     return BackdropFilter(
       filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
@@ -95,9 +91,13 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
                       Expanded(
                         child: monitorState.isLoading
                             ? const Center(child: CircularProgressIndicator())
-                            : _filteredGroups.isEmpty
+                            : filteredGroups.isEmpty
                             ? _buildEmptyState(context)
-                            : _buildGroupGrid(context),
+                            : _buildGroupGrid(
+                                context,
+                                monitorState,
+                                filteredGroups,
+                              ),
                       ),
                     ],
                   ),
@@ -188,7 +188,11 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
     );
   }
 
-  Widget _buildGroupGrid(BuildContext context) {
+  Widget _buildGroupGrid(
+    BuildContext context,
+    GroupMonitorState monitorState,
+    List<LimitedUserGroups> filteredGroups,
+  ) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: GridView.builder(
@@ -198,13 +202,12 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
-        itemCount: _filteredGroups.length,
+        itemCount: filteredGroups.length,
         itemBuilder: (context, index) {
-          final group = _filteredGroups[index];
-          final isSelected = ref
-              .watch(groupMonitorProvider(widget.userId))
-              .selectedGroupIds
-              .contains(group.groupId);
+          final group = filteredGroups[index];
+          final isSelected = monitorState.selectedGroupIds.contains(
+            group.groupId,
+          );
 
           return _GroupChip(
             group: group,

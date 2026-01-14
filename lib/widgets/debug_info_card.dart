@@ -94,10 +94,11 @@ class DebugInfoCard extends ConsumerWidget {
   }
 
   String _getGroupName(GroupMonitorState state, String groupId) {
-    final group = state.allGroups.firstWhere(
-      (g) => g.groupId == groupId,
-      orElse: () => null as dynamic,
-    );
-    return group?.name ?? groupId.substring(0, 8);
+    try {
+      final group = state.allGroups.firstWhere((g) => g.groupId == groupId);
+      return group.name ?? groupId.substring(0, 8);
+    } catch (_) {
+      return groupId.substring(0, 8);
+    }
   }
 }

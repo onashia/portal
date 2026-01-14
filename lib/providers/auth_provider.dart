@@ -119,7 +119,11 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       );
     } else {
       state = AsyncData(
-        AuthState(status: AuthStatus.error, errorMessage: result.errorMessage),
+        AuthState(
+          status: AuthStatus.requires2FA,
+          requiresTwoFactorAuth: true,
+          errorMessage: result.errorMessage,
+        ),
       );
     }
   }
