@@ -19,7 +19,7 @@ class GroupMonitorState {
   final String? errorMessage;
   final Map<String, String> groupErrors;
 
-  GroupMonitorState({
+  const GroupMonitorState({
     this.allGroups = const [],
     this.selectedGroupIds = const {},
     this.groupInstances = const {},
