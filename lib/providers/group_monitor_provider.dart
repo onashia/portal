@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,7 @@ import '../models/group_instance_with_group.dart';
 import 'api_call_counter.dart';
 import 'auth_provider.dart';
 
+@immutable
 class GroupMonitorState {
   final List<LimitedUserGroups> allGroups;
   final Set<String> selectedGroupIds;

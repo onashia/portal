@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
@@ -15,13 +16,14 @@ enum AuthStatus {
   requiresEmailVerification,
 }
 
+@immutable
 class AuthState {
   final AuthStatus status;
   final String? errorMessage;
   final CurrentUser? currentUser;
   final bool requiresTwoFactorAuth;
 
-  AuthState({
+  const AuthState({
     required this.status,
     this.errorMessage,
     this.currentUser,
