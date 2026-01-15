@@ -6,11 +6,19 @@
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
+.packages
 .pub-cache/
+.pub-preload-cache/
 .pub/
 /build/
 /coverage/
+flutter_ffi.log
+flutter_*.png
+linked_*.ds
+unlinked.ds
+unlinked_spec.ds
 
 # Symbolication related
 app.*.symbols
@@ -39,6 +47,10 @@ app.*.map.json
 .DS_Store
 .AppleDouble
 .LSOverride
+.fseventsd/
+.Spotlight-V100/
+.Trashes/
+.DocumentRevisions-V100/
 
 # Windows
 Thumbs.db
@@ -55,6 +67,10 @@ $RECYCLE.BIN/
 *.log
 *.pyc
 *.swp
+*.swo
+*.swn
+*.bak
+*.tmp
 .build/
 .buildlog/
 .svn/
@@ -85,6 +101,7 @@ android/**/GeneratedPluginRegistrant.java
 
 # iOS
 ios/.symlinks/
+ios/.generated/
 ios/profile
 ios/DerivedData/
 ios/*.moved-aside
@@ -99,6 +116,10 @@ ios/*.perspectivev3
 
 # Windows
 flutter/ephemeral/
+windows/*.exe
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugin_registrant.h
+windows/flutter/generated_plugins.cmake
 x64/
 x86/
 *.suo
@@ -112,3 +133,16 @@ x86/
 **/Pods/
 **/dgph
 **/xcuserdata/
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Runner.xcodeproj/project.xcworkspace/xcuserdata/**
+**/macos/Runner.xcodeproj/xcuserdata/**
+**/macos/Flutter/Generated.xcconfig
+**/macos/Flutter/App.framework
+**/macos/Flutter/Flutter.framework
+**/macos/Flutter/Flutter.podspec
+**/macos/Flutter/ephemeral
+**/macos/Flutter/app.flx
+**/macos/Flutter/app.zip
+**/macos/Flutter/flutter_assets/
+**/macos/Flutter/flutter_export_environment.sh
+**/macos/ServiceDefinitions.json

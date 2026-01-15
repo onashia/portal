@@ -11,13 +11,23 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
 
+  static const _windowsAppName = 'portal';
+  static const _windowsAppUserModelId = 'portal.portal.app.1.0';
+  static const _windowsGuid = '5d1b8c7f-2a4e-4c3d-9b6f-8e7a5d3c2b1a';
+  static const _androidIcon = '@mipmap/ic_launcher';
+  static const _androidChannelId = 'group_instances';
+  static const _androidChannelName = 'Group Instances';
+  static const _androidChannelDescription =
+      'Notifications for new group instances';
+  static const _notificationPayloadNewInstances = 'new_instances';
+
   bool _isInitialized = false;
 
   Future<void> initialize() async {
     if (_isInitialized) return;
 
     const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
+      _androidIcon,
     );
 
     const darwinSettings = DarwinInitializationSettings(
@@ -26,9 +36,19 @@ class NotificationService {
       requestSoundPermission: true,
     );
 
-    const initializationSettings = InitializationSettings(
+    const windowsSettings = WindowsInitializationSettings(
+      appName: _windowsAppName,
+      appUserModelId: _windowsAppUserModelId,
+      guid: _windowsGuid,
+    );
+
+    final initializationSettings = InitializationSettings(
       android: androidSettings,
       iOS: darwinSettings,
+      macOS: darwinSettings,
+      windows: defaultTargetPlatform == TargetPlatform.windows
+          ? windowsSettings
+          : null,
     );
 
     await _notifications.initialize(
@@ -58,9 +78,9 @@ class NotificationService {
         : '$count new instances are now available';
 
     const androidDetails = AndroidNotificationDetails(
-      'group_instances',
-      'Group Instances',
-      channelDescription: 'Notifications for new group instances',
+      _androidChannelId,
+      _androidChannelName,
+      channelDescription: _androidChannelDescription,
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       showWhen: true,
@@ -75,6 +95,7 @@ class NotificationService {
     const notificationDetails = NotificationDetails(
       android: androidDetails,
       iOS: darwinDetails,
+      macOS: darwinDetails,
     );
 
     await _notifications.show(
@@ -82,7 +103,7 @@ class NotificationService {
       title,
       body,
       notificationDetails,
-      payload: 'new_instances',
+      payload: _notificationPayloadNewInstances,
     );
 
     AppLogger.info(
@@ -97,18 +118,27 @@ class NotificationService {
   }
 
   Future<bool> get hasPermission async {
-    // Android permissions are automatically granted at runtime
-    // iOS requires explicit user permission request
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return true;
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return true;
+      case TargetPlatform.iOS:
+        final result = await _notifications
+            .resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin
+            >()
+            ?.requestPermissions(alert: true, badge: true, sound: true);
+
+        return result ?? false;
+      case TargetPlatform.macOS:
+        final result = await _notifications
+            .resolvePlatformSpecificImplementation<
+              MacOSFlutterLocalNotificationsPlugin
+            >()
+            ?.requestPermissions(alert: true, badge: true, sound: true);
+
+        return result ?? false;
+      default:
+        return false;
     }
-
-    final result = await _notifications
-        .resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin
-        >()
-        ?.requestPermissions(alert: true, badge: true, sound: true);
-
-    return result ?? false;
   }
 }

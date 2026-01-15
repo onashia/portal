@@ -37,26 +37,26 @@ dependencies:
   vrchat_dart: ^4.0.1
   
   # State Management
-  flutter_riverpod: ^3.0.0
+  flutter_riverpod: ^3.1.0
   
   # Navigation & Routing
-  go_router: ^14.6.2
+  go_router: ^17.0.1
   
   # Path Provider
   path_provider: ^2.1.5
   
   # HTTP Client
-  dio: ^5.7.0
+  dio: ^5.9.0
   
   # Cookie Management
   cookie_jar: ^4.0.8
   dio_cookie_manager: ^3.3.0
   
   # Shared Preferences
-  shared_preferences: ^2.3.5
+  shared_preferences: ^2.5.4
   
   # Local Notifications
-  flutter_local_notifications: ^18.0.1
+  flutter_local_notifications: ^19.5.0
   window_manager: ^0.5.1
 
 dev_dependencies:

@@ -35,11 +35,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (authState.requiresTwoFactorAuth) {
       final code = _twoFactorController.text;
       await ref.read(authProvider.notifier).verify2FA(code);
+      if (!mounted) return;
       _twoFactorController.clear();
     } else {
       await ref
           .read(authProvider.notifier)
           .login(_usernameController.text, _passwordController.text);
+      if (!mounted) return;
       _passwordController.clear();
     }
   }
