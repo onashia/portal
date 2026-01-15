@@ -45,6 +45,7 @@ class NotificationService {
     final initializationSettings = InitializationSettings(
       android: androidSettings,
       iOS: darwinSettings,
+      macOS: darwinSettings,
       windows: defaultTargetPlatform == TargetPlatform.windows
           ? windowsSettings
           : null,
@@ -94,6 +95,7 @@ class NotificationService {
     const notificationDetails = NotificationDetails(
       android: androidDetails,
       iOS: darwinDetails,
+      macOS: darwinDetails,
     );
 
     await _notifications.show(
@@ -117,17 +119,31 @@ class NotificationService {
 
   Future<bool> get hasPermission async {
     // Android permissions are automatically granted at runtime
-    // iOS requires explicit user permission request
     if (defaultTargetPlatform == TargetPlatform.android) {
       return true;
     }
 
-    final result = await _notifications
-        .resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin
-        >()
-        ?.requestPermissions(alert: true, badge: true, sound: true);
+    // iOS and macOS require explicit user permission request
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      final result = await _notifications
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >()
+          ?.requestPermissions(alert: true, badge: true, sound: true);
 
-    return result ?? false;
+      return result ?? false;
+    }
+
+    if (defaultTargetPlatform == TargetPlatform.macOS) {
+      final result = await _notifications
+          .resolvePlatformSpecificImplementation<
+            MacOSFlutterLocalNotificationsPlugin
+          >()
+          ?.requestPermissions(alert: true, badge: true, sound: true);
+
+      return result ?? false;
+    }
+
+    return false;
   }
 }
