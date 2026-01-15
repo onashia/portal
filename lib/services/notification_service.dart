@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -26,9 +28,18 @@ class NotificationService {
       requestSoundPermission: true,
     );
 
-    const initializationSettings = InitializationSettings(
+    const windowsSettings = WindowsInitializationSettings(
+      appName: 'portal',
+      appUserModelId: 'portal.portal.app.1.0',
+      guid: '5d1b8c7f-2a4e-4c3d-9b6f-8e7a5d3c2b1a',
+    );
+
+    final initializationSettings = InitializationSettings(
       android: androidSettings,
       iOS: darwinSettings,
+      windows: defaultTargetPlatform == TargetPlatform.windows
+          ? windowsSettings
+          : null,
     );
 
     await _notifications.initialize(
