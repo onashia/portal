@@ -118,32 +118,27 @@ class NotificationService {
   }
 
   Future<bool> get hasPermission async {
-    // Android permissions are automatically granted at runtime
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return true;
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return true;
+      case TargetPlatform.iOS:
+        final result = await _notifications
+            .resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin
+            >()
+            ?.requestPermissions(alert: true, badge: true, sound: true);
+
+        return result ?? false;
+      case TargetPlatform.macOS:
+        final result = await _notifications
+            .resolvePlatformSpecificImplementation<
+              MacOSFlutterLocalNotificationsPlugin
+            >()
+            ?.requestPermissions(alert: true, badge: true, sound: true);
+
+        return result ?? false;
+      default:
+        return false;
     }
-
-    // iOS and macOS require explicit user permission request
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      final result = await _notifications
-          .resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin
-          >()
-          ?.requestPermissions(alert: true, badge: true, sound: true);
-
-      return result ?? false;
-    }
-
-    if (defaultTargetPlatform == TargetPlatform.macOS) {
-      final result = await _notifications
-          .resolvePlatformSpecificImplementation<
-            MacOSFlutterLocalNotificationsPlugin
-          >()
-          ?.requestPermissions(alert: true, badge: true, sound: true);
-
-      return result ?? false;
-    }
-
-    return false;
   }
 }
