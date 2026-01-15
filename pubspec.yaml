@@ -37,7 +37,7 @@ dependencies:
   vrchat_dart: ^4.0.1
   
   # State Management
-  flutter_riverpod: ^3.0.0
+  flutter_riverpod: ^3.1.0
   
   # Navigation & Routing
   go_router: ^17.0.1
@@ -46,7 +46,7 @@ dependencies:
   path_provider: ^2.1.5
   
   # HTTP Client
-  dio: ^5.7.0
+  dio: ^5.9.0
   
   # Cookie Management
   cookie_jar: ^4.0.8
