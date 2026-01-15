@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -13,13 +11,23 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
 
+  static const _windowsAppName = 'portal';
+  static const _windowsAppUserModelId = 'portal.portal.app.1.0';
+  static const _windowsGuid = '5d1b8c7f-2a4e-4c3d-9b6f-8e7a5d3c2b1a';
+  static const _androidIcon = '@mipmap/ic_launcher';
+  static const _androidChannelId = 'group_instances';
+  static const _androidChannelName = 'Group Instances';
+  static const _androidChannelDescription =
+      'Notifications for new group instances';
+  static const _notificationPayloadNewInstances = 'new_instances';
+
   bool _isInitialized = false;
 
   Future<void> initialize() async {
     if (_isInitialized) return;
 
     const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
+      _androidIcon,
     );
 
     const darwinSettings = DarwinInitializationSettings(
@@ -29,9 +37,9 @@ class NotificationService {
     );
 
     const windowsSettings = WindowsInitializationSettings(
-      appName: 'portal',
-      appUserModelId: 'portal.portal.app.1.0',
-      guid: '5d1b8c7f-2a4e-4c3d-9b6f-8e7a5d3c2b1a',
+      appName: _windowsAppName,
+      appUserModelId: _windowsAppUserModelId,
+      guid: _windowsGuid,
     );
 
     final initializationSettings = InitializationSettings(
@@ -69,9 +77,9 @@ class NotificationService {
         : '$count new instances are now available';
 
     const androidDetails = AndroidNotificationDetails(
-      'group_instances',
-      'Group Instances',
-      channelDescription: 'Notifications for new group instances',
+      _androidChannelId,
+      _androidChannelName,
+      channelDescription: _androidChannelDescription,
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       showWhen: true,
@@ -93,7 +101,7 @@ class NotificationService {
       title,
       body,
       notificationDetails,
-      payload: 'new_instances',
+      payload: _notificationPayloadNewInstances,
     );
 
     AppLogger.info(
