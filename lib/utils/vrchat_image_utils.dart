@@ -239,7 +239,7 @@ class ImageCacheService {
   }
 }
 
-class CachedImage extends ConsumerWidget {
+class CachedImage extends ConsumerStatefulWidget {
   final String imageUrl;
   final double? width;
   final double? height;
@@ -272,24 +272,43 @@ class CachedImage extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (imageUrl.isEmpty) {
+  ConsumerState<CachedImage> createState() => _CachedImageState();
+}
+
+class _CachedImageState extends ConsumerState<CachedImage> {
+  Uint8List? _cachedBytes;
+
+  @override
+  void dispose() {
+    _cachedBytes = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.imageUrl.isEmpty) {
       return _buildFallback(context);
     }
 
     final cacheService = ImageCacheService();
 
     return FutureBuilder<Uint8List?>(
+      key: ValueKey('cached_image_${widget.imageUrl}'),
       future: _loadImage(cacheService, ref),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          if (showLoadingIndicator) {
+          if (widget.showLoadingIndicator) {
             return _buildLoading(context);
           }
           return _buildFallback(context);
         }
 
-        final bytes = snapshot.data;
+        if (snapshot.connectionState == ConnectionState.done &&
+            snapshot.data != null) {
+          _cachedBytes = snapshot.data;
+        }
+
+        final bytes = _cachedBytes ?? snapshot.data;
         if (bytes != null) {
           return _buildImage(bytes, context, true);
         }
@@ -304,33 +323,33 @@ class CachedImage extends ConsumerWidget {
     WidgetRef ref,
   ) async {
     AppLogger.debug(
-      '_loadImage called for: $imageUrl',
+      '_loadImage called for: ${widget.imageUrl}',
       subCategory: 'cached_image',
     );
 
-    final cachedBytes = await cacheService.getCachedImage(imageUrl);
+    final cachedBytes = await cacheService.getCachedImage(widget.imageUrl);
     if (cachedBytes != null) {
       AppLogger.debug(
-        'Returning cached image for: $imageUrl',
+        'Returning cached image for: ${widget.imageUrl}',
         subCategory: 'cached_image',
       );
       return cachedBytes;
     }
 
     AppLogger.debug(
-      'Cache miss, fetching from API for: $imageUrl',
+      'Cache miss, fetching from API for: ${widget.imageUrl}',
       subCategory: 'cached_image',
     );
-    final fetchedBytes = await fetchImageBytesWithAuth(ref, imageUrl);
+    final fetchedBytes = await fetchImageBytesWithAuth(ref, widget.imageUrl);
     if (fetchedBytes != null) {
       AppLogger.debug(
-        'Successfully fetched, caching image for: $imageUrl',
+        'Successfully fetched, caching image for: ${widget.imageUrl}',
         subCategory: 'cached_image',
       );
-      await cacheService.cacheImage(imageUrl, fetchedBytes);
+      await cacheService.cacheImage(widget.imageUrl, fetchedBytes);
     } else {
       AppLogger.debug(
-        'Failed to fetch image: $imageUrl',
+        'Failed to fetch image: ${widget.imageUrl}',
         subCategory: 'cached_image',
       );
     }
@@ -345,38 +364,42 @@ class CachedImage extends ConsumerWidget {
   ) {
     final imageWidget = Image.memory(
       bytes,
-      width: width,
-      height: height,
-      fit: fit,
+      width: widget.width,
+      height: widget.height,
+      fit: widget.fit,
     );
 
     Widget shapedWidget;
 
-    if (shape == BoxShape.circle) {
+    if (widget.shape == BoxShape.circle) {
       shapedWidget = ClipOval(
-        child: SizedBox(width: width, height: height, child: imageWidget),
+        child: SizedBox(
+          width: widget.width,
+          height: widget.height,
+          child: imageWidget,
+        ),
       );
     } else {
       shapedWidget = imageWidget;
     }
 
     final container = Container(
-      width: width,
-      height: height,
+      width: widget.width,
+      height: widget.height,
       decoration: BoxDecoration(
-        shape: shape,
+        shape: widget.shape,
         color: applyBackgroundColor
-            ? (backgroundColor ??
+            ? (widget.backgroundColor ??
                   Theme.of(context).colorScheme.surfaceContainerHighest)
             : null,
-        border: border,
-        boxShadow: boxShadow,
+        border: widget.border,
+        boxShadow: widget.boxShadow,
       ),
       child: shapedWidget,
     );
 
-    if (onTap != null) {
-      return GestureDetector(onTap: onTap, child: container);
+    if (widget.onTap != null) {
+      return GestureDetector(onTap: widget.onTap, child: container);
     }
 
     return container;
@@ -384,20 +407,20 @@ class CachedImage extends ConsumerWidget {
 
   Widget _buildLoading(BuildContext context) {
     final container = Container(
-      width: width,
-      height: height,
+      width: widget.width,
+      height: widget.height,
       decoration: BoxDecoration(
-        shape: shape,
+        shape: widget.shape,
         color:
-            fallbackBackgroundColor ??
+            widget.fallbackBackgroundColor ??
             Theme.of(context).colorScheme.surfaceContainerHighest,
-        border: border,
-        boxShadow: boxShadow,
+        border: widget.border,
+        boxShadow: widget.boxShadow,
       ),
       child: Center(
         child: SizedBox(
-          width: (width ?? 48) * 0.3,
-          height: (height ?? 48) * 0.3,
+          width: (widget.width ?? 48) * 0.3,
+          height: (widget.height ?? 48) * 0.3,
           child: CircularProgressIndicator(
             strokeWidth: 2,
             color: Theme.of(context).colorScheme.primary,
@@ -406,54 +429,54 @@ class CachedImage extends ConsumerWidget {
       ),
     );
 
-    return onTap != null
-        ? GestureDetector(onTap: onTap, child: container)
+    return widget.onTap != null
+        ? GestureDetector(onTap: widget.onTap, child: container)
         : container;
   }
 
   Widget _buildFallback(BuildContext context) {
-    if (fallbackWidget != null) {
+    if (widget.fallbackWidget != null) {
       final container = Container(
-        width: width,
-        height: height,
+        width: widget.width,
+        height: widget.height,
         decoration: BoxDecoration(
-          shape: shape,
+          shape: widget.shape,
           color:
-              fallbackBackgroundColor ??
+              widget.fallbackBackgroundColor ??
               Theme.of(context).colorScheme.surfaceContainerHighest,
-          border: border,
-          boxShadow: boxShadow,
+          border: widget.border,
+          boxShadow: widget.boxShadow,
         ),
-        child: fallbackWidget,
+        child: widget.fallbackWidget,
       );
 
-      return onTap != null
-          ? GestureDetector(onTap: onTap, child: container)
+      return widget.onTap != null
+          ? GestureDetector(onTap: widget.onTap, child: container)
           : container;
     }
 
     final container = Container(
-      width: width,
-      height: height,
+      width: widget.width,
+      height: widget.height,
       decoration: BoxDecoration(
-        shape: shape,
+        shape: widget.shape,
         color:
-            fallbackBackgroundColor ??
+            widget.fallbackBackgroundColor ??
             Theme.of(context).colorScheme.surfaceContainerHighest,
-        border: border,
-        boxShadow: boxShadow,
+        border: widget.border,
+        boxShadow: widget.boxShadow,
       ),
-      child: fallbackIcon != null
+      child: widget.fallbackIcon != null
           ? Icon(
-              fallbackIcon,
-              size: (width ?? 48) * 0.5,
+              widget.fallbackIcon,
+              size: (widget.width ?? 48) * 0.5,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             )
           : null,
     );
 
-    return onTap != null
-        ? GestureDetector(onTap: onTap, child: container)
+    return widget.onTap != null
+        ? GestureDetector(onTap: widget.onTap, child: container)
         : container;
   }
 }

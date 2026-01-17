@@ -9,7 +9,7 @@ class AppTheme {
       brightness: Brightness.light,
     ),
     cardTheme: CardThemeData(
-      elevation: 2,
+      elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
     inputDecorationTheme: InputDecorationTheme(
@@ -33,7 +33,7 @@ class AppTheme {
       brightness: Brightness.dark,
     ),
     cardTheme: CardThemeData(
-      elevation: 2,
+      elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
     inputDecorationTheme: InputDecorationTheme(

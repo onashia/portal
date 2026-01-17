@@ -78,7 +78,7 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
                   maxHeight: MediaQuery.of(context).size.height * 0.8,
                 ),
                 child: Card(
-                  elevation: 8,
+                  color: Theme.of(context).colorScheme.surface,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(28),
                   ),

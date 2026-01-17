@@ -72,6 +72,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           );
         }
 
+        // Null-safe: currentUser is guaranteed non-null after the check above
         final userId = currentUser.id;
         final monitorState = ref.watch(groupMonitorProvider(userId));
         final selectedGroups = monitorState.allGroups

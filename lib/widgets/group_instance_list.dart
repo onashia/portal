@@ -224,7 +224,6 @@ class _InstanceCard extends ConsumerWidget {
     final world = instance.world;
 
     return Card(
-      elevation: isNew ? 4 : 1,
       child: Container(
         decoration: isNew
             ? BoxDecoration(

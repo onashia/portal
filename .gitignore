@@ -146,3 +146,8 @@ x86/
 **/macos/Flutter/flutter_assets/
 **/macos/Flutter/flutter_export_environment.sh
 **/macos/ServiceDefinitions.json
+
+# AI Assistant Files
+.opencode/
+AGENTS.md
+
