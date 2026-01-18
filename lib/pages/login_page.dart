@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:motor/motor.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/custom_title_bar.dart';
+import '../utils/animation_constants.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -20,8 +22,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
   final _twoFactorController = TextEditingController();
   final _obscurePassword = ValueNotifier<bool>(true);
   final _twoFactorErrorCleared = ValueNotifier<bool>(false);
-  late AnimationController _fadeController;
-  late Animation<double> _fadeAnimation;
   final _usernameFocusNode = FocusNode();
   final _passwordFocusNode = FocusNode();
   final _twoFactorFocusNode = FocusNode();
@@ -29,15 +29,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
   @override
   void initState() {
     super.initState();
-    _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      vsync: this,
-    );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
-    );
-    _fadeController.forward();
-    Future.delayed(const Duration(milliseconds: 100), () {
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _usernameFocusNode.requestFocus();
       }
@@ -51,7 +44,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
     _twoFactorController.dispose();
     _obscurePassword.dispose();
     _twoFactorErrorCleared.dispose();
-    _fadeController.dispose();
     _usernameFocusNode.dispose();
     _passwordFocusNode.dispose();
     _twoFactorFocusNode.dispose();
@@ -92,34 +84,41 @@ class _LoginPageState extends ConsumerState<LoginPage>
   }
 
   Widget _buildBranding() {
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
+    return SingleMotionBuilder(
+      motion: AnimationConstants.expressiveEffectsDefault,
+      value: 1.0,
+      from: 0.0,
+      builder: (context, opacity, child) {
+        return Opacity(
+          opacity: opacity.clamp(0.0, 1.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.tonality,
-                size: 48,
-                color: Theme.of(context).colorScheme.primary,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.tonality,
+                    size: 48,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'portal.',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Text(
-                'portal.',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
+              const SizedBox(height: 20),
             ],
           ),
-          const SizedBox(height: 20),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -128,10 +127,30 @@ class _LoginPageState extends ConsumerState<LoginPage>
       controller: _usernameController,
       focusNode: _usernameFocusNode,
       onFieldSubmitted: (_) => _passwordFocusNode.requestFocus(),
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         labelText: 'Username',
         hintText: 'Enter your username',
-        prefixIcon: Icon(Icons.person_outline),
+        prefixIcon: const Icon(Icons.person_outline),
+        filled: true,
+        fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(
+            AnimationConstants.borderRadiusLg,
+          ),
+          borderSide: BorderSide(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            width: 1,
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(
+            AnimationConstants.borderRadiusLg,
+          ),
+          borderSide: BorderSide(
+            color: Theme.of(context).colorScheme.tertiary,
+            width: 2,
+          ),
+        ),
       ),
       validator: (value) {
         if (value == null || value.isEmpty) {
@@ -154,10 +173,42 @@ class _LoginPageState extends ConsumerState<LoginPage>
             labelText: 'Password',
             hintText: 'Enter your password',
             prefixIcon: const Icon(Icons.lock_outline),
-            suffixIcon: IconButton(
-              icon: Icon(obscure ? Icons.visibility : Icons.visibility_off),
-              onPressed: () => _obscurePassword.value = !obscure,
-              tooltip: obscure ? 'Show password' : 'Hide password',
+            suffixIcon: AnimatedSwitcher(
+              duration: Duration.zero,
+              switchInCurve: AnimationConstants.defaultEnter,
+              switchOutCurve: AnimationConstants.defaultExit,
+              transitionBuilder: (child, animation) {
+                return ScaleTransition(
+                  scale: animation,
+                  child: FadeTransition(opacity: animation, child: child),
+                );
+              },
+              child: IconButton(
+                key: ValueKey(obscure),
+                icon: Icon(obscure ? Icons.visibility : Icons.visibility_off),
+                onPressed: () => _obscurePassword.value = !obscure,
+                tooltip: obscure ? 'Show password' : 'Hide password',
+              ),
+            ),
+            filled: true,
+            fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(
+                AnimationConstants.borderRadiusLg,
+              ),
+              borderSide: BorderSide(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                width: 1,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(
+                AnimationConstants.borderRadiusLg,
+              ),
+              borderSide: BorderSide(
+                color: Theme.of(context).colorScheme.tertiary,
+                width: 2,
+              ),
             ),
           ),
           validator: (value) {
@@ -171,69 +222,92 @@ class _LoginPageState extends ConsumerState<LoginPage>
     );
   }
 
-  Widget _build2FAField() {
-    return TextFormField(
-      controller: _twoFactorController,
-      focusNode: _twoFactorFocusNode,
-      onFieldSubmitted: (_) => _handleSubmit(),
-      onChanged: (value) {
-        if (_twoFactorErrorCleared.value == false) {
-          _twoFactorErrorCleared.value = true;
-        }
-      },
-      decoration: const InputDecoration(
-        labelText: 'Authenticator Code',
-        hintText: 'Enter 6-digit code',
-        prefixIcon: Icon(Icons.security),
-      ),
-      keyboardType: TextInputType.number,
-      maxLength: 6,
-      validator: (value) {
-        if (value == null || value.isEmpty) {
-          return 'Please enter your verification code';
-        }
-        if (!RegExp(r'^\d{6}$').hasMatch(value)) {
-          return 'Code must be exactly 6 digits';
-        }
-        return null;
-      },
-    );
-  }
+  Widget _build2FAField(String? errorMessage) {
+    final isErrorState = errorMessage != null;
 
-  Widget _buildErrorMessage(String? errorMessage) {
-    if (errorMessage == null) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 24),
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).colorScheme.errorContainer.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Theme.of(context).colorScheme.error),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.error_outline,
-                color: Theme.of(context).colorScheme.error,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextFormField(
+          controller: _twoFactorController,
+          focusNode: _twoFactorFocusNode,
+          onFieldSubmitted: (_) => _handleSubmit(),
+          onChanged: (value) {
+            if (_twoFactorErrorCleared.value == false) {
+              _twoFactorErrorCleared.value = true;
+            }
+          },
+          decoration: InputDecoration(
+            labelText: 'Authenticator Code',
+            hintText: 'Enter 6-digit code',
+            prefixIcon: const Icon(Icons.security),
+            filled: true,
+            fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(
+                AnimationConstants.borderRadiusLg,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  errorMessage,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
+              borderSide: BorderSide(
+                color: isErrorState
+                    ? Theme.of(context).colorScheme.error
+                    : Theme.of(context).colorScheme.surfaceContainerHighest,
+                width: isErrorState ? 2 : 1,
               ),
-            ],
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(
+                AnimationConstants.borderRadiusLg,
+              ),
+              borderSide: BorderSide(
+                color: isErrorState
+                    ? Theme.of(context).colorScheme.error
+                    : Theme.of(context).colorScheme.tertiary,
+                width: 2,
+              ),
+            ),
           ),
+          keyboardType: TextInputType.number,
+          maxLength: 6,
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return 'Please enter your verification code';
+            }
+            if (!RegExp(r'^\d{6}$').hasMatch(value)) {
+              return 'Code must be exactly 6 digits';
+            }
+            return null;
+          },
         ),
-      ),
+        AnimatedSize(
+          duration: Duration.zero,
+          alignment: Alignment.topCenter,
+          child: errorMessage != null
+              ? SingleMotionBuilder(
+                  motion: AnimationConstants.expressiveEffectsDefault,
+                  value: 1.0,
+                  from: 0.0,
+                  key: ValueKey(errorMessage),
+                  builder: (context, value, child) {
+                    return Opacity(
+                      opacity: value.clamp(0.0, 1.0),
+                      child: child,
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      errorMessage,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 
@@ -246,11 +320,30 @@ class _LoginPageState extends ConsumerState<LoginPage>
 
     return FilledButton(
       onPressed: isLoading ? null : onPressed,
-      style: FilledButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        animationDuration: const Duration(milliseconds: 150),
-      ),
+      style:
+          FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(
+                AnimationConstants.borderRadiusLg,
+              ),
+            ),
+            animationDuration: const Duration(milliseconds: 200),
+          ).copyWith(
+            overlayColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.pressed)) {
+                return Theme.of(
+                  context,
+                ).colorScheme.onPrimary.withValues(alpha: 0.15);
+              }
+              if (states.contains(WidgetState.hovered)) {
+                return Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.12);
+              }
+              return null;
+            }),
+          ),
       child: isLoading
           ? SizedBox(
               height: 20,
@@ -260,7 +353,15 @@ class _LoginPageState extends ConsumerState<LoginPage>
                 color: Theme.of(context).colorScheme.onPrimary,
               ),
             )
-          : Text(text),
+          : AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              switchInCurve: AnimationConstants.defaultEnter,
+              switchOutCurve: AnimationConstants.defaultExit,
+              transitionBuilder: (child, animation) {
+                return FadeTransition(opacity: animation, child: child);
+              },
+              child: Text(text, key: ValueKey(text)),
+            ),
     );
   }
 
@@ -374,15 +475,19 @@ class _LoginPageState extends ConsumerState<LoginPage>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _buildBranding(),
-                          TweenAnimationBuilder<double>(
-                            tween: Tween(begin: 0.0, end: 1.0),
-                            duration: const Duration(milliseconds: 400),
-                            curve: Curves.easeInOut,
+                          SingleMotionBuilder(
+                            motion: AnimationConstants.expressiveSpatialDefault,
+                            value: 1.0,
+                            from: 0.0,
                             builder: (context, value, child) {
                               return Transform.translate(
-                                offset: Offset(0, 32 * (1 - value)),
+                                offset: Offset(
+                                  0,
+                                  AnimationConstants.defaultSlideDistance *
+                                      (1 - value),
+                                ),
                                 child: Opacity(
-                                  opacity: value,
+                                  opacity: value.clamp(0.0, 1.0),
                                   child: ConstrainedBox(
                                     constraints: BoxConstraints(
                                       maxWidth: cardWidth,
@@ -390,10 +495,12 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                     child: Card(
                                       color: Theme.of(
                                         context,
-                                      ).colorScheme.surfaceContainerLow,
-                                      elevation: 1,
+                                      ).colorScheme.surfaceContainerHigh,
+                                      elevation: 2,
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(24),
+                                        borderRadius: BorderRadius.circular(
+                                          AnimationConstants.borderRadiusXl,
+                                        ),
                                       ),
                                       child: Padding(
                                         padding: const EdgeInsets.all(32),
@@ -419,38 +526,77 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                 textAlign: TextAlign.center,
                                               ),
                                               const SizedBox(height: 32),
-                                              if (!authState
-                                                  .requiresTwoFactorAuth) ...[
-                                                _buildUsernameField(),
-                                                const SizedBox(height: 16),
-                                                _buildPasswordField(),
-                                                const SizedBox(height: 16),
-                                              ] else
-                                                ValueListenableBuilder(
-                                                  valueListenable:
-                                                      _twoFactorErrorCleared,
-                                                  builder: (context, cleared, child) {
-                                                    final showErrorMessage =
+                                              AnimatedSize(
+                                                duration: Duration.zero,
+                                                alignment: Alignment.topCenter,
+                                                child: Builder(
+                                                  builder: (context) {
+                                                    return SingleMotionBuilder(
+                                                      motion: AnimationConstants
+                                                          .expressiveSpatialDefault,
+                                                      value: 1.0,
+                                                      from: 0.0,
+                                                      key: ValueKey(
                                                         authState
-                                                                .errorMessage !=
-                                                            null &&
-                                                        !cleared;
-                                                    return Column(
-                                                      children: [
-                                                        _build2FAField(),
-                                                        _buildErrorMessage(
-                                                          showErrorMessage
-                                                              ? authState
-                                                                    .errorMessage
-                                                              : null,
-                                                        ),
-                                                        const SizedBox(
-                                                          height: 24,
-                                                        ),
-                                                      ],
+                                                            .requiresTwoFactorAuth,
+                                                      ),
+                                                      builder: (context, value, child) {
+                                                        return Transform.translate(
+                                                          offset: Offset(
+                                                            0,
+                                                            AnimationConstants
+                                                                    .defaultSlideDistance *
+                                                                (1 - value),
+                                                          ),
+                                                          child: Opacity(
+                                                            opacity: value
+                                                                .clamp(
+                                                                  0.0,
+                                                                  1.0,
+                                                                ),
+                                                            child: child,
+                                                          ),
+                                                        );
+                                                      },
+                                                      child:
+                                                          !authState
+                                                              .requiresTwoFactorAuth
+                                                          ? Column(
+                                                              mainAxisSize:
+                                                                  MainAxisSize
+                                                                      .min,
+                                                              children: [
+                                                                _buildUsernameField(),
+                                                                const SizedBox(
+                                                                  height: 16,
+                                                                ),
+                                                                _buildPasswordField(),
+                                                                const SizedBox(
+                                                                  height: 16,
+                                                                ),
+                                                              ],
+                                                            )
+                                                          : Column(
+                                                              mainAxisSize:
+                                                                  MainAxisSize
+                                                                      .min,
+                                                              children: [
+                                                                _build2FAField(
+                                                                  _twoFactorErrorCleared
+                                                                          .value
+                                                                      ? null
+                                                                      : authState
+                                                                            .errorMessage,
+                                                                ),
+                                                                const SizedBox(
+                                                                  height: 24,
+                                                                ),
+                                                              ],
+                                                            ),
                                                     );
                                                   },
                                                 ),
+                                              ),
                                               _buildSubmitButton(
                                                 authState.status,
                                                 authState.status ==
@@ -464,18 +610,43 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                 _handleSubmit,
                                               ),
                                               if (authState
-                                                  .requiresTwoFactorAuth) ...[
-                                                const SizedBox(height: 16),
-                                                _buildBackButton(() {
-                                                  _clearPassword();
-                                                  ref
-                                                      .read(
-                                                        authProvider.notifier,
-                                                      )
-                                                      .logout();
-                                                  _twoFactorController.clear();
-                                                }),
-                                              ],
+                                                  .requiresTwoFactorAuth)
+                                                SingleMotionBuilder(
+                                                  motion: AnimationConstants
+                                                      .expressiveEffectsDefault,
+                                                  value: 1.0,
+                                                  from: 0.0,
+                                                  key: const ValueKey(
+                                                    'backButton',
+                                                  ),
+                                                  builder:
+                                                      (context, value, child) {
+                                                        return Opacity(
+                                                          opacity: value.clamp(
+                                                            0.0,
+                                                            1.0,
+                                                          ),
+                                                          child: child,
+                                                        );
+                                                      },
+                                                  child: Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          top: 16,
+                                                        ),
+                                                    child: _buildBackButton(() {
+                                                      _clearPassword();
+                                                      ref
+                                                          .read(
+                                                            authProvider
+                                                                .notifier,
+                                                          )
+                                                          .logout();
+                                                      _twoFactorController
+                                                          .clear();
+                                                    }),
+                                                  ),
+                                                ),
                                             ],
                                           ),
                                         ),

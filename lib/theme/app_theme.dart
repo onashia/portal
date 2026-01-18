@@ -6,6 +6,7 @@ class AppTheme {
     brightness: Brightness.light,
     colorScheme: ColorScheme.fromSeed(
       seedColor: const Color(0xFF4C3D23),
+      dynamicSchemeVariant: DynamicSchemeVariant.expressive,
       brightness: Brightness.light,
     ),
     cardTheme: CardThemeData(
@@ -30,6 +31,7 @@ class AppTheme {
     brightness: Brightness.dark,
     colorScheme: ColorScheme.fromSeed(
       seedColor: const Color(0xFF4C3D23),
+      dynamicSchemeVariant: DynamicSchemeVariant.expressive,
       brightness: Brightness.dark,
     ),
     cardTheme: CardThemeData(

@@ -59,6 +59,9 @@ dependencies:
   flutter_local_notifications: ^19.5.0
   window_manager: ^0.5.1
 
+  # Motion & Animations (MD3 Spring Physics)
+  motor: ^1.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
