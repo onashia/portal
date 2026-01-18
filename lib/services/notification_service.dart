@@ -26,9 +26,7 @@ class NotificationService {
   Future<void> initialize() async {
     if (_isInitialized) return;
 
-    const androidSettings = AndroidInitializationSettings(
-      _androidIcon,
-    );
+    const androidSettings = AndroidInitializationSettings(_androidIcon);
 
     const darwinSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
