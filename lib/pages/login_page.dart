@@ -174,7 +174,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
             hintText: 'Enter your password',
             prefixIcon: const Icon(Icons.lock_outline),
             suffixIcon: AnimatedSwitcher(
-              duration: Duration.zero,
+              duration: const Duration(milliseconds: 300),
               switchInCurve: AnimationConstants.defaultEnter,
               switchOutCurve: AnimationConstants.defaultExit,
               transitionBuilder: (child, animation) {
