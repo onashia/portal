@@ -279,6 +279,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
         appBar: CustomTitleBar(
           title: 'portal.',
           icon: Icons.tonality,
+          showBranding: false,
           actions: [
             IconButton(
               icon: Icon(
@@ -299,6 +300,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
         appBar: CustomTitleBar(
           title: 'portal.',
           icon: Icons.tonality,
+          showBranding: false,
           actions: [
             IconButton(
               icon: Icon(
@@ -339,6 +341,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
         appBar: CustomTitleBar(
           title: 'portal.',
           icon: Icons.tonality,
+          showBranding: false,
           actions: [
             IconButton(
               icon: Icon(

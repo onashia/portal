@@ -8,6 +8,7 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
   final List<Widget>? actions;
   final Color? backgroundColor;
   final Color? foregroundColor;
+  final bool showBranding;
 
   const CustomTitleBar({
     super.key,
@@ -16,6 +17,7 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
     this.actions,
     this.backgroundColor,
     this.foregroundColor,
+    this.showBranding = true,
   });
 
   @override
@@ -41,17 +43,19 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    if (icon != null) ...[
-                      Icon(icon, size: 18, color: fgColor),
-                      const SizedBox(width: 8),
-                    ],
-                    Text(
-                      title,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: fgColor,
-                        fontWeight: FontWeight.w500,
+                    if (showBranding) ...[
+                      if (icon != null) ...[
+                        Icon(icon, size: 18, color: fgColor),
+                        const SizedBox(width: 8),
+                      ],
+                      Text(
+                        title,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: fgColor,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
