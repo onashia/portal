@@ -150,16 +150,19 @@ class AuthService {
     AppLogger.info('Checking for existing session', subCategory: 'auth');
 
     try {
-      final currentUser = api.auth.currentUser;
+      final (success, failure) = await api.rawApi
+          .getAuthenticationApi()
+          .getCurrentUser()
+          .validateVrc();
 
-      if (currentUser != null) {
-        AppLogger.info('Existing session found', subCategory: 'auth');
+      if (success != null && success.response.statusCode == 200) {
+        AppLogger.info('Existing session is valid', subCategory: 'auth');
         return AuthResult(
           status: AuthResultStatus.success,
-          currentUser: currentUser,
+          currentUser: success.data,
         );
       } else {
-        AppLogger.info('No existing session found', subCategory: 'auth');
+        AppLogger.info('No valid existing session found', subCategory: 'auth');
         return AuthResult(status: AuthResultStatus.failure);
       }
     } catch (e, s) {

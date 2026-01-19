@@ -21,7 +21,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
   final _passwordController = TextEditingController();
   final _twoFactorController = TextEditingController();
   final _obscurePassword = ValueNotifier<bool>(true);
-  final _twoFactorErrorCleared = ValueNotifier<bool>(false);
   final _usernameFocusNode = FocusNode();
   final _passwordFocusNode = FocusNode();
   final _twoFactorFocusNode = FocusNode();
@@ -43,7 +42,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
     _passwordController.dispose();
     _twoFactorController.dispose();
     _obscurePassword.dispose();
-    _twoFactorErrorCleared.dispose();
     _usernameFocusNode.dispose();
     _passwordFocusNode.dispose();
     _twoFactorFocusNode.dispose();
@@ -61,7 +59,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
       await ref.read(authProvider.notifier).verify2FA(code);
       if (!mounted) return;
       _twoFactorController.clear();
-      _twoFactorErrorCleared.value = false;
     } else {
       await ref
           .read(authProvider.notifier)
@@ -161,62 +158,100 @@ class _LoginPageState extends ConsumerState<LoginPage>
     );
   }
 
-  Widget _buildPasswordField() {
+  Widget _buildPasswordField(String? errorMessage) {
+    final isErrorState = errorMessage != null;
+
     return ValueListenableBuilder(
       valueListenable: _obscurePassword,
       builder: (context, obscure, child) {
-        return TextFormField(
-          controller: _passwordController,
-          focusNode: _passwordFocusNode,
-          obscureText: obscure,
-          decoration: InputDecoration(
-            labelText: 'Password',
-            hintText: 'Enter your password',
-            prefixIcon: const Icon(Icons.lock_outline),
-            suffixIcon: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              switchInCurve: AnimationConstants.defaultEnter,
-              switchOutCurve: AnimationConstants.defaultExit,
-              transitionBuilder: (child, animation) {
-                return ScaleTransition(
-                  scale: animation,
-                  child: FadeTransition(opacity: animation, child: child),
-                );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: _passwordController,
+              focusNode: _passwordFocusNode,
+              obscureText: obscure,
+              decoration: InputDecoration(
+                labelText: 'Password',
+                hintText: 'Enter your password',
+                prefixIcon: const Icon(Icons.lock_outline),
+                suffixIcon: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  switchInCurve: AnimationConstants.defaultEnter,
+                  switchOutCurve: AnimationConstants.defaultExit,
+                  transitionBuilder: (child, animation) {
+                    return ScaleTransition(
+                      scale: animation,
+                      child: FadeTransition(opacity: animation, child: child),
+                    );
+                  },
+                  child: IconButton(
+                    key: ValueKey(obscure),
+                    icon: Icon(
+                      obscure ? Icons.visibility : Icons.visibility_off,
+                    ),
+                    onPressed: () => _obscurePassword.value = !obscure,
+                    tooltip: obscure ? 'Show password' : 'Hide password',
+                  ),
+                ),
+                filled: true,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(
+                    AnimationConstants.borderRadiusLg,
+                  ),
+                  borderSide: BorderSide(
+                    color: isErrorState
+                        ? Theme.of(context).colorScheme.error
+                        : Theme.of(context).colorScheme.surfaceContainerHighest,
+                    width: isErrorState ? 2 : 1,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(
+                    AnimationConstants.borderRadiusLg,
+                  ),
+                  borderSide: BorderSide(
+                    color: isErrorState
+                        ? Theme.of(context).colorScheme.error
+                        : Theme.of(context).colorScheme.tertiary,
+                    width: 2,
+                  ),
+                ),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your password';
+                }
+                return null;
               },
-              child: IconButton(
-                key: ValueKey(obscure),
-                icon: Icon(obscure ? Icons.visibility : Icons.visibility_off),
-                onPressed: () => _obscurePassword.value = !obscure,
-                tooltip: obscure ? 'Show password' : 'Hide password',
-              ),
             ),
-            filled: true,
-            fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(
-                AnimationConstants.borderRadiusLg,
-              ),
-              borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                width: 1,
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(
-                AnimationConstants.borderRadiusLg,
-              ),
-              borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.tertiary,
-                width: 2,
-              ),
-            ),
-          ),
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter your password';
-            }
-            return null;
-          },
+            errorMessage != null
+                ? SingleMotionBuilder(
+                    motion: AnimationConstants.expressiveEffectsDefault,
+                    value: 1.0,
+                    from: 0.0,
+                    key: ValueKey(errorMessage),
+                    builder: (context, value, child) {
+                      return Opacity(
+                        opacity: value.clamp(0.0, 1.0),
+                        child: child,
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        errorMessage,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ],
         );
       },
     );
@@ -233,11 +268,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
           controller: _twoFactorController,
           focusNode: _twoFactorFocusNode,
           onFieldSubmitted: (_) => _handleSubmit(),
-          onChanged: (value) {
-            if (_twoFactorErrorCleared.value == false) {
-              _twoFactorErrorCleared.value = true;
-            }
-          },
           decoration: InputDecoration(
             labelText: 'Authenticator Code',
             hintText: 'Enter 6-digit code',
@@ -279,44 +309,37 @@ class _LoginPageState extends ConsumerState<LoginPage>
             return null;
           },
         ),
-        AnimatedSize(
-          duration: Duration.zero,
-          alignment: Alignment.topCenter,
-          child: errorMessage != null
-              ? SingleMotionBuilder(
-                  motion: AnimationConstants.expressiveEffectsDefault,
-                  value: 1.0,
-                  from: 0.0,
-                  key: ValueKey(errorMessage),
-                  builder: (context, value, child) {
-                    return Opacity(
-                      opacity: value.clamp(0.0, 1.0),
-                      child: child,
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      errorMessage,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                        fontSize: 12,
-                      ),
+        errorMessage != null
+            ? SingleMotionBuilder(
+                motion: AnimationConstants.expressiveEffectsDefault,
+                value: 1.0,
+                from: 0.0,
+                key: ValueKey(errorMessage),
+                builder: (context, value, child) {
+                  return Opacity(opacity: value.clamp(0.0, 1.0), child: child);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    errorMessage,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 12,
                     ),
                   ),
-                )
-              : const SizedBox.shrink(),
-        ),
+                ),
+              )
+            : const SizedBox.shrink(),
       ],
     );
   }
 
   Widget _buildSubmitButton(
-    AuthStatus status,
+    AuthState authState,
     String text,
     VoidCallback onPressed,
   ) {
-    final isLoading = status == AuthStatus.loading;
+    final isLoading = authState.isLoading;
 
     return FilledButton(
       onPressed: isLoading ? null : onPressed,
@@ -476,6 +499,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                         children: [
                           _buildBranding(),
                           SingleMotionBuilder(
+                            key: const ValueKey('loginCardAnimation'),
                             motion: AnimationConstants.expressiveSpatialDefault,
                             value: 1.0,
                             from: 0.0,
@@ -526,79 +550,82 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                 textAlign: TextAlign.center,
                                               ),
                                               const SizedBox(height: 32),
-                                              AnimatedSize(
-                                                duration: Duration.zero,
-                                                alignment: Alignment.topCenter,
-                                                child: Builder(
-                                                  builder: (context) {
-                                                    return SingleMotionBuilder(
-                                                      motion: AnimationConstants
-                                                          .expressiveSpatialDefault,
-                                                      value: 1.0,
-                                                      from: 0.0,
-                                                      key: ValueKey(
-                                                        authState
-                                                            .requiresTwoFactorAuth,
-                                                      ),
-                                                      builder: (context, value, child) {
-                                                        return Transform.translate(
-                                                          offset: Offset(
-                                                            0,
-                                                            AnimationConstants
-                                                                    .defaultSlideDistance *
-                                                                (1 - value),
-                                                          ),
-                                                          child: Opacity(
-                                                            opacity: value
-                                                                .clamp(
-                                                                  0.0,
-                                                                  1.0,
-                                                                ),
-                                                            child: child,
-                                                          ),
-                                                        );
-                                                      },
-                                                      child:
-                                                          !authState
-                                                              .requiresTwoFactorAuth
-                                                          ? Column(
-                                                              mainAxisSize:
-                                                                  MainAxisSize
-                                                                      .min,
-                                                              children: [
-                                                                _buildUsernameField(),
-                                                                const SizedBox(
-                                                                  height: 16,
-                                                                ),
-                                                                _buildPasswordField(),
-                                                                const SizedBox(
-                                                                  height: 16,
-                                                                ),
-                                                              ],
-                                                            )
-                                                          : Column(
-                                                              mainAxisSize:
-                                                                  MainAxisSize
-                                                                      .min,
-                                                              children: [
-                                                                _build2FAField(
-                                                                  _twoFactorErrorCleared
-                                                                          .value
-                                                                      ? null
-                                                                      : authState
-                                                                            .errorMessage,
-                                                                ),
-                                                                const SizedBox(
-                                                                  height: 24,
-                                                                ),
-                                                              ],
-                                                            ),
-                                                    );
-                                                  },
+                                              SingleMotionBuilder(
+                                                motion: AnimationConstants
+                                                    .expressiveSpatialDefault,
+                                                value: 1.0,
+                                                from: 0.0,
+                                                key: ValueKey(
+                                                  authState
+                                                      .requiresTwoFactorAuth,
                                                 ),
+                                                builder: (context, value, child) {
+                                                  return Transform.translate(
+                                                    offset: Offset(
+                                                      0,
+                                                      AnimationConstants
+                                                              .defaultSlideDistance *
+                                                          (1 - value),
+                                                    ),
+                                                    child: Opacity(
+                                                      opacity: value.clamp(
+                                                        0.0,
+                                                        1.0,
+                                                      ),
+                                                      child: child,
+                                                    ),
+                                                  );
+                                                },
+                                                child:
+                                                    !authState
+                                                        .requiresTwoFactorAuth
+                                                    ? Column(
+                                                        key: const ValueKey(
+                                                          'loginForm',
+                                                        ),
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          _buildUsernameField(),
+                                                          const SizedBox(
+                                                            height: 16,
+                                                          ),
+                                                          _buildPasswordField(
+                                                            (authState.status ==
+                                                                        AuthStatus
+                                                                            .error ||
+                                                                    authState
+                                                                            .status ==
+                                                                        AuthStatus
+                                                                            .requiresEmailVerification)
+                                                                ? authState
+                                                                      .errorMessage
+                                                                : null,
+                                                          ),
+                                                          const SizedBox(
+                                                            height: 16,
+                                                          ),
+                                                        ],
+                                                      )
+                                                    : Column(
+                                                        key: const ValueKey(
+                                                          'twoFactorForm',
+                                                        ),
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          _build2FAField(
+                                                            authState
+                                                                .errorMessage,
+                                                          ),
+                                                          const SizedBox(
+                                                            height: 24,
+                                                          ),
+                                                        ],
+                                                      ),
                                               ),
                                               _buildSubmitButton(
-                                                authState.status,
+                                                authState,
                                                 authState.status ==
                                                         AuthStatus
                                                             .requiresEmailVerification

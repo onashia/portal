@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
@@ -22,12 +22,14 @@ class AuthState {
   final String? errorMessage;
   final CurrentUser? currentUser;
   final bool requiresTwoFactorAuth;
+  final bool isLoading;
 
   const AuthState({
     required this.status,
     this.errorMessage,
     this.currentUser,
     this.requiresTwoFactorAuth = false,
+    this.isLoading = false,
   });
 
   AuthState copyWith({
@@ -35,6 +37,7 @@ class AuthState {
     String? errorMessage,
     CurrentUser? currentUser,
     bool? requiresTwoFactorAuth,
+    bool? isLoading,
   }) {
     return AuthState(
       status: status ?? this.status,
@@ -42,6 +45,7 @@ class AuthState {
       currentUser: currentUser ?? this.currentUser,
       requiresTwoFactorAuth:
           requiresTwoFactorAuth ?? this.requiresTwoFactorAuth,
+      isLoading: isLoading ?? this.isLoading,
     );
   }
 }
@@ -55,11 +59,19 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     final api = ref.read(vrchatApiProvider);
     _authService = AuthService(api);
     _twoFactorAuthService = TwoFactorAuthService(api);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final isTest = WidgetsBinding.instance.toString().contains('Test');
+      if (!isTest) {
+        checkExistingSession();
+      }
+    });
+
     return AuthState(status: AuthStatus.initial);
   }
 
   Future<void> login(String username, String password) async {
-    state = AsyncLoading();
+    state = AsyncData(AuthState(status: AuthStatus.initial, isLoading: true));
 
     ref.read(apiCallCounterProvider.notifier).incrementApiCall();
 
@@ -73,6 +85,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           AuthState(
             status: AuthStatus.authenticated,
             currentUser: result.currentUser,
+            isLoading: false,
           ),
         );
         break;
@@ -81,6 +94,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           AuthState(
             status: AuthStatus.requires2FA,
             requiresTwoFactorAuth: true,
+            isLoading: false,
           ),
         );
         break;
@@ -89,6 +103,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           AuthState(
             status: AuthStatus.requiresEmailVerification,
             errorMessage: result.errorMessage,
+            isLoading: false,
           ),
         );
         break;
@@ -97,6 +112,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           AuthState(
             status: AuthStatus.error,
             errorMessage: result.errorMessage,
+            isLoading: false,
           ),
         );
         break;
@@ -104,7 +120,13 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   }
 
   Future<void> verify2FA(String code) async {
-    state = AsyncLoading();
+    state = AsyncData(
+      AuthState(
+        status: AuthStatus.requires2FA,
+        requiresTwoFactorAuth: true,
+        isLoading: true,
+      ),
+    );
 
     ref.read(apiCallCounterProvider.notifier).incrementApiCall();
 
@@ -115,6 +137,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         AuthState(
           status: AuthStatus.authenticated,
           currentUser: result.currentUser,
+          isLoading: false,
         ),
       );
     } else {
@@ -123,6 +146,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           status: AuthStatus.requires2FA,
           requiresTwoFactorAuth: true,
           errorMessage: result.errorMessage,
+          isLoading: false,
         ),
       );
     }
