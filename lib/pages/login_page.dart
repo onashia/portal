@@ -594,104 +594,94 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                     ),
                                                   );
                                                 },
-                                                child:
+                                                child: Column(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment
+                                                          .stretch,
+                                                  children: [
                                                     !authState
-                                                        .requiresTwoFactorAuth
-                                                    ? Column(
-                                                        key: const ValueKey(
-                                                          'loginForm',
-                                                        ),
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children: [
-                                                          _buildUsernameField(),
-                                                          const SizedBox(
-                                                            height: 16,
-                                                          ),
-                                                          _buildPasswordField(
-                                                            (authState.status ==
-                                                                        AuthStatus
-                                                                            .error ||
-                                                                    authState
-                                                                            .status ==
-                                                                        AuthStatus
-                                                                            .requiresEmailVerification)
-                                                                ? authState
-                                                                      .errorMessage
-                                                                : null,
-                                                          ),
-                                                          const SizedBox(
-                                                            height: 16,
-                                                          ),
-                                                        ],
-                                                      )
-                                                    : Column(
-                                                        key: const ValueKey(
-                                                          'twoFactorForm',
-                                                        ),
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children: [
-                                                          _build2FAField(
-                                                            authState
-                                                                .errorMessage,
-                                                          ),
-                                                          const SizedBox(
-                                                            height: 24,
-                                                          ),
-                                                        ],
-                                                      ),
-                                              ),
-                                              _buildSubmitButton(
-                                                authState,
-                                                authState.status ==
-                                                        AuthStatus
-                                                            .requiresEmailVerification
-                                                    ? 'Retry Login'
-                                                    : authState
-                                                          .requiresTwoFactorAuth
-                                                    ? 'Verify'
-                                                    : 'Sign In',
-                                                _handleSubmit,
-                                              ),
-                                              if (authState
-                                                  .requiresTwoFactorAuth)
-                                                SingleMotionBuilder(
-                                                  motion: AnimationConstants
-                                                      .expressiveEffectsDefault,
-                                                  value: 1.0,
-                                                  from: 0.0,
-                                                  key: const ValueKey(
-                                                    'backButton',
-                                                  ),
-                                                  builder:
-                                                      (context, value, child) {
-                                                        return Opacity(
-                                                          opacity: value.clamp(
-                                                            0.0,
-                                                            1.0,
-                                                          ),
-                                                          child: child,
-                                                        );
-                                                      },
-                                                  child: Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                          top: 16,
-                                                        ),
-                                                    child: _buildBackButton(() {
-                                                      _clearPassword();
-                                                      ref
-                                                          .read(
-                                                            authProvider
-                                                                .notifier,
+                                                            .requiresTwoFactorAuth
+                                                        ? Column(
+                                                            key: const ValueKey(
+                                                              'loginForm',
+                                                            ),
+                                                            mainAxisSize:
+                                                                MainAxisSize
+                                                                    .min,
+                                                            children: [
+                                                              _buildUsernameField(),
+                                                              const SizedBox(
+                                                                height: 16,
+                                                              ),
+                                                              _buildPasswordField(
+                                                                (authState.status ==
+                                                                            AuthStatus.error ||
+                                                                        authState.status ==
+                                                                            AuthStatus.requiresEmailVerification)
+                                                                    ? authState
+                                                                          .errorMessage
+                                                                    : null,
+                                                              ),
+                                                              const SizedBox(
+                                                                height: 16,
+                                                              ),
+                                                            ],
                                                           )
-                                                          .logout();
-                                                      _twoFactorController
-                                                          .clear();
-                                                    }),
-                                                  ),
+                                                        : Column(
+                                                            key: const ValueKey(
+                                                              'twoFactorForm',
+                                                            ),
+                                                            mainAxisSize:
+                                                                MainAxisSize
+                                                                    .min,
+                                                            children: [
+                                                              _build2FAField(
+                                                                authState
+                                                                    .errorMessage,
+                                                              ),
+                                                              const SizedBox(
+                                                                height: 24,
+                                                              ),
+                                                            ],
+                                                          ),
+                                                    _buildSubmitButton(
+                                                      authState,
+                                                      authState.status ==
+                                                              AuthStatus
+                                                                  .requiresEmailVerification
+                                                          ? 'Retry Login'
+                                                          : authState
+                                                                .requiresTwoFactorAuth
+                                                          ? 'Verify'
+                                                          : 'Sign In',
+                                                      _handleSubmit,
+                                                    ),
+                                                    if (authState
+                                                        .requiresTwoFactorAuth)
+                                                      Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              top: 16,
+                                                            ),
+                                                        child: _buildBackButton(
+                                                          () {
+                                                            _clearPassword();
+                                                            ref
+                                                                .read(
+                                                                  authProvider
+                                                                      .notifier,
+                                                                )
+                                                                .logout();
+                                                            _twoFactorController
+                                                                .clear();
+                                                          },
+                                                        ),
+                                                      ),
+                                                  ],
                                                 ),
+                                              ),
                                             ],
                                           ),
                                         ),
