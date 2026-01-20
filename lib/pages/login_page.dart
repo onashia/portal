@@ -238,32 +238,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                 return null;
               },
             ),
-            SingleMotionBuilder(
-              motion: AnimationConstants.expressiveSpatialDefault,
-              value: errorMessage != null ? 1.0 : 0.0,
-              builder: (context, value, child) {
-                return ClipRect(
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    heightFactor: value.clamp(0.0, 1.0),
-                    child: child,
-                  ),
-                );
-              },
-              child: Opacity(
-                opacity: errorMessage != null ? 1.0 : 0.0,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    errorMessage ?? '',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            _ErrorMessage(errorMessage),
           ],
         );
       },
@@ -322,32 +297,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
             return null;
           },
         ),
-        SingleMotionBuilder(
-          motion: AnimationConstants.expressiveSpatialDefault,
-          value: errorMessage != null ? 1.0 : 0.0,
-          builder: (context, value, child) {
-            return ClipRect(
-              child: Align(
-                alignment: Alignment.topCenter,
-                heightFactor: value.clamp(0.0, 1.0),
-                child: child,
-              ),
-            );
-          },
-          child: Opacity(
-            opacity: errorMessage != null ? 1.0 : 0.0,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                errorMessage ?? '',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ),
-        ),
+        _ErrorMessage(errorMessage),
       ],
     );
   }
@@ -698,6 +648,42 @@ class _LoginPageState extends ConsumerState<LoginPage>
                   ),
                 );
               },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorMessage extends StatelessWidget {
+  final String? message;
+
+  const _ErrorMessage(this.message, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleMotionBuilder(
+      motion: AnimationConstants.expressiveSpatialDefault,
+      value: message != null ? 1.0 : 0.0,
+      builder: (context, value, child) {
+        return ClipRect(
+          child: Align(
+            alignment: Alignment.topCenter,
+            heightFactor: value.clamp(0.0, 1.0),
+            child: child,
+          ),
+        );
+      },
+      child: Opacity(
+        opacity: message != null ? 1.0 : 0.0,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            message ?? '',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.error,
+              fontSize: 12,
             ),
           ),
         ),
