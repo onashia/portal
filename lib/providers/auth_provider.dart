@@ -193,3 +193,18 @@ final vrchatApiProvider = Provider<VrchatDart>((ref) {
 final authProvider = AsyncNotifierProvider<AuthNotifier, AuthState>(
   AuthNotifier.new,
 );
+
+final authListenableProvider = Provider<ChangeNotifier>((ref) {
+  return _AuthChangeNotifier(ref);
+});
+
+class _AuthChangeNotifier extends ChangeNotifier {
+  final Ref _ref;
+
+  _AuthChangeNotifier(this._ref) {
+    _ref.listen<AsyncValue<AuthState>>(
+      authProvider,
+      (previous, next) => notifyListeners(),
+    );
+  }
+}

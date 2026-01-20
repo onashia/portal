@@ -28,7 +28,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
   @override
   void initState() {
     super.initState();
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _usernameFocusNode.requestFocus();
@@ -54,17 +53,29 @@ class _LoginPageState extends ConsumerState<LoginPage>
     final authState = ref.read(authProvider).value;
     if (authState == null) return;
 
-    if (authState.requiresTwoFactorAuth) {
-      final code = _twoFactorController.text;
-      await ref.read(authProvider.notifier).verify2FA(code);
-      if (!mounted) return;
-      _twoFactorController.clear();
-    } else {
-      await ref
-          .read(authProvider.notifier)
-          .login(_usernameController.text, _passwordController.text);
-      if (!mounted) return;
-      _passwordController.clear();
+    final username = _usernameController.text;
+    final password = _passwordController.text;
+    final code = _twoFactorController.text;
+    final requiresTwoFactor = authState.requiresTwoFactorAuth;
+
+    try {
+      if (requiresTwoFactor) {
+        await ref.read(authProvider.notifier).verify2FA(code);
+        if (!mounted) return;
+        final newState = ref.read(authProvider).value;
+        if (newState?.status == AuthStatus.authenticated) {
+          _twoFactorController.clear();
+        }
+      } else {
+        await ref.read(authProvider.notifier).login(username, password);
+        if (!mounted) return;
+        final newState = ref.read(authProvider).value;
+        if (newState?.status == AuthStatus.authenticated) {
+          _passwordController.clear();
+        }
+      }
+    } catch (e) {
+      if (mounted) {}
     }
   }
 
@@ -227,30 +238,32 @@ class _LoginPageState extends ConsumerState<LoginPage>
                 return null;
               },
             ),
-            errorMessage != null
-                ? SingleMotionBuilder(
-                    motion: AnimationConstants.expressiveEffectsDefault,
-                    value: 1.0,
-                    from: 0.0,
-                    key: ValueKey(errorMessage),
-                    builder: (context, value, child) {
-                      return Opacity(
-                        opacity: value.clamp(0.0, 1.0),
-                        child: child,
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        errorMessage,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                          fontSize: 12,
-                        ),
-                      ),
+            SingleMotionBuilder(
+              motion: AnimationConstants.expressiveSpatialDefault,
+              value: errorMessage != null ? 1.0 : 0.0,
+              builder: (context, value, child) {
+                return ClipRect(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    heightFactor: value.clamp(0.0, 1.0),
+                    child: child,
+                  ),
+                );
+              },
+              child: Opacity(
+                opacity: errorMessage != null ? 1.0 : 0.0,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    errorMessage ?? '',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 12,
                     ),
-                  )
-                : const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+            ),
           ],
         );
       },
@@ -309,27 +322,32 @@ class _LoginPageState extends ConsumerState<LoginPage>
             return null;
           },
         ),
-        errorMessage != null
-            ? SingleMotionBuilder(
-                motion: AnimationConstants.expressiveEffectsDefault,
-                value: 1.0,
-                from: 0.0,
-                key: ValueKey(errorMessage),
-                builder: (context, value, child) {
-                  return Opacity(opacity: value.clamp(0.0, 1.0), child: child);
-                },
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    errorMessage,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontSize: 12,
-                    ),
-                  ),
+        SingleMotionBuilder(
+          motion: AnimationConstants.expressiveSpatialDefault,
+          value: errorMessage != null ? 1.0 : 0.0,
+          builder: (context, value, child) {
+            return ClipRect(
+              child: Align(
+                alignment: Alignment.topCenter,
+                heightFactor: value.clamp(0.0, 1.0),
+                child: child,
+              ),
+            );
+          },
+          child: Opacity(
+            opacity: errorMessage != null ? 1.0 : 0.0,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                errorMessage ?? '',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontSize: 12,
                 ),
-              )
-            : const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

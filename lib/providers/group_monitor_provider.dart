@@ -5,6 +5,7 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/app_constants.dart';
+import '../constants/storage_keys.dart';
 import '../utils/app_logger.dart';
 import '../models/group_instance_with_group.dart';
 import 'api_call_counter.dart';
@@ -69,7 +70,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   Future<void> _loadSelectedGroups() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final selectedIds = prefs.getStringList('selectedGroupIds') ?? [];
+      final selectedIds =
+          prefs.getStringList(StorageKeys.selectedGroupIds) ?? [];
       state = state.copyWith(selectedGroupIds: selectedIds.toSet());
       AppLogger.debug(
         'Loaded ${selectedIds.length} selected groups from storage',
@@ -88,7 +90,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(
-        'selectedGroupIds',
+        StorageKeys.selectedGroupIds,
         state.selectedGroupIds.toList(),
       );
     } catch (e) {
@@ -362,7 +364,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   Future<void> clearSelectedGroups() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('selectedGroupIds');
+      await prefs.remove(StorageKeys.selectedGroupIds);
 
       state = state.copyWith(
         selectedGroupIds: {},
