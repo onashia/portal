@@ -152,15 +152,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         ),
                     ],
                   ),
-                IconButton(
+                IconButtonM3E(
                   icon: Icon(
                     themeMode == ThemeMode.dark
-                        ? Icons.light_mode
-                        : Icons.dark_mode,
+                        ? Icons.light_mode_outlined
+                        : Icons.dark_mode_outlined,
                   ),
                   tooltip: themeMode == ThemeMode.dark
                       ? 'Light Mode'
                       : 'Dark Mode',
+                  variant: IconButtonM3EVariant.standard,
+                  size: IconButtonM3ESize.sm,
+                  shape: IconButtonM3EShapeVariant.round,
                   onPressed: () {
                     ref.read(themeProvider.notifier).toggleTheme();
                   },

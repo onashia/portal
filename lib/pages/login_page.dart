@@ -557,10 +557,12 @@ class _ThemeToggle extends ConsumerWidget {
     return IconButtonM3E(
       icon: Icon(
         ref.watch(themeProvider) == ThemeMode.light
-            ? Icons.dark_mode
-            : Icons.light_mode,
+            ? Icons.dark_mode_outlined
+            : Icons.light_mode_outlined,
       ),
-      tooltip: 'Toggle Theme',
+      tooltip: ref.watch(themeProvider) == ThemeMode.light
+          ? 'Dark Mode'
+          : 'Light Mode',
       onPressed: () => ref.read(themeProvider.notifier).toggleTheme(),
       variant: IconButtonM3EVariant.standard,
       size: IconButtonM3ESize.sm,
