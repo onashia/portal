@@ -10,7 +10,6 @@ import '../services/notification_service.dart';
 import '../utils/vrchat_image_utils.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/debug_info_card.dart';
-import '../widgets/group_avatar_stack.dart';
 import '../widgets/group_instance_list.dart';
 import '../utils/app_logger.dart';
 import 'group_selection_page.dart';
@@ -191,29 +190,49 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               ],
             ),
             body: DragToResizeArea(
-              child: SafeArea(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 800),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildUserCard(context, currentUser),
-                          SizedBox(height: context.m3e.spacing.lg),
-                          _buildGroupMonitoringSection(
-                            context,
-                            userId,
-                            monitorState,
-                            selectedGroups,
+              child: SizedBox.expand(
+                child: Stack(
+                  children: [
+                    SafeArea(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.only(
+                          left: 24,
+                          right: 24,
+                          top: 24,
+                          bottom: context.m3e.spacing.xxl * 4,
+                        ), // 128px: space for floating action area (56px FAB + 24px margin + 48px buffer)
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 800),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildUserCard(context, currentUser),
+                                SizedBox(height: context.m3e.spacing.lg),
+                                _buildGroupMonitoringSection(
+                                  context,
+                                  userId,
+                                  monitorState,
+                                  selectedGroups,
+                                ),
+                                SizedBox(height: context.m3e.spacing.lg),
+                                DebugInfoCard(monitorState: monitorState),
+                              ],
+                            ),
                           ),
-                          SizedBox(height: context.m3e.spacing.lg),
-                          DebugInfoCard(monitorState: monitorState),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
+                    Positioned(
+                      bottom: context.m3e.spacing.xl,
+                      right: context.m3e.spacing.xl,
+                      child: _buildFloatingActionArea(
+                        context,
+                        userId,
+                        monitorState,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -301,54 +320,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Text(
-                  'Group Monitoring',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const Spacer(),
-                Switch(
-                  value: monitorState.isMonitoring,
-                  onChanged: (value) {
-                    final notifier = ref.read(
-                      groupMonitorProvider(userId).notifier,
-                    );
-                    if (value) {
-                      notifier.startMonitoring();
-                    } else {
-                      notifier.stopMonitoring();
-                    }
-                  },
-                ),
-              ],
+            Text(
+              'Group Monitoring',
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-            SizedBox(height: context.m3e.spacing.md),
-            Row(
-              children: [
-                if (selectedGroups.isNotEmpty)
-                  GroupAvatarStack(
-                    groups: selectedGroups,
-                    onTap: () {
-                      _groupSelectionController.show();
-                    },
-                  ),
-                const Spacer(),
-                IconButton.filled(
-                  tooltip: selectedGroups.isEmpty
-                      ? 'Add Groups'
-                      : 'Manage Groups',
-                  onPressed: () {
-                    _groupSelectionController.show();
-                  },
-                  icon: Icon(
-                    selectedGroups.isEmpty ? Icons.add : Icons.manage_accounts,
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: context.m3e.spacing.md),
-            const Divider(),
             SizedBox(height: context.m3e.spacing.md),
             GroupInstanceList(
               userId: userId,
@@ -361,6 +336,66 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildFloatingActionArea(
+    BuildContext context,
+    String userId,
+    GroupMonitorState monitorState,
+  ) {
+    final actions = [
+      ToolbarActionM3E(
+        icon: Icons.refresh,
+        onPressed: () {
+          ref.read(groupMonitorProvider(userId).notifier).fetchGroupInstances();
+        },
+        tooltip: 'Refresh Instances',
+      ),
+      ToolbarActionM3E(
+        icon: monitorState.isMonitoring
+            ? Icons.pause_circle
+            : Icons.play_circle,
+        onPressed: () {
+          final notifier = ref.read(groupMonitorProvider(userId).notifier);
+          if (monitorState.isMonitoring) {
+            notifier.stopMonitoring();
+          } else {
+            notifier.startMonitoring();
+          }
+        },
+        tooltip: monitorState.isMonitoring
+            ? 'Stop Monitoring'
+            : 'Start Monitoring',
+      ),
+    ];
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IntrinsicWidth(
+          child: ToolbarM3E(
+            actions: actions,
+            variant: ToolbarM3EVariant.tonal,
+            size: ToolbarM3ESize.medium,
+            shapeFamily: ToolbarM3EShapeFamily.round,
+            density: ToolbarM3EDensity.regular,
+            maxInlineActions: 2,
+            safeArea: false,
+          ),
+        ),
+        SizedBox(width: context.m3e.spacing.md),
+        ExtendedFabM3E(
+          icon: const Icon(Icons.groups),
+          label: const Text('Manage Groups'),
+          kind: FabM3EKind.primary,
+          size: FabM3ESize.regular,
+          shapeFamily: FabM3EShapeFamily.round,
+          onPressed: () {
+            _groupSelectionController.show();
+          },
+        ),
+      ],
     );
   }
 
