@@ -180,24 +180,15 @@ class _LoginPageState extends ConsumerState<LoginPage>
                 labelText: 'Password',
                 hintText: 'Enter your password',
                 prefixIcon: const Icon(Icons.lock_outline),
-                suffixIcon: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  switchInCurve: AnimationConstants.defaultEnter,
-                  switchOutCurve: AnimationConstants.defaultExit,
-                  transitionBuilder: (child, animation) {
-                    return ScaleTransition(
-                      scale: animation,
-                      child: FadeTransition(opacity: animation, child: child),
-                    );
-                  },
-                  child: IconButton(
-                    key: ValueKey(obscure),
-                    icon: Icon(
-                      obscure ? Icons.visibility : Icons.visibility_off,
-                    ),
-                    onPressed: () => _obscurePassword.value = !obscure,
-                    tooltip: obscure ? 'Show password' : 'Hide password',
-                  ),
+                suffixIcon: IconButtonM3E(
+                  icon: const Icon(Icons.visibility),
+                  selectedIcon: const Icon(Icons.visibility_off),
+                  isSelected: obscure,
+                  onPressed: () => _obscurePassword.value = !obscure,
+                  tooltip: obscure ? 'Show password' : 'Hide password',
+                  variant: IconButtonM3EVariant.standard,
+                  size: IconButtonM3ESize.sm,
+                  shape: IconButtonM3EShapeVariant.round,
                 ),
                 filled: true,
                 fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
@@ -294,31 +285,9 @@ class _LoginPageState extends ConsumerState<LoginPage>
   ) {
     final isLoading = authState.isLoading;
 
-    return FilledButton(
+    return ButtonM3E(
       onPressed: isLoading ? null : onPressed,
-      style:
-          FilledButton.styleFrom(
-            padding: EdgeInsets.symmetric(vertical: context.m3e.spacing.xl),
-            shape: RoundedRectangleBorder(
-              borderRadius: context.m3e.shapes.square.lg,
-            ),
-            animationDuration: const Duration(milliseconds: 200),
-          ).copyWith(
-            overlayColor: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.pressed)) {
-                return Theme.of(
-                  context,
-                ).colorScheme.onPrimary.withValues(alpha: 0.15);
-              }
-              if (states.contains(WidgetState.hovered)) {
-                return Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: 0.12);
-              }
-              return null;
-            }),
-          ),
-      child: isLoading
+      label: isLoading
           ? SizedBox(
               height: 20,
               width: 20,
@@ -327,20 +296,21 @@ class _LoginPageState extends ConsumerState<LoginPage>
                 color: Theme.of(context).colorScheme.onPrimary,
               ),
             )
-          : AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              switchInCurve: AnimationConstants.defaultEnter,
-              switchOutCurve: AnimationConstants.defaultExit,
-              transitionBuilder: (child, animation) {
-                return FadeTransition(opacity: animation, child: child);
-              },
-              child: Text(text, key: ValueKey(text)),
-            ),
+          : Text(text),
+      style: ButtonM3EStyle.filled,
+      size: ButtonM3ESize.md,
+      shape: ButtonM3EShape.square,
     );
   }
 
   Widget _buildBackButton(VoidCallback onPressed) {
-    return TextButton(onPressed: onPressed, child: const Text('Back to login'));
+    return ButtonM3E(
+      onPressed: onPressed,
+      label: const Text('Back to login'),
+      style: ButtonM3EStyle.text,
+      size: ButtonM3ESize.sm,
+      shape: ButtonM3EShape.square,
+    );
   }
 
   @override
@@ -584,7 +554,7 @@ class _ThemeToggle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return IconButton(
+    return IconButtonM3E(
       icon: Icon(
         ref.watch(themeProvider) == ThemeMode.light
             ? Icons.dark_mode
@@ -592,6 +562,9 @@ class _ThemeToggle extends ConsumerWidget {
       ),
       tooltip: 'Toggle Theme',
       onPressed: () => ref.read(themeProvider.notifier).toggleTheme(),
+      variant: IconButtonM3EVariant.standard,
+      size: IconButtonM3ESize.sm,
+      shape: IconButtonM3EShapeVariant.round,
     );
   }
 }
