@@ -79,10 +79,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
     }
   }
 
-  void _clearPassword() {
-    _passwordController.clear();
-  }
-
   double _getCardWidth(double screenWidth) {
     if (screenWidth < 400) return screenWidth - 32;
     if (screenWidth < 600) return 280;
@@ -365,88 +361,14 @@ class _LoginPageState extends ConsumerState<LoginPage>
     final authValue = ref.watch(authProvider);
 
     return authValue.when(
-      // Initial loading state - occurs when auth provider is initializing
-      // or when checking existing session on app startup
-      loading: () => Scaffold(
-        appBar: CustomTitleBar(
-          title: 'portal.',
-          icon: Icons.tonality,
-          showBranding: false,
-          actions: [
-            IconButton(
-              icon: Icon(
-                ref.watch(themeProvider) == ThemeMode.light
-                    ? Icons.dark_mode
-                    : Icons.light_mode,
-              ),
-              tooltip: 'Toggle Theme',
-              onPressed: () {
-                ref.read(themeProvider.notifier).toggleTheme();
-              },
-            ),
-          ],
-        ),
-        body: const Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, stack) => Scaffold(
-        appBar: CustomTitleBar(
-          title: 'portal.',
-          icon: Icons.tonality,
-          showBranding: false,
-          actions: [
-            IconButton(
-              icon: Icon(
-                ref.watch(themeProvider) == ThemeMode.light
-                    ? Icons.dark_mode
-                    : Icons.light_mode,
-              ),
-              tooltip: 'Toggle Theme',
-              onPressed: () {
-                ref.read(themeProvider.notifier).toggleTheme();
-              },
-            ),
-          ],
-        ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                const SizedBox(height: 16),
-                Text(
-                  'An error occurred',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  error.toString(),
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      loading: () => const _LoadingScaffold(),
+      error: (error, stack) => _ErrorScaffold(error: error, stack: stack),
       data: (authState) => Scaffold(
         appBar: CustomTitleBar(
           title: 'portal.',
           icon: Icons.tonality,
           showBranding: false,
-          actions: [
-            IconButton(
-              icon: Icon(
-                ref.watch(themeProvider) == ThemeMode.light
-                    ? Icons.dark_mode
-                    : Icons.light_mode,
-              ),
-              tooltip: 'Toggle Theme',
-              onPressed: () {
-                ref.read(themeProvider.notifier).toggleTheme();
-              },
-            ),
-          ],
+          actions: const [_ThemeToggle()],
         ),
         body: DragToResizeArea(
           child: Semantics(
@@ -617,7 +539,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                             ),
                                                         child: _buildBackButton(
                                                           () {
-                                                            _clearPassword();
+                                                            _passwordController
+                                                                .clear();
                                                             ref
                                                                 .read(
                                                                   authProvider
@@ -656,10 +579,84 @@ class _LoginPageState extends ConsumerState<LoginPage>
   }
 }
 
+class _ThemeToggle extends ConsumerWidget {
+  const _ThemeToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return IconButton(
+      icon: Icon(
+        ref.watch(themeProvider) == ThemeMode.light
+            ? Icons.dark_mode
+            : Icons.light_mode,
+      ),
+      tooltip: 'Toggle Theme',
+      onPressed: () => ref.read(themeProvider.notifier).toggleTheme(),
+    );
+  }
+}
+
+class _LoadingScaffold extends ConsumerWidget {
+  const _LoadingScaffold();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      appBar: CustomTitleBar(
+        title: 'portal.',
+        icon: Icons.tonality,
+        showBranding: false,
+        actions: const [_ThemeToggle()],
+      ),
+      body: const Center(child: CircularProgressIndicator()),
+    );
+  }
+}
+
+class _ErrorScaffold extends ConsumerWidget {
+  final Object error;
+  final StackTrace stack;
+
+  const _ErrorScaffold({required this.error, required this.stack});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      appBar: CustomTitleBar(
+        title: 'portal.',
+        icon: Icons.tonality,
+        showBranding: false,
+        actions: const [_ThemeToggle()],
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(
+                'An error occurred',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                error.toString(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ErrorMessage extends StatelessWidget {
   final String? message;
 
-  const _ErrorMessage(this.message, {super.key});
+  const _ErrorMessage(this.message);
 
   @override
   Widget build(BuildContext context) {
