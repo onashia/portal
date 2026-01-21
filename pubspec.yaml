@@ -62,6 +62,9 @@ dependencies:
   # Motion & Animations (MD3 Spring Physics)
   motor: ^1.1.0
 
+  # Material 3 Expressive Design Tokens
+  m3e_collection: ^0.3.7
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

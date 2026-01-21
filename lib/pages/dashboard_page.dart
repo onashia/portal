@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
+import 'package:m3e_collection/m3e_collection.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/group_monitor_provider.dart';
@@ -48,12 +49,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                const SizedBox(height: 16),
+                SizedBox(height: context.m3e.spacing.md),
                 Text(
                   'An error occurred',
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: context.m3e.spacing.sm),
                 Text(
                   error.toString(),
                   style: Theme.of(context).textTheme.bodyMedium,
@@ -180,14 +181,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _buildUserCard(context, currentUser),
-                          const SizedBox(height: 24),
+                          SizedBox(height: context.m3e.spacing.lg),
                           _buildGroupMonitoringSection(
                             context,
                             userId,
                             monitorState,
                             selectedGroups,
                           ),
-                          const SizedBox(height: 24),
+                          SizedBox(height: context.m3e.spacing.lg),
                           DebugInfoCard(monitorState: monitorState),
                         ],
                       ),
@@ -224,7 +225,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 ),
               ],
             ),
-            const SizedBox(width: 16),
+            SizedBox(width: context.m3e.spacing.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -235,7 +236,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  SizedBox(height: context.m3e.spacing.xs),
                   Row(
                     children: [
                       Icon(
@@ -243,7 +244,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         size: 16,
                         color: _getStatusColor(context, currentUser.state),
                       ),
-                      const SizedBox(width: 6),
+                      SizedBox(width: context.m3e.spacing.sm),
                       Text(
                         _getStatusText(currentUser.state),
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -302,7 +303,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: context.m3e.spacing.md),
             Row(
               children: [
                 if (selectedGroups.isNotEmpty)
@@ -326,9 +327,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: context.m3e.spacing.md),
             const Divider(),
-            const SizedBox(height: 16),
+            SizedBox(height: context.m3e.spacing.md),
             GroupInstanceList(
               userId: userId,
               onRefresh: () {
@@ -357,9 +358,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Color _getStatusColor(BuildContext context, UserState state) {
     switch (state) {
       case UserState.online:
-        return const Color(0xFF4CAF50);
+        return Theme.of(context).colorScheme.primary;
       case UserState.offline:
-        return const Color(0xFF9E9E9E);
+        return Theme.of(context).colorScheme.outline;
       case UserState.active:
         return Theme.of(context).colorScheme.primary;
     }

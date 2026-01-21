@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../providers/group_monitor_provider.dart';
+import 'package:m3e_collection/m3e_collection.dart';
 import 'package:portal/utils/vrchat_image_utils.dart';
 import '../models/group_instance_with_group.dart';
 
@@ -45,7 +46,7 @@ class GroupInstanceList extends ConsumerWidget {
           ),
         if (groupsWithInstances.length > 1)
           for (var i = 0; i < groupsWithInstances.length - 1; i++)
-            const SizedBox(height: 16),
+            SizedBox(height: context.m3e.spacing.md),
       ],
     );
   }
@@ -63,12 +64,12 @@ class GroupInstanceList extends ConsumerWidget {
                 size: 64,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: context.m3e.spacing.md),
               Text(
                 'No Groups Selected',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: context.m3e.spacing.sm),
               Text(
                 'Select groups to monitor for new instances',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -97,12 +98,12 @@ class GroupInstanceList extends ConsumerWidget {
                   ? Theme.of(context).colorScheme.error
                   : Theme.of(context).colorScheme.onSurfaceVariant,
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: context.m3e.spacing.md),
             Text(
               state.isMonitoring ? 'No Instances Open' : 'Monitoring Paused',
               style: Theme.of(context).textTheme.titleLarge,
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: context.m3e.spacing.sm),
             Text(
               state.isMonitoring
                   ? 'No instances are currently open for your selected groups'
@@ -140,7 +141,7 @@ class _GroupInstancesSection extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildGroupHeader(context, ref, group),
-        const SizedBox(height: 8),
+        SizedBox(height: context.m3e.spacing.sm),
         ...instances.map((instanceWithGroup) {
           final isNew = newInstances.contains(instanceWithGroup);
           return _InstanceCard(
@@ -178,7 +179,7 @@ class _GroupInstancesSection extends ConsumerWidget {
               ),
             ),
           ),
-        const SizedBox(width: 8),
+        SizedBox(width: context.m3e.spacing.sm),
         Expanded(
           child: Text(
             group.name ?? 'Unknown Group',
@@ -193,7 +194,7 @@ class _GroupInstancesSection extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: context.m3e.shapes.round.md,
           ),
           child: Text(
             '${instances.length} instance${instances.length == 1 ? '' : 's'}',
@@ -227,7 +228,7 @@ class _InstanceCard extends ConsumerWidget {
       child: Container(
         decoration: isNew
             ? BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: context.m3e.shapes.round.lg,
                 border: Border.all(
                   color: Theme.of(context).colorScheme.primary,
                   width: 2,
@@ -235,14 +236,14 @@ class _InstanceCard extends ConsumerWidget {
               )
             : null,
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.m3e.shapes.round.lg,
           onTap: () {},
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
                 _buildWorldThumbnail(context, ref, world),
-                const SizedBox(width: 16),
+                SizedBox(width: context.m3e.spacing.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,12 +251,12 @@ class _InstanceCard extends ConsumerWidget {
                       if (group.id != null && group.id!.isNotEmpty)
                         _buildGroupInfo(context, ref, group),
                       _buildWorldInfo(context, world),
-                      const SizedBox(height: 4),
+                      SizedBox(height: context.m3e.spacing.xs),
                       _buildInstanceInfo(context, instance),
                     ],
                   ),
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: context.m3e.spacing.md),
                 _buildMemberCount(context, instance),
               ],
             ),
@@ -274,7 +275,7 @@ class _InstanceCard extends ConsumerWidget {
 
     if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.m3e.shapes.round.md,
         child: CachedImage(
           imageUrl: thumbnailUrl,
           width: 64,
@@ -330,7 +331,7 @@ class _InstanceCard extends ConsumerWidget {
             ),
           ),
         ),
-        const SizedBox(width: 6),
+        SizedBox(width: context.m3e.spacing.sm),
         Flexible(
           child: Text(
             group.name ?? 'Unknown Group',
@@ -342,12 +343,15 @@ class _InstanceCard extends ConsumerWidget {
           ),
         ),
         if (isNew) ...[
-          const SizedBox(width: 6),
+          SizedBox(width: context.m3e.spacing.sm),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: EdgeInsets.symmetric(
+              horizontal: context.m3e.spacing.sm,
+              vertical: 2,
+            ),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primary,
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: context.m3e.shapes.round.xs,
             ),
             child: Text(
               'NEW',
@@ -366,9 +370,7 @@ class _InstanceCard extends ConsumerWidget {
     final worldName = world?.name ?? 'Unknown World';
     return Text(
       worldName,
-      style: Theme.of(
-        context,
-      ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+      style: context.m3e.typography.base.titleMedium,
       overflow: TextOverflow.ellipsis,
       maxLines: 1,
     );
@@ -382,7 +384,7 @@ class _InstanceCard extends ConsumerWidget {
           size: 14,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
-        const SizedBox(width: 4),
+        SizedBox(width: context.m3e.spacing.xs),
         Expanded(
           child: Text(
             instance.location,
@@ -403,7 +405,7 @@ class _InstanceCard extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.m3e.shapes.round.md,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -413,7 +415,7 @@ class _InstanceCard extends ConsumerWidget {
             size: 16,
             color: Theme.of(context).colorScheme.onSecondaryContainer,
           ),
-          const SizedBox(width: 4),
+          SizedBox(width: context.m3e.spacing.xs),
           Text(
             instance.nUsers.toString(),
             style: Theme.of(context).textTheme.labelMedium?.copyWith(

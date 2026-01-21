@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_collection/m3e_collection.dart';
 import 'package:portal/utils/group_utils.dart';
 import 'package:portal/utils/vrchat_image_utils.dart';
 import 'package:portal/constants/app_constants.dart';
@@ -15,7 +16,7 @@ class GroupAvatarStack extends ConsumerWidget {
     super.key,
     required this.groups,
     this.onTap,
-    this.spacing = AppConstants.defaultSpacing,
+    this.spacing = 24.0,
     this.maxStackedCount = AppConstants.maxStackedAvatars,
   });
 
@@ -81,9 +82,8 @@ class GroupAvatarStack extends ConsumerWidget {
               child: Center(
                 child: Text(
                   GroupUtils.getInitials(group),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  style: context.m3e.typography.base.labelSmall?.copyWith(
                     color: Colors.white,
-                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
@@ -113,10 +113,8 @@ class GroupAvatarStack extends ConsumerWidget {
       child: Center(
         child: Text(
           count > 9 ? '9+' : count.toString(),
-          style: const TextStyle(
+          style: context.m3e.typography.base.labelSmall?.copyWith(
             color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
           ),
         ),
       ),

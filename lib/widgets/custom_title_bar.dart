@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_collection/m3e_collection.dart';
 import 'package:window_manager/window_manager.dart';
 
 class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
@@ -37,25 +38,23 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
       child: Row(
         children: [
           Expanded(
-            // Enables window dragging from title area
             child: DragToMoveArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: EdgeInsets.symmetric(
+                  horizontal: context.m3e.spacing.md,
+                ),
                 child: Row(
                   children: [
-                    if (showBranding) ...[
-                      if (icon != null) ...[
-                        Icon(icon, size: 18, color: fgColor),
-                        const SizedBox(width: 8),
-                      ],
+                    if (showBranding)
+                      Icon(icon, size: 18, color: fgColor)
+                    else
                       Text(
                         title,
-                        style: theme.textTheme.bodyMedium?.copyWith(
+                        style: context.m3e.typography.base.bodyLarge?.copyWith(
                           color: fgColor,
-                          fontWeight: FontWeight.w500,
                         ),
                       ),
-                    ],
+                    SizedBox(width: context.m3e.spacing.sm),
                   ],
                 ),
               ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_collection/m3e_collection.dart';
 import '../providers/api_call_counter.dart';
 import '../providers/group_monitor_provider.dart';
 
@@ -14,7 +15,7 @@ class DebugInfoCard extends ConsumerWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(context.m3e.spacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -25,16 +26,14 @@ class DebugInfoCard extends ConsumerWidget {
                   size: 20,
                   color: Theme.of(context).colorScheme.primary,
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: context.m3e.spacing.sm),
                 Text(
                   'Debug Info',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: context.m3e.typography.base.titleMedium,
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: context.m3e.spacing.md),
             Text(
               'Monitoring: ${monitorState.isMonitoring}',
               style: Theme.of(context).textTheme.bodyMedium,
@@ -52,21 +51,20 @@ class DebugInfoCard extends ConsumerWidget {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             if (monitorState.groupErrors.isNotEmpty) ...[
-              const SizedBox(height: 12),
+              SizedBox(height: context.m3e.spacing.md),
               Text(
                 'Errors: ${monitorState.groupErrors.length}',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                style: context.m3e.typography.base.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.error,
-                  fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: context.m3e.spacing.sm),
               for (final entry in monitorState.groupErrors.entries)
                 Padding(
-                  padding: const EdgeInsets.only(top: 4),
+                  padding: EdgeInsets.only(top: context.m3e.spacing.xs),
                   child: Text(
                     '• ${_getGroupName(monitorState, entry.key)}: ${entry.value}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    style: context.m3e.typography.base.bodyMedium?.copyWith(
                       color: Theme.of(context).colorScheme.error,
                     ),
                     maxLines: 2,
@@ -79,10 +77,10 @@ class DebugInfoCard extends ConsumerWidget {
                   (list) => list.isEmpty,
                 ))
               Padding(
-                padding: const EdgeInsets.only(top: 12),
+                padding: EdgeInsets.only(top: context.m3e.spacing.md),
                 child: Text(
                   'All groups returned empty instance lists',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  style: context.m3e.typography.base.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.error,
                   ),
                 ),

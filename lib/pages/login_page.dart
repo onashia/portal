@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:motor/motor.dart';
+import 'package:m3e_collection/m3e_collection.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/custom_title_bar.dart';
@@ -107,7 +108,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                     size: 48,
                     color: Theme.of(context).colorScheme.primary,
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: context.m3e.spacing.md),
                   Text(
                     'portal.',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -118,7 +119,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
+              SizedBox(height: context.m3e.spacing.lg),
             ],
           ),
         );
@@ -439,7 +440,9 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                     ),
                                                 textAlign: TextAlign.center,
                                               ),
-                                              const SizedBox(height: 32),
+                                              SizedBox(
+                                                height: context.m3e.spacing.xl,
+                                              ),
                                               SingleMotionBuilder(
                                                 motion: AnimationConstants
                                                     .expressiveSpatialDefault,
@@ -484,8 +487,11 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                                     .min,
                                                             children: [
                                                               _buildUsernameField(),
-                                                              const SizedBox(
-                                                                height: 16,
+                                                              SizedBox(
+                                                                height: context
+                                                                    .m3e
+                                                                    .spacing
+                                                                    .md,
                                                               ),
                                                               _buildPasswordField(
                                                                 (authState.status ==
@@ -496,8 +502,11 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                                           .errorMessage
                                                                     : null,
                                                               ),
-                                                              const SizedBox(
-                                                                height: 16,
+                                                              SizedBox(
+                                                                height: context
+                                                                    .m3e
+                                                                    .spacing
+                                                                    .md,
                                                               ),
                                                             ],
                                                           )
@@ -513,8 +522,11 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                                 authState
                                                                     .errorMessage,
                                                               ),
-                                                              const SizedBox(
-                                                                height: 24,
+                                                              SizedBox(
+                                                                height: context
+                                                                    .m3e
+                                                                    .spacing
+                                                                    .lg,
                                                               ),
                                                             ],
                                                           ),
@@ -635,12 +647,12 @@ class _ErrorScaffold extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
+              SizedBox(height: context.m3e.spacing.md),
               Text(
                 'An error occurred',
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: context.m3e.spacing.sm),
               Text(
                 error.toString(),
                 style: Theme.of(context).textTheme.bodyMedium,

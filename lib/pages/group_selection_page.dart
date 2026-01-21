@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
+import 'package:m3e_collection/m3e_collection.dart';
 import '../providers/group_monitor_provider.dart';
 import '../utils/group_utils.dart';
 import '../utils/vrchat_image_utils.dart';
@@ -80,7 +81,7 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
                 child: Card(
                   color: Theme.of(context).colorScheme.surface,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: context.m3e.shapes.round.lg,
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -145,7 +146,7 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
           hintText: 'Search groups...',
           prefixIcon: const Icon(Icons.search),
           filled: true,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          border: OutlineInputBorder(borderRadius: context.m3e.shapes.round.md),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 14,
@@ -167,7 +168,7 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
               size: 64,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: context.m3e.spacing.md),
             Text(
               _searchQuery.isEmpty
                   ? 'No groups found'
@@ -175,7 +176,7 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
               style: Theme.of(context).textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: context.m3e.spacing.sm),
             Text(
               'You are not a member of any groups',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(

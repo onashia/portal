@@ -1,53 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:m3e_collection/m3e_collection.dart';
 
 class AppTheme {
-  static ThemeData lightTheme = ThemeData(
-    useMaterial3: true,
+  static ThemeData lightTheme = ColorScheme.fromSeed(
+    seedColor: const Color(0xFF63A002),
+    dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
     brightness: Brightness.light,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: const Color(0xFF63A002),
-      dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
-      brightness: Brightness.light,
-    ),
-    cardTheme: CardThemeData(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-    ),
-    elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    ),
-  );
+  ).toM3EThemeData();
 
-  static ThemeData darkTheme = ThemeData(
-    useMaterial3: true,
+  static ThemeData darkTheme = ColorScheme.fromSeed(
+    seedColor: const Color(0xFF63A002),
+    dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
     brightness: Brightness.dark,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: const Color(0xFF63A002),
-      dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
-      brightness: Brightness.dark,
-    ),
-    cardTheme: CardThemeData(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-    ),
-    elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    ),
-  );
+  ).toM3EThemeData();
 }
