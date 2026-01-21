@@ -139,18 +139,14 @@ class _LoginPageState extends ConsumerState<LoginPage>
         filled: true,
         fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(
-            AnimationConstants.borderRadiusLg,
-          ),
+          borderRadius: context.m3e.shapes.square.lg,
           borderSide: BorderSide(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             width: 1,
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(
-            AnimationConstants.borderRadiusLg,
-          ),
+          borderRadius: context.m3e.shapes.square.lg,
           borderSide: BorderSide(
             color: Theme.of(context).colorScheme.tertiary,
             width: 2,
@@ -206,9 +202,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                 filled: true,
                 fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    AnimationConstants.borderRadiusLg,
-                  ),
+                  borderRadius: context.m3e.shapes.square.lg,
                   borderSide: BorderSide(
                     color: isErrorState
                         ? Theme.of(context).colorScheme.error
@@ -217,9 +211,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                   ),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    AnimationConstants.borderRadiusLg,
-                  ),
+                  borderRadius: context.m3e.shapes.square.lg,
                   borderSide: BorderSide(
                     color: isErrorState
                         ? Theme.of(context).colorScheme.error
@@ -260,9 +252,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
             filled: true,
             fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(
-                AnimationConstants.borderRadiusLg,
-              ),
+              borderRadius: context.m3e.shapes.square.lg,
               borderSide: BorderSide(
                 color: isErrorState
                     ? Theme.of(context).colorScheme.error
@@ -271,9 +261,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
               ),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(
-                AnimationConstants.borderRadiusLg,
-              ),
+              borderRadius: context.m3e.shapes.square.lg,
               borderSide: BorderSide(
                 color: isErrorState
                     ? Theme.of(context).colorScheme.error
@@ -310,11 +298,9 @@ class _LoginPageState extends ConsumerState<LoginPage>
       onPressed: isLoading ? null : onPressed,
       style:
           FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 16),
+            padding: EdgeInsets.symmetric(vertical: context.m3e.spacing.xl),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(
-                AnimationConstants.borderRadiusLg,
-              ),
+              borderRadius: context.m3e.shapes.square.lg,
             ),
             animationDuration: const Duration(milliseconds: 200),
           ).copyWith(
@@ -384,7 +370,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                   child: Transform.translate(
                     offset: Offset(0, -shiftAmount),
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(24),
+                      padding: EdgeInsets.all(context.m3e.spacing.lg),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -413,9 +399,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                       ).colorScheme.surfaceContainerHigh,
                                       elevation: 2,
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(
-                                          AnimationConstants.borderRadiusXl,
-                                        ),
+                                        borderRadius:
+                                            context.m3e.shapes.square.xl,
                                       ),
                                       child: Padding(
                                         padding: const EdgeInsets.all(32),
@@ -546,8 +531,11 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                         .requiresTwoFactorAuth)
                                                       Padding(
                                                         padding:
-                                                            const EdgeInsets.only(
-                                                              top: 16,
+                                                            EdgeInsets.only(
+                                                              top: context
+                                                                  .m3e
+                                                                  .spacing
+                                                                  .xl,
                                                             ),
                                                         child: _buildBackButton(
                                                           () {
@@ -642,7 +630,7 @@ class _ErrorScaffold extends ConsumerWidget {
       ),
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(context.m3e.spacing.lg),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -687,7 +675,7 @@ class _ErrorMessage extends StatelessWidget {
       child: Opacity(
         opacity: message != null ? 1.0 : 0.0,
         child: Padding(
-          padding: const EdgeInsets.only(top: 8),
+          padding: EdgeInsets.only(top: context.m3e.spacing.sm),
           child: Text(
             message ?? '',
             style: TextStyle(
