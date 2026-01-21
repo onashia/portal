@@ -581,10 +581,13 @@ class _LoadingScaffold extends ConsumerWidget {
         showBranding: false,
         actions: const [_ThemeToggle()],
       ),
-      body: const Center(
-        child: LoadingIndicatorM3E(
-          variant: LoadingIndicatorM3EVariant.defaultStyle,
-          semanticLabel: 'Loading portal',
+      body: Center(
+        child: Transform.scale(
+          scale: 2.0,
+          child: const LoadingIndicatorM3E(
+            variant: LoadingIndicatorM3EVariant.defaultStyle,
+            semanticLabel: 'Loading portal',
+          ),
         ),
       ),
     );

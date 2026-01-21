@@ -39,11 +39,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final themeMode = ref.watch(themeProvider);
 
     return authValue.when(
-      loading: () => const Scaffold(
+      loading: () => Scaffold(
         body: Center(
-          child: LoadingIndicatorM3E(
-            variant: LoadingIndicatorM3EVariant.defaultStyle,
-            semanticLabel: 'Loading portal',
+          child: Transform.scale(
+            scale: 2.0,
+            child: const LoadingIndicatorM3E(
+              variant: LoadingIndicatorM3EVariant.defaultStyle,
+              semanticLabel: 'Loading portal',
+            ),
           ),
         ),
       ),
@@ -74,11 +77,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         final currentUser = authState.currentUser;
 
         if (currentUser == null) {
-          return const Scaffold(
+          return Scaffold(
             body: Center(
-              child: LoadingIndicatorM3E(
-                variant: LoadingIndicatorM3EVariant.defaultStyle,
-                semanticLabel: 'Loading portal',
+              child: Transform.scale(
+                scale: 2.0,
+                child: const LoadingIndicatorM3E(
+                  variant: LoadingIndicatorM3EVariant.defaultStyle,
+                  semanticLabel: 'Loading portal',
+                ),
               ),
             ),
           );
