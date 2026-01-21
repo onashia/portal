@@ -39,8 +39,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final themeMode = ref.watch(themeProvider);
 
     return authValue.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () => const Scaffold(
+        body: Center(
+          child: LoadingIndicatorM3E(
+            variant: LoadingIndicatorM3EVariant.defaultStyle,
+            semanticLabel: 'Loading portal',
+          ),
+        ),
+      ),
       error: (error, stack) => Scaffold(
         body: Center(
           child: Padding(
@@ -69,7 +75,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
         if (currentUser == null) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(
+              child: LoadingIndicatorM3E(
+                variant: LoadingIndicatorM3EVariant.defaultStyle,
+                semanticLabel: 'Loading portal',
+              ),
+            ),
           );
         }
 

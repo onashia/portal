@@ -91,7 +91,13 @@ class _GroupSelectionPageState extends ConsumerState<GroupSelectionPage> {
                       _buildSearchBar(context),
                       Expanded(
                         child: monitorState.isLoading
-                            ? const Center(child: CircularProgressIndicator())
+                            ? const Center(
+                                child: LoadingIndicatorM3E(
+                                  variant:
+                                      LoadingIndicatorM3EVariant.defaultStyle,
+                                  semanticLabel: 'Loading groups',
+                                ),
+                              )
                             : filteredGroups.isEmpty
                             ? _buildEmptyState(context)
                             : _buildGroupGrid(
