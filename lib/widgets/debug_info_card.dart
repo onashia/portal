@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
+import '../constants/app_typography.dart';
 import '../providers/api_call_counter.dart';
 import '../providers/group_monitor_provider.dart';
 
@@ -27,10 +28,7 @@ class DebugInfoCard extends ConsumerWidget {
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 SizedBox(width: context.m3e.spacing.sm),
-                Text(
-                  'Debug Info',
-                  style: context.m3e.typography.base.titleMedium,
-                ),
+                Text('Debug Info', style: AppTypography.titleMedium),
               ],
             ),
             SizedBox(height: context.m3e.spacing.md),
@@ -54,10 +52,21 @@ class DebugInfoCard extends ConsumerWidget {
               SizedBox(height: context.m3e.spacing.md),
               Text(
                 'Errors: ${monitorState.groupErrors.length}',
-                style: context.m3e.typography.base.bodyMedium?.copyWith(
+                style: AppTypography.bodyMedium.copyWith(
                   color: Theme.of(context).colorScheme.error,
                 ),
               ),
+              SizedBox(height: context.m3e.spacing.sm),
+              for (final entry in monitorState.groupErrors.entries)
+                Padding(
+                  padding: EdgeInsets.only(top: context.m3e.spacing.xs),
+                  child: Text(
+                    '• ${_getGroupName(monitorState, entry.key)}: ${entry.value}',
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
               SizedBox(height: context.m3e.spacing.sm),
               for (final entry in monitorState.groupErrors.entries)
                 Padding(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:window_manager/window_manager.dart';
+import '../constants/app_typography.dart';
 
 class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
   final String title;
@@ -50,9 +51,7 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
                       SizedBox(width: context.m3e.spacing.sm),
                       Text(
                         title,
-                        style: context.m3e.typography.base.bodyLarge?.copyWith(
-                          color: fgColor,
-                        ),
+                        style: AppTypography.bodyLarge.copyWith(color: fgColor),
                       ),
                     ],
                   ],

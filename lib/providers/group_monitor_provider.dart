@@ -21,6 +21,7 @@ class GroupMonitorState {
   final bool isLoading;
   final String? errorMessage;
   final Map<String, String> groupErrors;
+  final DateTime? lastGroupsFetchTime;
 
   const GroupMonitorState({
     this.allGroups = const [],
@@ -31,6 +32,7 @@ class GroupMonitorState {
     this.isLoading = false,
     this.errorMessage,
     this.groupErrors = const {},
+    this.lastGroupsFetchTime,
   });
 
   GroupMonitorState copyWith({
@@ -42,6 +44,7 @@ class GroupMonitorState {
     bool? isLoading,
     String? errorMessage,
     Map<String, String>? groupErrors,
+    DateTime? lastGroupsFetchTime,
   }) {
     return GroupMonitorState(
       allGroups: allGroups ?? this.allGroups,
@@ -52,6 +55,7 @@ class GroupMonitorState {
       isLoading: isLoading ?? this.isLoading,
       errorMessage: errorMessage ?? this.errorMessage,
       groupErrors: groupErrors ?? this.groupErrors,
+      lastGroupsFetchTime: lastGroupsFetchTime ?? this.lastGroupsFetchTime,
     );
   }
 }
@@ -64,7 +68,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   @override
   GroupMonitorState build() {
     _loadSelectedGroups();
-    return GroupMonitorState();
+    return const GroupMonitorState(isLoading: true);
   }
 
   Future<void> _loadSelectedGroups() async {
@@ -121,7 +125,11 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         subCategory: 'group_monitor',
       );
 
-      state = state.copyWith(allGroups: groups, isLoading: false);
+      state = state.copyWith(
+        allGroups: groups,
+        isLoading: false,
+        lastGroupsFetchTime: DateTime.now(),
+      );
     } catch (e, s) {
       AppLogger.error(
         'Failed to fetch user groups',
@@ -134,6 +142,23 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         errorMessage: 'Failed to fetch groups: ${e.toString()}',
       );
     }
+  }
+
+  Future<void> fetchUserGroupsIfNeeded({int minIntervalSeconds = 5}) async {
+    if (state.lastGroupsFetchTime != null) {
+      final timeSinceLastFetch = DateTime.now().difference(
+        state.lastGroupsFetchTime!,
+      );
+      if (timeSinceLastFetch.inSeconds < minIntervalSeconds) {
+        AppLogger.debug(
+          'Skipping fetch: last fetch was ${timeSinceLastFetch.inSeconds}s ago',
+          subCategory: 'group_monitor',
+        );
+        return;
+      }
+    }
+
+    await fetchUserGroups();
   }
 
   void toggleGroupSelection(String groupId) {

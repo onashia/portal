@@ -1,24 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:m3e_collection/m3e_collection.dart';
 import 'package:portal/utils/group_utils.dart';
 import 'package:portal/utils/vrchat_image_utils.dart';
-import 'package:portal/constants/app_constants.dart';
+import 'package:portal/constants/app_typography.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 class GroupAvatarStack extends ConsumerWidget {
   final List<LimitedUserGroups> groups;
   final VoidCallback? onTap;
-  final double spacing;
-  final int maxStackedCount;
 
-  const GroupAvatarStack({
-    super.key,
-    required this.groups,
-    this.onTap,
-    this.spacing = 24.0,
-    this.maxStackedCount = AppConstants.maxStackedAvatars,
-  });
+  const GroupAvatarStack({super.key, required this.groups, this.onTap});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,36 +17,38 @@ class GroupAvatarStack extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
-    final displayCount = groups.length > maxStackedCount
-        ? maxStackedCount
-        : groups.length;
-    final overflowCount = groups.length > maxStackedCount
-        ? groups.length - maxStackedCount
-        : 0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const avatarSize = 48.0;
+        const spacing = 8.0;
+        const overflowSize = 48.0;
+        final availableWidth = constraints.maxWidth;
 
-    final totalWidth = displayCount * spacing + 48;
+        int maxAvatarsThatFit;
+        if (groups.length == 1) {
+          maxAvatarsThatFit = availableWidth >= avatarSize ? 1 : 0;
+        } else {
+          final remainingWidth = availableWidth - avatarSize - overflowSize;
+          maxAvatarsThatFit = remainingWidth > 0
+              ? 1 + (remainingWidth / (avatarSize + spacing)).floor()
+              : 1;
+          maxAvatarsThatFit = maxAvatarsThatFit.clamp(1, groups.length);
+        }
 
-    return SizedBox(
-      width: totalWidth,
-      height: 48,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          ...List.generate(displayCount, (index) {
-            final group = groups[index];
-            final offset = index * spacing;
-            return Positioned(
-              left: offset,
-              child: _buildGroupAvatar(context, ref, group, index),
-            );
-          }),
-          if (overflowCount > 0)
-            Positioned(
-              left: displayCount * spacing,
-              child: _buildOverflowAvatar(context, overflowCount),
+        final displayGroups = groups.take(maxAvatarsThatFit).toList();
+        final overflowCount = groups.length - maxAvatarsThatFit;
+
+        return Row(
+          spacing: 8.0,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ...displayGroups.map(
+              (group) => _buildGroupAvatar(context, ref, group),
             ),
-        ],
-      ),
+            if (overflowCount > 0) _buildOverflowAvatar(context, overflowCount),
+          ],
+        );
+      },
     );
   }
 
@@ -63,7 +56,6 @@ class GroupAvatarStack extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     LimitedUserGroups group,
-    int index,
   ) {
     final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
 
@@ -75,28 +67,25 @@ class GroupAvatarStack extends ConsumerWidget {
       fallbackWidget: hasImage
           ? null
           : Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: GroupUtils.getAvatarColor(group),
-              ),
+              decoration: const BoxDecoration(shape: BoxShape.circle),
+              color: GroupUtils.getAvatarColor(group),
               child: Center(
                 child: Text(
                   GroupUtils.getInitials(group),
-                  style: context.m3e.typography.base.labelSmall?.copyWith(
-                    color: Colors.white,
-                  ),
+                  style: AppTypography.bodySmall.copyWith(color: Colors.white),
                 ),
               ),
             ),
-      border: Border.all(
-        color: Theme.of(context).colorScheme.surface,
-        width: 2,
-      ),
       boxShadow: [
         BoxShadow(
-          color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.1),
+          color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.08),
           blurRadius: 4,
           offset: const Offset(0, 2),
+        ),
+        BoxShadow(
+          color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.12),
+          blurRadius: 8,
+          offset: const Offset(0, 4),
         ),
       ],
       onTap: onTap,
@@ -105,16 +94,14 @@ class GroupAvatarStack extends ConsumerWidget {
 
   Widget _buildOverflowAvatar(BuildContext context, int count) {
     return Container(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Theme.of(context).colorScheme.primary,
-      ),
+      decoration: const BoxDecoration(shape: BoxShape.circle),
+      color: Theme.of(context).colorScheme.primaryContainer,
       constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
       child: Center(
         child: Text(
           count > 9 ? '9+' : count.toString(),
-          style: context.m3e.typography.base.labelSmall?.copyWith(
-            color: Colors.white,
+          style: AppTypography.bodySmall.copyWith(
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
           ),
         ),
       ),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:motor/motor.dart';
 import 'package:m3e_collection/m3e_collection.dart';
+import '../constants/app_typography.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/custom_title_bar.dart';
@@ -111,9 +112,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
                   SizedBox(width: context.m3e.spacing.md),
                   Text(
                     'portal.',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    style: AppTypography.headlineMedium.copyWith(
                       color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.bold,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -385,10 +385,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                 authState.requiresTwoFactorAuth
                                                     ? 'Two-Factor Authentication'
                                                     : 'Sign in to your VRChat account',
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodyLarge
-                                                    ?.copyWith(
+                                                style: AppTypography.bodyLarge
+                                                    .copyWith(
                                                       color: Theme.of(context)
                                                           .colorScheme
                                                           .onSurfaceVariant,
@@ -619,15 +617,9 @@ class _ErrorScaffold extends ConsumerWidget {
             children: [
               const Icon(Icons.error_outline, size: 64, color: Colors.red),
               SizedBox(height: context.m3e.spacing.md),
-              Text(
-                'An error occurred',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
+              Text('An error occurred', style: AppTypography.headlineMedium),
               SizedBox(height: context.m3e.spacing.sm),
-              Text(
-                error.toString(),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+              Text(error.toString(), style: AppTypography.bodyMedium),
             ],
           ),
         ),

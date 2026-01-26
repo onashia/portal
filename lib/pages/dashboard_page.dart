@@ -12,7 +12,7 @@ import '../widgets/custom_title_bar.dart';
 import '../widgets/debug_info_card.dart';
 import '../widgets/group_instance_list.dart';
 import '../utils/app_logger.dart';
-import 'group_selection_page.dart';
+import '../widgets/group_selection_side_sheet.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -22,7 +22,7 @@ class DashboardPage extends ConsumerStatefulWidget {
 }
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
-  final OverlayPortalController _groupSelectionController =
+  final OverlayPortalController _sideSheetController =
       OverlayPortalController();
 
   @override
@@ -97,10 +97,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             .toList();
 
         return OverlayPortal(
-          controller: _groupSelectionController,
-          overlayChildBuilder: (context) => GroupSelectionPage(
+          controller: _sideSheetController,
+          overlayChildBuilder: (context) => GroupSelectionSideSheet(
             userId: userId,
-            controller: _groupSelectionController,
+            controller: _sideSheetController,
           ),
           child: Scaffold(
             appBar: CustomTitleBar(
@@ -392,7 +392,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           size: FabM3ESize.regular,
           shapeFamily: FabM3EShapeFamily.round,
           onPressed: () {
-            _groupSelectionController.show();
+            _sideSheetController.show();
           },
         ),
       ],
