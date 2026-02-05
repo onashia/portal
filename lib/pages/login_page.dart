@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:motor/motor.dart';
 import 'package:m3e_collection/m3e_collection.dart';
-import '../constants/app_typography.dart';
+import 'package:pinput/pinput.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/custom_title_bar.dart';
@@ -112,8 +113,9 @@ class _LoginPageState extends ConsumerState<LoginPage>
                   SizedBox(width: context.m3e.spacing.md),
                   Text(
                     'portal.',
-                    style: AppTypography.headlineMedium.copyWith(
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w700,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -136,22 +138,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
         labelText: 'Username',
         hintText: 'Enter your username',
         prefixIcon: const Icon(Icons.person_outline),
-        filled: true,
-        fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-        border: OutlineInputBorder(
-          borderRadius: context.m3e.shapes.square.lg,
-          borderSide: BorderSide(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            width: 1,
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: context.m3e.shapes.square.lg,
-          borderSide: BorderSide(
-            color: Theme.of(context).colorScheme.tertiary,
-            width: 2,
-          ),
-        ),
       ),
       validator: (value) {
         if (value == null || value.isEmpty) {
@@ -190,26 +176,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
                   size: IconButtonM3ESize.sm,
                   shape: IconButtonM3EShapeVariant.round,
                 ),
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-                border: OutlineInputBorder(
-                  borderRadius: context.m3e.shapes.square.lg,
-                  borderSide: BorderSide(
-                    color: isErrorState
-                        ? Theme.of(context).colorScheme.error
-                        : Theme.of(context).colorScheme.surfaceContainerHighest,
-                    width: isErrorState ? 2 : 1,
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: context.m3e.shapes.square.lg,
-                  borderSide: BorderSide(
-                    color: isErrorState
-                        ? Theme.of(context).colorScheme.error
-                        : Theme.of(context).colorScheme.tertiary,
-                    width: 2,
-                  ),
-                ),
+                errorText: isErrorState ? errorMessage : null,
+                errorStyle: isErrorState
+                    ? const TextStyle(height: 0, fontSize: 0)
+                    : null,
               ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
@@ -227,42 +197,42 @@ class _LoginPageState extends ConsumerState<LoginPage>
 
   Widget _build2FAField(String? errorMessage) {
     final isErrorState = errorMessage != null;
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final baseDecoration = BoxDecoration(
+      color: scheme.surfaceContainerLow,
+      borderRadius: context.m3e.shapes.square.lg,
+      border: Border.all(color: scheme.surfaceContainerHighest, width: 1),
+    );
+    final defaultPinTheme = PinTheme(
+      width: 48,
+      height: 56,
+      textStyle: textTheme.titleMedium?.copyWith(color: scheme.onSurface),
+      decoration: baseDecoration,
+    );
+    final focusedPinTheme = defaultPinTheme.copyWith(
+      decoration: baseDecoration.copyWith(
+        border: Border.all(color: scheme.primary, width: 2),
+      ),
+    );
+    final errorPinTheme = defaultPinTheme.copyWith(
+      decoration: baseDecoration.copyWith(
+        border: Border.all(color: scheme.error, width: 2),
+      ),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        TextFormField(
+        Pinput(
           controller: _twoFactorController,
           focusNode: _twoFactorFocusNode,
-          onFieldSubmitted: (_) => _handleSubmit(),
-          decoration: InputDecoration(
-            labelText: 'Authenticator Code',
-            hintText: 'Enter 6-digit code',
-            prefixIcon: const Icon(Icons.security),
-            filled: true,
-            fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-            border: OutlineInputBorder(
-              borderRadius: context.m3e.shapes.square.lg,
-              borderSide: BorderSide(
-                color: isErrorState
-                    ? Theme.of(context).colorScheme.error
-                    : Theme.of(context).colorScheme.surfaceContainerHighest,
-                width: isErrorState ? 2 : 1,
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: context.m3e.shapes.square.lg,
-              borderSide: BorderSide(
-                color: isErrorState
-                    ? Theme.of(context).colorScheme.error
-                    : Theme.of(context).colorScheme.tertiary,
-                width: 2,
-              ),
-            ),
-          ),
           keyboardType: TextInputType.number,
-          maxLength: 6,
+          textInputAction: TextInputAction.done,
+          length: 6,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          onSubmitted: (_) => _handleSubmit(),
           validator: (value) {
             if (value == null || value.isEmpty) {
               return 'Please enter your verification code';
@@ -272,6 +242,12 @@ class _LoginPageState extends ConsumerState<LoginPage>
             }
             return null;
           },
+          forceErrorState: isErrorState,
+          defaultPinTheme: defaultPinTheme,
+          focusedPinTheme: focusedPinTheme,
+          errorPinTheme: errorPinTheme,
+          submittedPinTheme: defaultPinTheme,
+          separatorBuilder: (_) => SizedBox(width: context.m3e.spacing.md),
         ),
         _ErrorMessage(errorMessage),
       ],
@@ -385,8 +361,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                 authState.requiresTwoFactorAuth
                                                     ? 'Two-Factor Authentication'
                                                     : 'Sign in to your VRChat account',
-                                                style: AppTypography.bodyLarge
-                                                    .copyWith(
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodyLarge
+                                                    ?.copyWith(
                                                       color: Theme.of(context)
                                                           .colorScheme
                                                           .onSurfaceVariant,
@@ -459,7 +437,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                                 height: context
                                                                     .m3e
                                                                     .spacing
-                                                                    .md,
+                                                                    .lg,
                                                               ),
                                                             ],
                                                           )
@@ -503,7 +481,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                                               top: context
                                                                   .m3e
                                                                   .spacing
-                                                                  .xl,
+                                                                  .md,
                                                             ),
                                                         child: _buildBackButton(
                                                           () {
@@ -615,11 +593,21 @@ class _ErrorScaffold extends ConsumerWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              Icon(
+                Icons.error_outline,
+                size: 64,
+                color: Theme.of(context).colorScheme.error,
+              ),
               SizedBox(height: context.m3e.spacing.md),
-              Text('An error occurred', style: AppTypography.headlineMedium),
+              Text(
+                'An error occurred',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
               SizedBox(height: context.m3e.spacing.sm),
-              Text(error.toString(), style: AppTypography.bodyMedium),
+              Text(
+                error.toString(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
             ],
           ),
         ),
@@ -653,9 +641,8 @@ class _ErrorMessage extends StatelessWidget {
           padding: EdgeInsets.only(top: context.m3e.spacing.sm),
           child: Text(
             message ?? '',
-            style: TextStyle(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.error,
-              fontSize: 12,
             ),
           ),
         ),

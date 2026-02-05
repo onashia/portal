@@ -18,9 +18,7 @@ class AppLogger {
         if (error != null) 'error=$error',
         if (stackTrace != null) 'stack=$stackTrace',
       ].join(' ');
-      debugPrint(
-        '[$name] $message${details.isNotEmpty ? ' ($details)' : ''}',
-      );
+      debugPrint('[$name] $message${details.isNotEmpty ? ' ($details)' : ''}');
       developer.log(
         message,
         name: name,

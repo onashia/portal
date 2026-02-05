@@ -65,6 +65,7 @@ dependencies:
   # Material 3 Expressive Design Tokens
   m3e_collection: ^0.3.7
   side_sheet_material3: ^0.0.2
+  pinput: ^6.0.2
 
 dev_dependencies:
   flutter_test:

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:window_manager/window_manager.dart';
-import '../constants/app_typography.dart';
 
 class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
   final String title;
@@ -29,7 +28,7 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
 
-    final bgColor = backgroundColor ?? theme.colorScheme.surface;
+    final bgColor = backgroundColor ?? theme.colorScheme.surfaceContainer;
 
     final fgColor = foregroundColor ?? theme.colorScheme.onSurface;
 
@@ -51,7 +50,9 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
                       SizedBox(width: context.m3e.spacing.sm),
                       Text(
                         title,
-                        style: AppTypography.bodyLarge.copyWith(color: fgColor),
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: fgColor,
+                        ),
                       ),
                     ],
                   ],
@@ -60,10 +61,7 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
             ),
           ),
           if (actions != null) ...actions!,
-          _WindowButtons(
-            foregroundColor: fgColor,
-            hoverColor: theme.colorScheme.onSurface.withValues(alpha: 0.1),
-          ),
+          _WindowButtons(foregroundColor: fgColor),
         ],
       ),
     );
@@ -72,15 +70,17 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
 
 class _WindowButtons extends ConsumerWidget {
   final Color foregroundColor;
-  final Color hoverColor;
 
-  const _WindowButtons({
-    required this.foregroundColor,
-    required this.hoverColor,
-  });
+  const _WindowButtons({required this.foregroundColor});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final hoverColor = scheme.onSurface.withValues(alpha: 0.08);
+    final pressedColor = scheme.onSurface.withValues(alpha: 0.12);
+    final closeHoverColor = scheme.errorContainer;
+    final closePressedColor = scheme.error.withValues(alpha: 0.2);
+
     return SizedBox(
       width: 138,
       height: 40,
@@ -92,6 +92,7 @@ class _WindowButtons extends ConsumerWidget {
             onPressed: () => windowManager.minimize(),
             foregroundColor: foregroundColor,
             hoverColor: hoverColor,
+            pressedColor: pressedColor,
           ),
           _WindowButton(
             icon: Icons.check_box_outline_blank,
@@ -105,14 +106,16 @@ class _WindowButtons extends ConsumerWidget {
             },
             foregroundColor: foregroundColor,
             hoverColor: hoverColor,
+            pressedColor: pressedColor,
           ),
           _WindowButton(
             icon: Icons.close,
             tooltip: 'Close',
             onPressed: () => windowManager.close(),
             foregroundColor: foregroundColor,
-            hoverColor: Colors.red,
-            isCloseButton: true,
+            hoverColor: closeHoverColor,
+            pressedColor: closePressedColor,
+            activeForegroundColor: scheme.onErrorContainer,
           ),
         ],
       ),
@@ -126,7 +129,8 @@ class _WindowButton extends StatefulWidget {
   final VoidCallback onPressed;
   final Color foregroundColor;
   final Color hoverColor;
-  final bool isCloseButton;
+  final Color pressedColor;
+  final Color? activeForegroundColor;
 
   const _WindowButton({
     required this.icon,
@@ -134,7 +138,8 @@ class _WindowButton extends StatefulWidget {
     required this.onPressed,
     required this.foregroundColor,
     required this.hoverColor,
-    this.isCloseButton = false,
+    required this.pressedColor,
+    this.activeForegroundColor,
   });
 
   @override
@@ -143,29 +148,54 @@ class _WindowButton extends StatefulWidget {
 
 class _WindowButtonState extends State<_WindowButton> {
   bool _isHovered = false;
+  bool _isPressed = false;
 
   @override
   Widget build(BuildContext context) {
+    final backgroundColor = _isPressed
+        ? widget.pressedColor
+        : _isHovered
+        ? widget.hoverColor
+        : Colors.transparent;
+    final iconColor =
+        (_isHovered || _isPressed) && widget.activeForegroundColor != null
+        ? widget.activeForegroundColor!
+        : widget.foregroundColor;
+
     return Tooltip(
       message: widget.tooltip,
-      child: InkWell(
-        onTap: widget.onPressed,
-        onHover: (hovered) {
-          setState(() {
-            _isHovered = hovered;
-          });
-        },
-        child: Container(
-          width: 46,
-          height: 40,
-          decoration: BoxDecoration(
-            color: _isHovered
-                ? (widget.isCloseButton
-                      ? Colors.red
-                      : widget.hoverColor.withValues(alpha: 0.1))
-                : null,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onPressed,
+          onHover: (hovered) {
+            setState(() {
+              _isHovered = hovered;
+            });
+          },
+          onTapDown: (_) {
+            setState(() {
+              _isPressed = true;
+            });
+          },
+          onTapCancel: () {
+            setState(() {
+              _isPressed = false;
+            });
+          },
+          onTapUp: (_) {
+            setState(() {
+              _isPressed = false;
+            });
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            curve: Curves.easeOut,
+            width: 46,
+            height: 40,
+            decoration: BoxDecoration(color: backgroundColor),
+            child: Icon(widget.icon, size: 16, color: iconColor),
           ),
-          child: Icon(widget.icon, size: 16, color: widget.foregroundColor),
         ),
       ),
     );

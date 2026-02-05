@@ -3,12 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:motor/motor.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
-import '../constants/app_typography.dart';
 import '../utils/animation_constants.dart';
 import '../providers/group_monitor_provider.dart';
 import '../utils/group_utils.dart';
 import '../utils/vrchat_image_utils.dart';
-import '../widgets/group_avatar_stack.dart';
 
 class GroupSelectionSideSheet extends ConsumerStatefulWidget {
   final String userId;
@@ -102,12 +100,14 @@ class _GroupSelectionSideSheetState
   }
 
   Widget _buildSheetBody(BuildContext context, Size size) {
+    final scheme = Theme.of(context).colorScheme;
+    final sheetRadius = context.m3e.shapes.round.md;
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(28),
-          bottomLeft: Radius.circular(28),
+        borderRadius: BorderRadius.only(
+          topLeft: sheetRadius.topLeft,
+          bottomLeft: sheetRadius.bottomLeft,
         ),
         boxShadow: [
           BoxShadow(
@@ -128,16 +128,14 @@ class _GroupSelectionSideSheetState
       child: Material(
         color: Colors.transparent,
         child: SafeArea(
-          minimum: EdgeInsets.only(top: context.m3e.spacing.xl),
           child: Column(
             mainAxisSize: MainAxisSize.max,
             children: [
-              _buildHeader(context),
-              _buildSearchBar(context),
+              _buildHeaderBand(context, scheme, sheetRadius),
+              SizedBox(height: context.m3e.spacing.md),
               Expanded(
                 child: Column(
                   children: [
-                    _buildSelectedGroupsSection(context),
                     Expanded(child: _buildAvailableGroupsSection(context)),
                   ],
                 ),
@@ -171,6 +169,14 @@ class _GroupSelectionSideSheetState
           child: Row(
             children: [
               ButtonM3E(
+                onPressed: () => widget.controller.hide(),
+                label: const Text('Done'),
+                style: ButtonM3EStyle.filled,
+                size: ButtonM3ESize.sm,
+                shape: ButtonM3EShape.round,
+              ),
+              SizedBox(width: context.m3e.spacing.lg),
+              ButtonM3E(
                 onPressed: () async {
                   await ref
                       .read(groupMonitorProvider(widget.userId).notifier)
@@ -182,14 +188,6 @@ class _GroupSelectionSideSheetState
                 size: ButtonM3ESize.sm,
                 shape: ButtonM3EShape.round,
               ),
-              SizedBox(width: context.m3e.spacing.lg),
-              ButtonM3E(
-                onPressed: () => widget.controller.hide(),
-                label: const Text('Done'),
-                style: ButtonM3EStyle.filled,
-                size: ButtonM3ESize.sm,
-                shape: ButtonM3EShape.round,
-              ),
             ],
           ),
         ),
@@ -197,124 +195,59 @@ class _GroupSelectionSideSheetState
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeaderBand(
+    BuildContext context,
+    ColorScheme scheme,
+    BorderRadius sheetRadius,
+  ) {
+    final textTheme = Theme.of(context).textTheme;
     return Padding(
-      padding: EdgeInsets.only(
-        left: context.m3e.spacing.xl,
-        right: context.m3e.spacing.lg,
-        bottom: context.m3e.spacing.lg,
-      ),
-      child: Row(
-        children: [
-          Text('Manage Groups', style: AppTypography.titleLarge),
-          const Spacer(),
-          IconButtonM3E(
-            icon: const Icon(Icons.close),
-            onPressed: () => widget.controller.hide(),
-            tooltip: 'Close',
-            variant: IconButtonM3EVariant.standard,
-            size: IconButtonM3ESize.sm,
-            shape: IconButtonM3EShapeVariant.round,
+      padding: EdgeInsets.zero,
+      child: ClipRRect(
+        borderRadius: BorderRadius.only(topLeft: sheetRadius.topLeft),
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.only(
+            left: context.m3e.spacing.xl,
+            right: context.m3e.spacing.xl,
+            top: context.m3e.spacing.lg,
+            bottom: context.m3e.spacing.lg,
           ),
-        ],
+          color: scheme.surfaceContainer,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text('Manage Groups', style: textTheme.titleLarge),
+                  const Spacer(),
+                  IconButtonM3E(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => widget.controller.hide(),
+                    tooltip: 'Close',
+                    variant: IconButtonM3EVariant.standard,
+                    size: IconButtonM3ESize.sm,
+                    shape: IconButtonM3EShapeVariant.round,
+                  ),
+                ],
+              ),
+              SizedBox(height: context.m3e.spacing.lg),
+              _buildSearchBar(context),
+              SizedBox(height: context.m3e.spacing.md),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildSearchBar(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: context.m3e.spacing.xl,
-        right: context.m3e.spacing.xl,
-      ),
-      child: TextField(
-        controller: _searchController,
-        decoration: InputDecoration(
-          hintText: 'Search groups...',
-          prefixIcon: const Icon(Icons.search),
-          filled: true,
-          fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
-          border: OutlineInputBorder(
-            borderRadius: context.m3e.shapes.round.md,
-            borderSide: BorderSide(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              width: 1,
-            ),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: context.m3e.shapes.round.md,
-            borderSide: BorderSide(
-              color: Theme.of(context).colorScheme.primary,
-              width: 2,
-            ),
-          ),
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: context.m3e.spacing.lg,
-            vertical: context.m3e.spacing.sm,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSelectedGroupsSection(BuildContext context) {
-    final monitorState = ref.watch(groupMonitorProvider(widget.userId));
-    final selectedGroups = monitorState.allGroups
-        .where((g) => monitorState.selectedGroupIds.contains(g.groupId))
-        .toList();
-
-    if (selectedGroups.isEmpty) {
-      return _buildEmptySelectedState(context);
-    }
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: EdgeInsets.only(
-            left: context.m3e.spacing.xl,
-            right: context.m3e.spacing.xl,
-            top: context.m3e.spacing.lg,
-          ),
-          child: Row(
-            children: [
-              Text('Selected Groups', style: AppTypography.titleMedium),
-            ],
-          ),
-        ),
-        Padding(
-          padding: EdgeInsets.only(
-            left: context.m3e.spacing.xl,
-            right: context.m3e.spacing.xl,
-          ),
-          child: _buildAvatarStack(context, selectedGroups),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAvatarStack(
-    BuildContext context,
-    List<LimitedUserGroups> groups,
-  ) {
-    return GroupAvatarStack(groups: groups);
-  }
-
-  Widget _buildEmptySelectedState(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.all(context.m3e.spacing.xl),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.groups,
-            size: 64,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-          SizedBox(height: context.m3e.spacing.lg),
-          Text('No groups selected', style: AppTypography.bodyLarge),
-        ],
+    return TextField(
+      controller: _searchController,
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: 'Search or select groups',
+        prefixIcon: const Icon(Icons.search),
       ),
     );
   }
@@ -323,35 +256,16 @@ class _GroupSelectionSideSheetState
     final monitorState = ref.watch(groupMonitorProvider(widget.userId));
     final filteredGroups = _filterGroups(monitorState.allGroups);
     final selectedIds = monitorState.selectedGroupIds;
+    final hasAnyGroups = monitorState.allGroups.isNotEmpty;
+    final isSearching = _searchQuery.isNotEmpty;
 
     final content = monitorState.isLoading
         ? _buildLoadingAvailableState(context)
         : filteredGroups.isEmpty
-        ? _buildEmptyAvailableState(context)
+        ? _buildEmptyAvailableState(context, hasAnyGroups, isSearching)
         : _buildAvailableGroupsList(context, filteredGroups, selectedIds);
 
-    return Column(
-      children: [
-        Padding(
-          padding: EdgeInsets.only(
-            left: context.m3e.spacing.xl,
-            right: context.m3e.spacing.xl,
-            top: context.m3e.spacing.lg,
-          ),
-          child: Row(
-            children: [
-              Text('Available Groups', style: AppTypography.titleMedium),
-              SizedBox(width: context.m3e.spacing.sm),
-              Text(
-                '(${filteredGroups.length})',
-                style: AppTypography.titleMedium,
-              ),
-            ],
-          ),
-        ),
-        Expanded(child: content),
-      ],
-    );
+    return Column(children: [Expanded(child: content)]);
   }
 
   List<LimitedUserGroups> _filterGroups(List<LimitedUserGroups> allGroups) {
@@ -372,20 +286,15 @@ class _GroupSelectionSideSheetState
     List<LimitedUserGroups> groups,
     Set<String> selectedIds,
   ) {
-    return ListView.builder(
+    return ListView.separated(
       controller: _scrollController,
-      padding: EdgeInsets.only(
-        left: context.m3e.spacing.xl,
-        right: context.m3e.spacing.xl,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: context.m3e.spacing.xl),
       itemCount: groups.length,
+      separatorBuilder: (_, _) => SizedBox(height: context.m3e.spacing.sm),
       itemBuilder: (context, index) {
         final group = groups[index];
         final isSelected = selectedIds.contains(group.groupId);
-        return Padding(
-          padding: EdgeInsets.only(bottom: context.m3e.spacing.md),
-          child: _buildGroupListItem(context, group, isSelected),
-        );
+        return _buildGroupListItem(context, group, isSelected);
       },
     );
   }
@@ -395,16 +304,23 @@ class _GroupSelectionSideSheetState
     LimitedUserGroups group,
     bool isSelected,
   ) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     final memberCount = group.memberCount ?? 0;
+    final titleStyle = textTheme.titleMedium?.copyWith(
+      color: isSelected ? scheme.onPrimaryContainer : scheme.onSurface,
+    );
+    final subtitleStyle = textTheme.bodySmall?.copyWith(
+      color: isSelected
+          ? scheme.onPrimaryContainer.withValues(alpha: 0.8)
+          : scheme.onSurfaceVariant,
+    );
 
     return Material(
-      color: isSelected
-          ? Theme.of(
-              context,
-            ).colorScheme.primaryContainer.withValues(alpha: 0.5)
-          : Theme.of(context).colorScheme.surfaceContainerLow,
-      borderRadius: context.m3e.shapes.round.md,
-      child: InkWell(
+      color: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: context.m3e.shapes.square.lg),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
         onTap: () {
           if (group.groupId != null) {
             ref
@@ -412,41 +328,30 @@ class _GroupSelectionSideSheetState
                 .toggleGroupSelection(group.groupId!);
           }
         },
-        borderRadius: context.m3e.shapes.round.md,
-        child: Padding(
-          padding: EdgeInsets.all(context.m3e.spacing.md),
-          child: Row(
-            children: [
-              _buildGroupAvatar(context, group),
-              SizedBox(width: context.m3e.spacing.lg),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      group.name ?? 'Unknown Group',
-                      style: AppTypography.bodyLarge,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    SizedBox(height: context.m3e.spacing.sm),
-                    Text(
-                      '$memberCount members',
-                      style: AppTypography.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-              if (isSelected)
-                Icon(
-                  Icons.check_circle,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  size: 24,
-                ),
-            ],
-          ),
+        selected: isSelected,
+        leading: _buildGroupAvatar(context, group),
+        title: Text(
+          group.name ?? 'Unknown Group',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
+        subtitle: Text('$memberCount members'),
+        titleTextStyle: titleStyle,
+        subtitleTextStyle: subtitleStyle,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: context.m3e.spacing.md,
+          vertical: context.m3e.spacing.xs,
+        ),
+        trailing: isSelected
+            ? Icon(
+                Icons.check_circle,
+                color: scheme.onPrimaryContainer,
+                size: 24,
+              )
+            : null,
+        tileColor: Colors.transparent,
+        selectedTileColor: scheme.primaryContainer,
+        iconColor: scheme.onSurfaceVariant,
       ),
     );
   }
@@ -458,10 +363,12 @@ class _GroupSelectionSideSheetState
       width: 48,
       height: 48,
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
+        borderRadius: context.m3e.shapes.square.md,
         color: hasImage ? null : GroupUtils.getAvatarColor(group),
       ),
-      child: ClipOval(
+      child: ClipRRect(
+        borderRadius: context.m3e.shapes.square.md,
+        clipBehavior: Clip.antiAlias,
         child: CachedImage(
           imageUrl: hasImage ? group.iconUrl! : '',
           width: 48,
@@ -508,30 +415,42 @@ class _GroupSelectionSideSheetState
     );
   }
 
-  Widget _buildEmptyAvailableState(BuildContext context) {
+  Widget _buildEmptyAvailableState(
+    BuildContext context,
+    bool hasAnyGroups,
+    bool isSearching,
+  ) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final showSecondaryLine = !hasAnyGroups && !isSearching;
+
     return Center(
       child: Padding(
         padding: EdgeInsets.all(context.m3e.spacing.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.group_off,
-              size: 64,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+            Icon(Icons.group_off, size: 64, color: scheme.onSurfaceVariant),
             SizedBox(height: context.m3e.spacing.lg),
             Text(
-              _searchQuery.isEmpty
-                  ? 'No groups found'
-                  : 'No groups match "$_searchQuery"',
-              style: AppTypography.bodyLarge,
+              isSearching
+                  ? 'No groups match "$_searchQuery"'
+                  : 'No groups found',
+              style: textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
             ),
-            SizedBox(height: context.m3e.spacing.sm),
-            Text(
-              'You are not a member of any groups',
-              style: AppTypography.bodyMedium,
-            ),
+            if (showSecondaryLine) ...[
+              SizedBox(height: context.m3e.spacing.sm),
+              Text(
+                'You are not a member of any groups',
+                style: textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ],
         ),
       ),
