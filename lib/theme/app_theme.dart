@@ -38,8 +38,8 @@ class AppTheme {
       textTheme: textTheme,
       cardTheme: CardThemeData(
         color: scheme.surfaceContainer,
-        elevation: 1,
-        shape: RoundedRectangleBorder(borderRadius: shapes.square.xl),
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: shapes.round.md),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,

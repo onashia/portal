@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:motor/motor.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:m3e_collection/m3e_collection.dart';
@@ -7,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import '../services/notification_service.dart';
+import '../utils/animation_constants.dart';
 import '../utils/vrchat_image_utils.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/debug_info_card.dart';
@@ -22,8 +24,36 @@ class DashboardPage extends ConsumerStatefulWidget {
 }
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
-  final OverlayPortalController _sideSheetController =
-      OverlayPortalController();
+  bool _isSideSheetOpen = false;
+
+  void _openSideSheet() {
+    if (!_isSideSheetOpen) {
+      setState(() {
+        _isSideSheetOpen = true;
+      });
+    }
+  }
+
+  void _openSideSheetForUser(String userId) {
+    _openSideSheet();
+    ref.read(groupMonitorProvider(userId).notifier).fetchUserGroupsIfNeeded();
+  }
+
+  void _closeSideSheet() {
+    if (_isSideSheetOpen) {
+      setState(() {
+        _isSideSheetOpen = false;
+      });
+    }
+  }
+
+  void _toggleSideSheetForUser(String userId) {
+    if (_isSideSheetOpen) {
+      _closeSideSheet();
+    } else {
+      _openSideSheetForUser(userId);
+    }
+  }
 
   @override
   void initState() {
@@ -96,145 +126,176 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             .where((g) => monitorState.selectedGroupIds.contains(g.groupId))
             .toList();
 
-        return OverlayPortal(
-          controller: _sideSheetController,
-          overlayChildBuilder: (context) => GroupSelectionSideSheet(
-            userId: userId,
-            controller: _sideSheetController,
-          ),
-          child: Scaffold(
-            appBar: CustomTitleBar(
-              title: 'portal.',
-              icon: Icons.tonality,
-              actions: [
-                if (monitorState.newInstances.isNotEmpty)
-                  Stack(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.notifications),
-                        tooltip:
-                            'New instances (${monitorState.newInstances.length})',
-                        onPressed: () {
-                          ref
-                              .read(groupMonitorProvider(userId).notifier)
-                              .acknowledgeNewInstances();
-                        },
+        return Scaffold(
+          appBar: CustomTitleBar(
+            title: 'portal.',
+            icon: Icons.tonality,
+            actions: [
+              if (monitorState.newInstances.isNotEmpty)
+                Stack(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.notifications),
+                      tooltip:
+                          'New instances (${monitorState.newInstances.length})',
+                      onPressed: () {
+                        ref
+                            .read(groupMonitorProvider(userId).notifier)
+                            .acknowledgeNewInstances();
+                      },
+                    ),
+                    if (monitorState.newInstances.isNotEmpty)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 18,
+                            minHeight: 18,
+                          ),
+                          child: Text(
+                            monitorState.newInstances.length > 9
+                                ? '9+'
+                                : monitorState.newInstances.length.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
                       ),
-                      if (monitorState.newInstances.isNotEmpty)
-                        Positioned(
-                          right: 8,
-                          top: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 18,
-                              minHeight: 18,
-                            ),
-                            child: Text(
-                              monitorState.newInstances.length > 9
-                                  ? '9+'
-                                  : monitorState.newInstances.length.toString(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
+                  ],
+                ),
+              IconButtonM3E(
+                icon: Icon(
+                  themeMode == ThemeMode.dark
+                      ? Icons.light_mode_outlined
+                      : Icons.dark_mode_outlined,
+                ),
+                tooltip: themeMode == ThemeMode.dark
+                    ? 'Light Mode'
+                    : 'Dark Mode',
+                variant: IconButtonM3EVariant.standard,
+                size: IconButtonM3ESize.sm,
+                shape: IconButtonM3EShapeVariant.round,
+                onPressed: () {
+                  ref.read(themeProvider.notifier).toggleTheme();
+                },
+              ),
+              if (selectedGroups.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Clear Groups',
+                  onPressed: () async {
+                    await ref
+                        .read(groupMonitorProvider(userId).notifier)
+                        .clearSelectedGroups();
+                  },
+                ),
+              IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'Logout',
+                onPressed: () async {
+                  ref
+                      .read(groupMonitorProvider(userId).notifier)
+                      .stopMonitoring();
+                  await ref.read(authProvider.notifier).logout();
+                },
+              ),
+            ],
+          ),
+          body: DragToResizeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                const sheetTargetWidth = 380.0;
+                const minContentWidth = 640.0;
+                final totalWidth = constraints.maxWidth;
+                final canDock =
+                    totalWidth >= (sheetTargetWidth + minContentWidth);
+                final effectiveSheetWidth = totalWidth < sheetTargetWidth
+                    ? totalWidth
+                    : sheetTargetWidth;
+                final sideSheet = KeyedSubtree(
+                  key: const ValueKey('groupSideSheet'),
+                  child: GroupSelectionSideSheet(
+                    userId: userId,
+                    onClose: _closeSideSheet,
+                  ),
+                );
+
+                final content = SizedBox.expand(
+                  child: Stack(
+                    children: [
+                      SafeArea(
+                        child: SingleChildScrollView(
+                          padding: EdgeInsets.only(
+                            left: 24,
+                            right: 24,
+                            top: 24,
+                            bottom: context.m3e.spacing.xxl * 4,
+                          ), // 128px: space for floating action area (56px FAB + 24px margin + 48px buffer)
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 800),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildUserCard(context, currentUser),
+                                  SizedBox(height: context.m3e.spacing.lg),
+                                  _buildGroupMonitoringSection(
+                                    context,
+                                    userId,
+                                    monitorState,
+                                    selectedGroups,
+                                  ),
+                                  SizedBox(height: context.m3e.spacing.lg),
+                                  DebugInfoCard(monitorState: monitorState),
+                                ],
                               ),
                             ),
                           ),
                         ),
-                    ],
-                  ),
-                IconButtonM3E(
-                  icon: Icon(
-                    themeMode == ThemeMode.dark
-                        ? Icons.light_mode_outlined
-                        : Icons.dark_mode_outlined,
-                  ),
-                  tooltip: themeMode == ThemeMode.dark
-                      ? 'Light Mode'
-                      : 'Dark Mode',
-                  variant: IconButtonM3EVariant.standard,
-                  size: IconButtonM3ESize.sm,
-                  shape: IconButtonM3EShapeVariant.round,
-                  onPressed: () {
-                    ref.read(themeProvider.notifier).toggleTheme();
-                  },
-                ),
-                if (selectedGroups.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(Icons.refresh),
-                    tooltip: 'Clear Groups',
-                    onPressed: () async {
-                      await ref
-                          .read(groupMonitorProvider(userId).notifier)
-                          .clearSelectedGroups();
-                    },
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.logout),
-                  tooltip: 'Logout',
-                  onPressed: () async {
-                    ref
-                        .read(groupMonitorProvider(userId).notifier)
-                        .stopMonitoring();
-                    await ref.read(authProvider.notifier).logout();
-                  },
-                ),
-              ],
-            ),
-            body: DragToResizeArea(
-              child: SizedBox.expand(
-                child: Stack(
-                  children: [
-                    SafeArea(
-                      child: SingleChildScrollView(
-                        padding: EdgeInsets.only(
-                          left: 24,
-                          right: 24,
-                          top: 24,
-                          bottom: context.m3e.spacing.xxl * 4,
-                        ), // 128px: space for floating action area (56px FAB + 24px margin + 48px buffer)
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 800),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildUserCard(context, currentUser),
-                                SizedBox(height: context.m3e.spacing.lg),
-                                _buildGroupMonitoringSection(
-                                  context,
-                                  userId,
-                                  monitorState,
-                                  selectedGroups,
-                                ),
-                                SizedBox(height: context.m3e.spacing.lg),
-                                DebugInfoCard(monitorState: monitorState),
-                              ],
-                            ),
-                          ),
+                      ),
+                      Positioned(
+                        bottom: context.m3e.spacing.xl,
+                        right: context.m3e.spacing.xl,
+                        child: _buildFloatingActionArea(
+                          context,
+                          userId,
+                          monitorState,
+                          () => _toggleSideSheetForUser(userId),
                         ),
                       ),
-                    ),
-                    Positioned(
-                      bottom: context.m3e.spacing.xl,
-                      right: context.m3e.spacing.xl,
-                      child: _buildFloatingActionArea(
-                        context,
-                        userId,
-                        monitorState,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+                    ],
+                  ),
+                );
+
+                return SingleMotionBuilder(
+                  motion: AnimationConstants.expressiveSpatialDefault,
+                  value: _isSideSheetOpen ? 1.0 : 0.0,
+                  from: 0.0,
+                  builder: (context, value, _) {
+                    final progress = value.clamp(0.0, 1.0);
+                    return _buildSideSheetLayout(
+                      context: context,
+                      content: content,
+                      sideSheet: sideSheet,
+                      sheetWidth: effectiveSheetWidth,
+                      isDocked: canDock,
+                      progress: progress,
+                    );
+                  },
+                );
+              },
             ),
           ),
         );
@@ -343,6 +404,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     BuildContext context,
     String userId,
     GroupMonitorState monitorState,
+    VoidCallback onManageGroups,
   ) {
     final actions = [
       ToolbarActionM3E(
@@ -391,11 +453,80 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           kind: FabM3EKind.primary,
           size: FabM3ESize.regular,
           shapeFamily: FabM3EShapeFamily.round,
-          onPressed: () {
-            _sideSheetController.show();
-          },
+          onPressed: onManageGroups,
         ),
       ],
+    );
+  }
+
+  Widget _buildSideSheetLayout({
+    required BuildContext context,
+    required Widget content,
+    required Widget sideSheet,
+    required double sheetWidth,
+    required bool isDocked,
+    required double progress,
+  }) {
+    final topInset = 0.0;
+    final rightInset = context.m3e.spacing.lg;
+    final bottomInset = context.m3e.spacing.lg;
+    final shellWidth = sheetWidth + rightInset;
+    final clampedProgress = progress.clamp(0.0, 1.0);
+    final opacityProgress = Curves.easeOut.transform(
+      (clampedProgress * 2).clamp(0.0, 1.0),
+    );
+    const minVisibleOpacity = 0.02;
+    final isVisible = opacityProgress > minVisibleOpacity;
+    final dockedPadding = isDocked ? shellWidth * clampedProgress : 0.0;
+    final sheetTranslateX = shellWidth * (1 - clampedProgress);
+
+    return SizedBox.expand(
+      child: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(right: dockedPadding),
+            child: content,
+          ),
+          if (!isDocked && isVisible)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: _closeSideSheet,
+                behavior: HitTestBehavior.opaque,
+                child: const ColoredBox(color: Colors.transparent),
+              ),
+            ),
+          Positioned(
+            right: 0,
+            top: topInset,
+            bottom: 0,
+            child: ClipRect(
+              child: Transform.translate(
+                offset: Offset(sheetTranslateX, 0),
+                child: SizedBox(
+                  width: shellWidth,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    widthFactor: 1.0,
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        right: rightInset,
+                        bottom: bottomInset,
+                      ),
+                      child: IgnorePointer(
+                        ignoring: !isVisible,
+                        child: Opacity(
+                          opacity: opacityProgress,
+                          child: sideSheet,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

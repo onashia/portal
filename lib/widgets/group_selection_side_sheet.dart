@@ -1,21 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
-import 'package:motor/motor.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
-import '../utils/animation_constants.dart';
 import '../providers/group_monitor_provider.dart';
 import '../utils/group_utils.dart';
 import '../utils/vrchat_image_utils.dart';
 
 class GroupSelectionSideSheet extends ConsumerStatefulWidget {
   final String userId;
-  final OverlayPortalController controller;
+  final VoidCallback onClose;
 
   const GroupSelectionSideSheet({
     super.key,
     required this.userId,
-    required this.controller,
+    required this.onClose,
   });
 
   @override
@@ -24,8 +22,7 @@ class GroupSelectionSideSheet extends ConsumerStatefulWidget {
 }
 
 class _GroupSelectionSideSheetState
-    extends ConsumerState<GroupSelectionSideSheet>
-    with SingleTickerProviderStateMixin {
+    extends ConsumerState<GroupSelectionSideSheet> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final ScrollController _scrollController = ScrollController();
@@ -60,87 +57,28 @@ class _GroupSelectionSideSheetState
 
   @override
   Widget build(BuildContext context) {
-    return _buildSheetContent(context);
+    return _buildSheetBody(context);
   }
 
-  Widget _buildSheetContent(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    const double sheetWidth = 400;
-
-    return Stack(
-      children: [
-        GestureDetector(
-          onTap: () => widget.controller.hide(),
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            width: size.width,
-            height: size.height,
-            color: Colors.black.withValues(alpha: 0.32),
-          ),
-        ),
-        Positioned(
-          right: 0,
-          top: 0,
-          bottom: 0,
-          child: SingleMotionBuilder(
-            motion: AnimationConstants.expressiveSpatialDefault,
-            value: 1.0,
-            from: 0.0,
-            builder: (context, value, child) {
-              return Transform.translate(
-                offset: Offset(sheetWidth * (1 - value), 0),
-                child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
-              );
-            },
-            child: _buildSheetBody(context, size),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSheetBody(BuildContext context, Size size) {
-    final scheme = Theme.of(context).colorScheme;
-    final sheetRadius = context.m3e.shapes.round.md;
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.only(
-          topLeft: sheetRadius.topLeft,
-          bottomLeft: sheetRadius.bottomLeft,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: context.m3e.colors.shadow.withValues(alpha: 0.12),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-          BoxShadow(
-            color: context.m3e.colors.shadow.withValues(alpha: 0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      width: 400,
-      height: size.height,
-      constraints: const BoxConstraints(minWidth: 400, maxWidth: 400),
-      child: Material(
-        color: Colors.transparent,
+  Widget _buildSheetBody(BuildContext context) {
+    final cardTheme = Theme.of(context).cardTheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      color: cardTheme.color,
+      elevation: cardTheme.elevation,
+      shadowColor: cardTheme.shadowColor,
+      surfaceTintColor: cardTheme.surfaceTintColor,
+      shape: cardTheme.shape,
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        height: double.infinity,
         child: SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.max,
             children: [
-              _buildHeaderBand(context, scheme, sheetRadius),
+              _buildHeaderSection(context),
               SizedBox(height: context.m3e.spacing.md),
-              Expanded(
-                child: Column(
-                  children: [
-                    Expanded(child: _buildAvailableGroupsSection(context)),
-                  ],
-                ),
-              ),
-              _buildFooter(context),
+              Expanded(child: _buildAvailableGroupsSection(context)),
             ],
           ),
         ),
@@ -148,95 +86,34 @@ class _GroupSelectionSideSheetState
     );
   }
 
-  Widget _buildFooter(BuildContext context) {
-    final monitorState = ref.watch(groupMonitorProvider(widget.userId));
-    final hasSelections = monitorState.selectedGroupIds.isNotEmpty;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Divider(
-          indent: context.m3e.spacing.xl,
-          endIndent: context.m3e.spacing.xl,
-        ),
-        Padding(
-          padding: EdgeInsets.only(
-            left: context.m3e.spacing.xl,
-            right: context.m3e.spacing.xl,
-            top: context.m3e.spacing.lg,
-            bottom: context.m3e.spacing.xl,
-          ),
-          child: Row(
-            children: [
-              ButtonM3E(
-                onPressed: () => widget.controller.hide(),
-                label: const Text('Done'),
-                style: ButtonM3EStyle.filled,
-                size: ButtonM3ESize.sm,
-                shape: ButtonM3EShape.round,
-              ),
-              SizedBox(width: context.m3e.spacing.lg),
-              ButtonM3E(
-                onPressed: () async {
-                  await ref
-                      .read(groupMonitorProvider(widget.userId).notifier)
-                      .clearSelectedGroups();
-                },
-                enabled: hasSelections,
-                label: const Text('Deselect All'),
-                style: ButtonM3EStyle.outlined,
-                size: ButtonM3ESize.sm,
-                shape: ButtonM3EShape.round,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHeaderBand(
-    BuildContext context,
-    ColorScheme scheme,
-    BorderRadius sheetRadius,
-  ) {
+  Widget _buildHeaderSection(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     return Padding(
-      padding: EdgeInsets.zero,
-      child: ClipRRect(
-        borderRadius: BorderRadius.only(topLeft: sheetRadius.topLeft),
-        child: Container(
-          width: double.infinity,
-          padding: EdgeInsets.only(
-            left: context.m3e.spacing.xl,
-            right: context.m3e.spacing.xl,
-            top: context.m3e.spacing.lg,
-            bottom: context.m3e.spacing.lg,
-          ),
-          color: scheme.surfaceContainer,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      padding: EdgeInsets.only(
+        left: context.m3e.spacing.xl,
+        right: context.m3e.spacing.xl,
+        top: context.m3e.spacing.lg,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Text('Manage Groups', style: textTheme.titleLarge),
-                  const Spacer(),
-                  IconButtonM3E(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => widget.controller.hide(),
-                    tooltip: 'Close',
-                    variant: IconButtonM3EVariant.standard,
-                    size: IconButtonM3ESize.sm,
-                    shape: IconButtonM3EShapeVariant.round,
-                  ),
-                ],
+              Text('Manage Groups', style: textTheme.titleLarge),
+              const Spacer(),
+              IconButtonM3E(
+                icon: const Icon(Icons.close),
+                onPressed: widget.onClose,
+                tooltip: 'Close',
+                variant: IconButtonM3EVariant.standard,
+                size: IconButtonM3ESize.sm,
+                shape: IconButtonM3EShapeVariant.round,
               ),
-              SizedBox(height: context.m3e.spacing.lg),
-              _buildSearchBar(context),
-              SizedBox(height: context.m3e.spacing.md),
             ],
           ),
-        ),
+          SizedBox(height: context.m3e.spacing.lg),
+          _buildSearchBar(context),
+        ],
       ),
     );
   }

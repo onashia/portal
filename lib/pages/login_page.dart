@@ -340,14 +340,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                       maxWidth: cardWidth,
                                     ),
                                     child: Card(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.surfaceContainerHigh,
-                                      elevation: 2,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            context.m3e.shapes.square.xl,
-                                      ),
                                       child: Padding(
                                         padding: const EdgeInsets.all(32),
                                         child: Form(
