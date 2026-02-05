@@ -67,19 +67,6 @@ class DebugInfoCard extends ConsumerWidget {
                     ),
                   ),
                 ),
-              SizedBox(height: context.m3e.spacing.sm),
-              for (final entry in monitorState.groupErrors.entries)
-                Padding(
-                  padding: EdgeInsets.only(top: context.m3e.spacing.xs),
-                  child: Text(
-                    '• ${_getGroupName(monitorState, entry.key)}: ${entry.value}',
-                    style: context.m3e.typography.base.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
             ],
             if (monitorState.groupInstances.isNotEmpty &&
                 monitorState.groupInstances.values.every(
