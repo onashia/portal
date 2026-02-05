@@ -99,16 +99,17 @@ class _GroupSelectionSideSheetState
         children: [
           Row(
             children: [
-              Text('Manage Groups', style: textTheme.titleLarge),
-              const Spacer(),
               IconButtonM3E(
-                icon: const Icon(Icons.close),
+                icon: const Icon(Icons.arrow_back),
                 onPressed: widget.onClose,
-                tooltip: 'Close',
+                tooltip: 'Back',
                 variant: IconButtonM3EVariant.standard,
                 size: IconButtonM3ESize.sm,
                 shape: IconButtonM3EShapeVariant.round,
               ),
+              SizedBox(width: context.m3e.spacing.sm),
+              Text('Manage Groups', style: textTheme.titleLarge),
+              const Spacer(),
             ],
           ),
           SizedBox(height: context.m3e.spacing.lg),
