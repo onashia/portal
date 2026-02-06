@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'constants/storage_keys.dart';
 import 'providers/auth_provider.dart';
+import 'providers/pipeline_provider.dart';
 import 'providers/theme_provider.dart';
 import 'pages/login_page.dart';
 import 'pages/dashboard_page.dart';
@@ -93,6 +94,7 @@ class PortalApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeProvider);
     final router = ref.watch(routerProvider);
+    ref.watch(pipelineEventHandlerProvider);
 
     return MaterialApp.router(
       title: 'portal.',

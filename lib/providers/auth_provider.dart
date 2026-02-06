@@ -21,6 +21,7 @@ class AuthState {
   final AuthStatus status;
   final String? errorMessage;
   final CurrentUser? currentUser;
+  final StreamedCurrentUser? streamedUser;
   final bool requiresTwoFactorAuth;
   final bool isLoading;
 
@@ -28,6 +29,7 @@ class AuthState {
     required this.status,
     this.errorMessage,
     this.currentUser,
+    this.streamedUser,
     this.requiresTwoFactorAuth = false,
     this.isLoading = false,
   });
@@ -36,6 +38,7 @@ class AuthState {
     AuthStatus? status,
     String? errorMessage,
     CurrentUser? currentUser,
+    StreamedCurrentUser? streamedUser,
     bool? requiresTwoFactorAuth,
     bool? isLoading,
   }) {
@@ -43,6 +46,7 @@ class AuthState {
       status: status ?? this.status,
       errorMessage: errorMessage ?? this.errorMessage,
       currentUser: currentUser ?? this.currentUser,
+      streamedUser: streamedUser ?? this.streamedUser,
       requiresTwoFactorAuth:
           requiresTwoFactorAuth ?? this.requiresTwoFactorAuth,
       isLoading: isLoading ?? this.isLoading,
@@ -175,6 +179,15 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     } else {
       state = AsyncData(AuthState(status: AuthStatus.unauthenticated));
     }
+  }
+
+  void updateCurrentUser(StreamedCurrentUser user) {
+    final current = state.asData?.value;
+    if (current == null || current.status != AuthStatus.authenticated) {
+      return;
+    }
+
+    state = AsyncData(current.copyWith(streamedUser: user));
   }
 }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
+import '../constants/ui_constants.dart';
 import '../providers/group_monitor_provider.dart';
 import '../utils/group_utils.dart';
 import '../utils/vrchat_image_utils.dart';
@@ -238,8 +239,8 @@ class _GroupSelectionSideSheetState
     final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
 
     return Container(
-      width: 48,
-      height: 48,
+      width: UiConstants.groupAvatarLg,
+      height: UiConstants.groupAvatarLg,
       decoration: BoxDecoration(
         borderRadius: context.m3e.shapes.square.md,
         color: hasImage ? null : GroupUtils.getAvatarColor(group),
@@ -249,8 +250,8 @@ class _GroupSelectionSideSheetState
         clipBehavior: Clip.antiAlias,
         child: CachedImage(
           imageUrl: hasImage ? group.iconUrl! : '',
-          width: 48,
-          height: 48,
+          width: UiConstants.groupAvatarLg,
+          height: UiConstants.groupAvatarLg,
           fallbackWidget: hasImage
               ? null
               : Center(

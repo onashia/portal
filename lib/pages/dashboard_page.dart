@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:motor/motor.dart';
@@ -6,6 +8,7 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../constants/ui_constants.dart';
 import '../providers/group_monitor_provider.dart';
 import '../services/notification_service.dart';
 import '../utils/animation_constants.dart';
@@ -15,6 +18,7 @@ import '../widgets/debug_info_card.dart';
 import '../widgets/group_instance_list.dart';
 import '../utils/app_logger.dart';
 import '../utils/group_utils.dart';
+import '../theme/status_colors.dart';
 import '../widgets/group_selection_side_sheet.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
@@ -108,6 +112,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       ),
       data: (authState) {
         final currentUser = authState.currentUser;
+        final streamedUser = authState.streamedUser;
 
         if (currentUser == null) {
           return Scaffold(
@@ -218,6 +223,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 final effectiveSheetWidth = totalWidth < sheetTargetWidth
                     ? totalWidth
                     : sheetTargetWidth;
+                final horizontalPadding = context.m3e.spacing.xxl * 2;
+                final maxWidth = math.max(
+                  0.0,
+                  math.min(
+                    1200.0,
+                    constraints.maxWidth - (horizontalPadding * 2),
+                  ),
+                );
                 final sideSheet = KeyedSubtree(
                   key: const ValueKey('groupSideSheet'),
                   child: GroupSelectionSideSheet(
@@ -230,26 +243,32 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   child: Stack(
                     children: [
                       SafeArea(
-                        child: SingleChildScrollView(
+                        child: Padding(
                           padding: EdgeInsets.only(
-                            left: 24,
-                            right: 24,
+                            left: horizontalPadding,
+                            right: horizontalPadding,
                             top: 24,
                             bottom: context.m3e.spacing.xxl * 4,
                           ), // 128px: space for floating action area (56px FAB + 24px margin + 48px buffer)
                           child: Center(
                             child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 800),
+                              constraints: BoxConstraints(maxWidth: maxWidth),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _buildUserCard(context, currentUser),
-                                  SizedBox(height: context.m3e.spacing.lg),
-                                  _buildGroupMonitoringSection(
+                                  _buildUserCard(
                                     context,
-                                    userId,
-                                    monitorState,
-                                    selectedGroups,
+                                    currentUser,
+                                    streamedUser: streamedUser,
+                                  ),
+                                  SizedBox(height: context.m3e.spacing.lg),
+                                  Expanded(
+                                    child: _buildGroupMonitoringSection(
+                                      context,
+                                      userId,
+                                      monitorState,
+                                      selectedGroups,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -295,26 +314,35 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  Widget _buildUserCard(BuildContext context, CurrentUser currentUser) {
+  Widget _buildUserCard(
+    BuildContext context,
+    CurrentUser currentUser, {
+    StreamedCurrentUser? streamedUser,
+  }) {
+    final status = _resolveUserStatus(currentUser, streamedUser);
     return Padding(
       padding: EdgeInsets.all(context.m3e.spacing.lg),
       child: Row(
         children: [
-          CachedImage(
-            imageUrl: _getUserProfileImageUrl(currentUser),
-            width: 56,
-            height: 56,
-            shape: BoxShape.circle,
-            fallbackIcon: Icons.person,
-            boxShadow: [
-              BoxShadow(
-                color: Theme.of(
-                  context,
-                ).colorScheme.shadow.withValues(alpha: 0.3),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+          Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: _getStatusColor(context, status),
+                width: 2,
               ),
-            ],
+            ),
+            child: CachedImage(
+              imageUrl: _getUserProfileImageUrl(
+                currentUser,
+                streamedUser: streamedUser,
+              ),
+              width: 56,
+              height: 56,
+              shape: BoxShape.circle,
+              fallbackIcon: Icons.person,
+            ),
           ),
           SizedBox(width: context.m3e.spacing.md),
           Expanded(
@@ -322,7 +350,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  currentUser.displayName,
+                  streamedUser?.displayName ?? currentUser.displayName,
                   style: Theme.of(
                     context,
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
@@ -331,15 +359,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 Row(
                   children: [
                     Icon(
-                      _getStatusIcon(currentUser.state),
+                      _getStatusIcon(status),
                       size: 16,
-                      color: _getStatusColor(context, currentUser.state),
+                      color: _getStatusColor(context, status),
                     ),
                     SizedBox(width: context.m3e.spacing.sm),
                     Text(
-                      _getStatusText(currentUser.state),
+                      _getStatusText(status),
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: _getStatusColor(context, currentUser.state),
+                        color: _getStatusColor(context, status),
                       ),
                     ),
                   ],
@@ -352,9 +380,26 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  String _getUserProfileImageUrl(CurrentUser currentUser) {
+  UserStatus _resolveUserStatus(
+    CurrentUser currentUser,
+    StreamedCurrentUser? streamedUser,
+  ) {
+    return streamedUser?.status ?? currentUser.status;
+  }
+
+  String _getUserProfileImageUrl(
+    CurrentUser currentUser, {
+    StreamedCurrentUser? streamedUser,
+  }) {
+    if (streamedUser != null && streamedUser.profilePicOverride.isNotEmpty) {
+      return streamedUser.profilePicOverride;
+    }
     if (currentUser.profilePicOverrideThumbnail.isNotEmpty) {
       return currentUser.profilePicOverrideThumbnail;
+    }
+    if (streamedUser != null &&
+        streamedUser.currentAvatarThumbnailImageUrl.isNotEmpty) {
+      return streamedUser.currentAvatarThumbnailImageUrl;
     }
     return currentUser.currentAvatarThumbnailImageUrl;
   }
@@ -365,7 +410,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     GroupMonitorState monitorState,
     List<LimitedUserGroups> selectedGroups,
   ) {
+    final scheme = Theme.of(context).colorScheme;
+    final cardTheme = Theme.of(context).cardTheme;
+    final baseShape =
+        cardTheme.shape as RoundedRectangleBorder? ??
+        RoundedRectangleBorder(borderRadius: context.m3e.shapes.round.md);
+    final outlineColor = scheme.outlineVariant.withValues(alpha: 0.4);
+
     return Card(
+      color: scheme.surfaceContainerLow,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      shape: baseShape.copyWith(side: BorderSide(color: outlineColor)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -376,13 +432,16 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             SizedBox(height: context.m3e.spacing.md),
-            GroupInstanceList(
-              userId: userId,
-              onRefresh: () {
-                ref
-                    .read(groupMonitorProvider(userId).notifier)
-                    .fetchGroupInstances();
-              },
+            Expanded(
+              child: GroupInstanceList(
+                userId: userId,
+                scrollable: true,
+                onRefresh: () {
+                  ref
+                      .read(groupMonitorProvider(userId).notifier)
+                      .fetchGroupInstances();
+                },
+              ),
             ),
             SizedBox(height: context.m3e.spacing.md),
             Divider(
@@ -441,7 +500,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   ) {
     final scheme = Theme.of(context).colorScheme;
     final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
-    final avatarSize = 24.0;
+    final avatarSize = UiConstants.groupAvatarMd;
     final avatarRadius = context.m3e.shapes.square.sm;
 
     return Container(
@@ -673,36 +732,49 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  IconData _getStatusIcon(UserState state) {
-    switch (state) {
-      case UserState.online:
+  IconData _getStatusIcon(UserStatus status) {
+    switch (status) {
+      case UserStatus.askMe:
+      case UserStatus.busy:
+      case UserStatus.joinMe:
         return Icons.circle;
-      case UserState.offline:
+      case UserStatus.offline:
         return Icons.offline_bolt;
-      case UserState.active:
+      case UserStatus.active:
         return Icons.play_circle;
     }
   }
 
-  Color _getStatusColor(BuildContext context, UserState state) {
-    switch (state) {
-      case UserState.online:
-        return Theme.of(context).colorScheme.primary;
-      case UserState.offline:
-        return Theme.of(context).colorScheme.outline;
-      case UserState.active:
-        return Theme.of(context).colorScheme.primary;
+  Color _getStatusColor(BuildContext context, UserStatus status) {
+    final scheme = Theme.of(context).colorScheme;
+    final statusColors = Theme.of(context).extension<StatusColors>();
+
+    switch (status) {
+      case UserStatus.active:
+        return statusColors?.active ?? scheme.primary;
+      case UserStatus.askMe:
+        return statusColors?.askMe ?? scheme.tertiary;
+      case UserStatus.busy:
+        return statusColors?.busy ?? scheme.error;
+      case UserStatus.joinMe:
+        return statusColors?.joinMe ?? scheme.secondary;
+      case UserStatus.offline:
+        return statusColors?.offline ?? scheme.outline;
     }
   }
 
-  String _getStatusText(UserState state) {
-    switch (state) {
-      case UserState.online:
-        return 'Online';
-      case UserState.offline:
-        return 'Offline';
-      case UserState.active:
+  String _getStatusText(UserStatus status) {
+    switch (status) {
+      case UserStatus.active:
         return 'Active';
+      case UserStatus.askMe:
+        return 'Ask Me';
+      case UserStatus.busy:
+        return 'Busy';
+      case UserStatus.joinMe:
+        return 'Join Me';
+      case UserStatus.offline:
+        return 'Offline';
     }
   }
 }

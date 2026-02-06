@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
+import '../constants/ui_constants.dart';
 import '../providers/group_monitor_provider.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:portal/utils/vrchat_image_utils.dart';
@@ -9,11 +10,13 @@ import '../models/group_instance_with_group.dart';
 class GroupInstanceList extends ConsumerWidget {
   final String userId;
   final VoidCallback onRefresh;
+  final bool scrollable;
 
   const GroupInstanceList({
     super.key,
     required this.userId,
     required this.onRefresh,
+    this.scrollable = false,
   });
 
   @override
@@ -28,26 +31,51 @@ class GroupInstanceList extends ConsumerWidget {
       return _buildEmptyState(context, monitorState);
     }
 
-    return Column(
-      children: [
-        for (var i = 0; i < groupsWithInstances.length; i++)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: _GroupInstancesSection(
-              group: monitorState.allGroups.firstWhere(
-                (g) => g.groupId == groupsWithInstances[i].key,
-                orElse: () => LimitedUserGroups(),
+    if (!scrollable) {
+      return Column(
+        children: [
+          for (var i = 0; i < groupsWithInstances.length; i++)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: _GroupInstancesSection(
+                group: monitorState.allGroups.firstWhere(
+                  (g) => g.groupId == groupsWithInstances[i].key,
+                  orElse: () => LimitedUserGroups(),
+                ),
+                groupId: groupsWithInstances[i].key,
+                instances: groupsWithInstances[i].value,
+                newInstances: monitorState.newInstances,
+                onRefresh: onRefresh,
               ),
-              groupId: groupsWithInstances[i].key,
-              instances: groupsWithInstances[i].value,
-              newInstances: monitorState.newInstances,
-              onRefresh: onRefresh,
             ),
+          if (groupsWithInstances.length > 1)
+            for (var i = 0; i < groupsWithInstances.length - 1; i++)
+              SizedBox(height: context.m3e.spacing.md),
+        ],
+      );
+    }
+
+    return ListView.separated(
+      padding: EdgeInsets.zero,
+      itemBuilder: (context, index) {
+        final entry = groupsWithInstances[index];
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: _GroupInstancesSection(
+            group: monitorState.allGroups.firstWhere(
+              (g) => g.groupId == entry.key,
+              orElse: () => LimitedUserGroups(),
+            ),
+            groupId: entry.key,
+            instances: entry.value,
+            newInstances: monitorState.newInstances,
+            onRefresh: onRefresh,
           ),
-        if (groupsWithInstances.length > 1)
-          for (var i = 0; i < groupsWithInstances.length - 1; i++)
-            SizedBox(height: context.m3e.spacing.md),
-      ],
+        );
+      },
+      separatorBuilder: (context, index) =>
+          SizedBox(height: context.m3e.spacing.md),
+      itemCount: groupsWithInstances.length,
     );
   }
 
@@ -163,17 +191,21 @@ class _GroupInstancesSection extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
+    final avatarRadius = context.m3e.shapes.square.sm;
+
     return Row(
       children: [
         if (group.iconUrl != null && group.iconUrl!.isNotEmpty)
-          ClipOval(
+          ClipRRect(
+            borderRadius: avatarRadius,
+            clipBehavior: Clip.antiAlias,
             child: SizedBox(
-              width: 24,
-              height: 24,
+              width: UiConstants.groupAvatarMd,
+              height: UiConstants.groupAvatarMd,
               child: CachedImage(
                 imageUrl: group.iconUrl!,
-                width: 24,
-                height: 24,
+                width: UiConstants.groupAvatarMd,
+                height: UiConstants.groupAvatarMd,
                 fit: BoxFit.cover,
                 showLoadingIndicator: false,
               ),
@@ -223,12 +255,20 @@ class _InstanceCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final instance = instanceWithGroup.instance;
     final world = instance.world;
+    final cardTheme = Theme.of(context).cardTheme;
+    final baseShape =
+        cardTheme.shape as RoundedRectangleBorder? ??
+        RoundedRectangleBorder(borderRadius: context.m3e.shapes.round.md);
+    final borderRadiusGeometry = baseShape.borderRadius;
+    final borderRadius = borderRadiusGeometry.resolve(
+      Directionality.of(context),
+    );
 
     return Card(
       child: Container(
         decoration: isNew
             ? BoxDecoration(
-                borderRadius: context.m3e.shapes.round.lg,
+                borderRadius: borderRadiusGeometry,
                 border: Border.all(
                   color: Theme.of(context).colorScheme.primary,
                   width: 2,
@@ -236,7 +276,7 @@ class _InstanceCard extends ConsumerWidget {
               )
             : null,
         child: InkWell(
-          borderRadius: context.m3e.shapes.round.lg,
+          borderRadius: borderRadius,
           onTap: () {},
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -316,16 +356,20 @@ class _InstanceCard extends ConsumerWidget {
       );
     }
 
+    final avatarRadius = context.m3e.shapes.square.sm;
+
     return Row(
       children: [
-        ClipOval(
+        ClipRRect(
+          borderRadius: avatarRadius,
+          clipBehavior: Clip.antiAlias,
           child: SizedBox(
-            width: 16,
-            height: 16,
+            width: UiConstants.groupAvatarSm,
+            height: UiConstants.groupAvatarSm,
             child: CachedImage(
               imageUrl: group.iconUrl!,
-              width: 16,
-              height: 16,
+              width: UiConstants.groupAvatarSm,
+              height: UiConstants.groupAvatarSm,
               fit: BoxFit.cover,
               showLoadingIndicator: false,
             ),

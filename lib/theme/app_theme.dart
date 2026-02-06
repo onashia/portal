@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 
+import 'status_colors.dart';
+
 class AppTheme {
   static ThemeData lightTheme = _buildTheme(Brightness.light);
 
@@ -35,6 +37,15 @@ class AppTheme {
     );
 
     return base.copyWith(
+      extensions: <ThemeExtension<dynamic>>[
+        StatusColors(
+          active: const Color(0xFFA5D6A7), // pastel green
+          askMe: const Color(0xFFFFCC80), // pastel orange
+          busy: const Color(0xFFEF9A9A), // pastel red
+          joinMe: const Color(0xFF90CAF9), // pastel light blue
+          offline: const Color(0xFFBDBDBD), // pastel grey
+        ),
+      ],
       textTheme: textTheme,
       cardTheme: CardThemeData(
         color: scheme.surfaceContainer,

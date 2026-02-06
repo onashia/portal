@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
@@ -191,6 +192,32 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   Timer? _pollingTimer;
   int _backoffDelay = 1;
+  bool _isFetching = false;
+  final _random = math.Random();
+
+  int _nextPollDelaySeconds() {
+    final base = AppConstants.pollingIntervalSeconds;
+    final jitter = AppConstants.pollingJitterSeconds;
+    if (jitter <= 0) {
+      return base;
+    }
+    final delta = _random.nextInt(jitter * 2 + 1) - jitter;
+    return math.max(1, base + delta);
+  }
+
+  void _scheduleNextPoll({bool immediate = false}) {
+    _pollingTimer?.cancel();
+
+    if (!state.isMonitoring) {
+      return;
+    }
+
+    final delaySeconds = immediate ? 0 : _nextPollDelaySeconds();
+    _pollingTimer = Timer(Duration(seconds: delaySeconds), () async {
+      await fetchGroupInstances();
+      _scheduleNextPoll();
+    });
+  }
 
   void startMonitoring() {
     AppLogger.info('Starting monitoring', subCategory: 'group_monitor');
@@ -210,13 +237,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     );
 
     try {
-      _pollingTimer = Timer.periodic(
-        Duration(seconds: AppConstants.pollingIntervalSeconds),
-        (_) => fetchGroupInstances(),
-      );
-
       // Initial fetch to populate data immediately
-      fetchGroupInstances();
+      _scheduleNextPoll(immediate: true);
     } catch (e, s) {
       AppLogger.error(
         'Failed to start monitoring',
@@ -245,6 +267,14 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       subCategory: 'group_monitor',
     );
 
+    if (_isFetching) {
+      AppLogger.debug(
+        'Fetch already in progress, skipping',
+        subCategory: 'group_monitor',
+      );
+      return;
+    }
+
     if (state.selectedGroupIds.isEmpty) {
       AppLogger.warning(
         'No groups selected, skipping instance fetch',
@@ -253,6 +283,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
+    _isFetching = true;
     try {
       AppLogger.debug(
         'Fetching instances for ${state.selectedGroupIds.length} groups',
@@ -357,6 +388,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         1,
         AppConstants.maxBackoffDelay,
       );
+    } finally {
+      _isFetching = false;
     }
   }
 
