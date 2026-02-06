@@ -14,6 +14,7 @@ import '../widgets/custom_title_bar.dart';
 import '../widgets/debug_info_card.dart';
 import '../widgets/group_instance_list.dart';
 import '../utils/app_logger.dart';
+import '../utils/group_utils.dart';
 import '../widgets/group_selection_side_sheet.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
@@ -383,8 +384,119 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                     .fetchGroupInstances();
               },
             ),
+            SizedBox(height: context.m3e.spacing.md),
+            Divider(
+              color: Theme.of(
+                context,
+              ).colorScheme.outlineVariant.withValues(alpha: 0.4),
+            ),
+            SizedBox(height: context.m3e.spacing.sm),
+            Row(
+              children: [
+                Text(
+                  'Selected Groups',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                SizedBox(width: context.m3e.spacing.sm),
+                Text(
+                  '•',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                SizedBox(width: context.m3e.spacing.sm),
+                Text(
+                  selectedGroups.length.toString(),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            if (selectedGroups.isNotEmpty) ...[
+              SizedBox(height: context.m3e.spacing.sm),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final group in selectedGroups) ...[
+                      _buildSelectedGroupChip(context, group),
+                      SizedBox(width: context.m3e.spacing.sm),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSelectedGroupChip(
+    BuildContext context,
+    LimitedUserGroups group,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
+    final avatarSize = 24.0;
+    final avatarRadius = context.m3e.shapes.square.sm;
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: context.m3e.spacing.sm,
+        vertical: context.m3e.spacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: context.m3e.shapes.round.md,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: avatarSize,
+            height: avatarSize,
+            decoration: BoxDecoration(
+              borderRadius: avatarRadius,
+              color: hasImage ? null : GroupUtils.getAvatarColor(group),
+            ),
+            child: ClipRRect(
+              borderRadius: avatarRadius,
+              clipBehavior: Clip.antiAlias,
+              child: CachedImage(
+                imageUrl: hasImage ? group.iconUrl! : '',
+                width: avatarSize,
+                height: avatarSize,
+                fallbackWidget: hasImage
+                    ? null
+                    : Center(
+                        child: Text(
+                          GroupUtils.getInitials(group),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                showLoadingIndicator: false,
+              ),
+            ),
+          ),
+          SizedBox(width: context.m3e.spacing.sm),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 160),
+            child: Text(
+              group.name ?? 'Group',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+        ],
       ),
     );
   }
