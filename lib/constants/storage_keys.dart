@@ -7,4 +7,7 @@ class StorageKeys {
 
   /// Selected group IDs key
   static const String selectedGroupIds = 'selectedGroupIds';
+
+  /// Auto-invite setting for new group instances
+  static const String autoInviteEnabled = 'autoInviteEnabled';
 }

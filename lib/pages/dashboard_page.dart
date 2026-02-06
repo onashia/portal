@@ -568,6 +568,20 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   ) {
     final actions = [
       ToolbarActionM3E(
+        icon: monitorState.autoInviteEnabled
+            ? Icons.person_add_alt_1
+            : Icons.person_off,
+        onPressed: () {
+          ref.read(groupMonitorProvider(userId).notifier).toggleAutoInvite();
+        },
+        tooltip: monitorState.autoInviteEnabled
+            ? 'Auto-Invite On'
+            : 'Auto-Invite Off',
+        label: monitorState.autoInviteEnabled
+            ? 'Auto-Invite On'
+            : 'Auto-Invite Off',
+      ),
+      ToolbarActionM3E(
         icon: Icons.refresh,
         onPressed: () {
           ref.read(groupMonitorProvider(userId).notifier).fetchGroupInstances();

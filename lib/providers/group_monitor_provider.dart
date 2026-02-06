@@ -9,6 +9,7 @@ import '../constants/app_constants.dart';
 import '../constants/storage_keys.dart';
 import '../utils/app_logger.dart';
 import '../models/group_instance_with_group.dart';
+import '../services/invite_service.dart';
 import 'api_call_counter.dart';
 import 'auth_provider.dart';
 
@@ -18,6 +19,7 @@ class GroupMonitorState {
   final Set<String> selectedGroupIds;
   final Map<String, List<GroupInstanceWithGroup>> groupInstances;
   final List<GroupInstanceWithGroup> newInstances;
+  final bool autoInviteEnabled;
   final bool isMonitoring;
   final bool isLoading;
   final String? errorMessage;
@@ -29,6 +31,7 @@ class GroupMonitorState {
     this.selectedGroupIds = const {},
     this.groupInstances = const {},
     this.newInstances = const [],
+    this.autoInviteEnabled = true,
     this.isMonitoring = false,
     this.isLoading = false,
     this.errorMessage,
@@ -41,6 +44,7 @@ class GroupMonitorState {
     Set<String>? selectedGroupIds,
     Map<String, List<GroupInstanceWithGroup>>? groupInstances,
     List<GroupInstanceWithGroup>? newInstances,
+    bool? autoInviteEnabled,
     bool? isMonitoring,
     bool? isLoading,
     String? errorMessage,
@@ -52,6 +56,7 @@ class GroupMonitorState {
       selectedGroupIds: selectedGroupIds ?? this.selectedGroupIds,
       groupInstances: groupInstances ?? this.groupInstances,
       newInstances: newInstances ?? this.newInstances,
+      autoInviteEnabled: autoInviteEnabled ?? this.autoInviteEnabled,
       isMonitoring: isMonitoring ?? this.isMonitoring,
       isLoading: isLoading ?? this.isLoading,
       errorMessage: errorMessage ?? this.errorMessage,
@@ -69,7 +74,26 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   @override
   GroupMonitorState build() {
     _loadSelectedGroups();
+    _loadAutoInviteSetting();
     return const GroupMonitorState(isLoading: true);
+  }
+
+  Future<void> _loadAutoInviteSetting() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool(StorageKeys.autoInviteEnabled) ?? true;
+      state = state.copyWith(autoInviteEnabled: enabled);
+      AppLogger.debug(
+        'Loaded auto-invite setting: $enabled',
+        subCategory: 'group_monitor',
+      );
+    } catch (e) {
+      AppLogger.error(
+        'Failed to load auto-invite setting',
+        subCategory: 'group_monitor',
+        error: e,
+      );
+    }
   }
 
   Future<void> _loadSelectedGroups() async {
@@ -85,6 +109,25 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     } catch (e) {
       AppLogger.error(
         'Failed to load selected groups',
+        subCategory: 'group_monitor',
+        error: e,
+      );
+    }
+  }
+
+  Future<void> toggleAutoInvite() async {
+    final newValue = !state.autoInviteEnabled;
+    state = state.copyWith(autoInviteEnabled: newValue);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(StorageKeys.autoInviteEnabled, newValue);
+      AppLogger.info(
+        'Auto-invite set to $newValue',
+        subCategory: 'group_monitor',
+      );
+    } catch (e) {
+      AppLogger.error(
+        'Failed to save auto-invite setting',
         subCategory: 'group_monitor',
         error: e,
       );
@@ -193,6 +236,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   Timer? _pollingTimer;
   int _backoffDelay = 1;
   bool _isFetching = false;
+  bool _hasBaseline = false;
   final _random = math.Random();
 
   int _nextPollDelaySeconds() {
@@ -203,6 +247,34 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     }
     final delta = _random.nextInt(jitter * 2 + 1) - jitter;
     return math.max(1, base + delta);
+  }
+
+  GroupInstanceWithGroup? _selectInviteTarget(
+    List<Instance> instances,
+    String groupId,
+  ) {
+    if (instances.isEmpty) {
+      return null;
+    }
+
+    Instance? best;
+    for (final instance in instances) {
+      if (best == null || instance.nUsers > best.nUsers) {
+        best = instance;
+      }
+    }
+
+    if (best == null || best.worldId.isEmpty || best.instanceId.isEmpty) {
+      AppLogger.warning(
+        'Skipping invite: invalid instance identifiers for group $groupId',
+        subCategory: 'group_monitor',
+      );
+      return null;
+    }
+
+    // We intentionally do not gate on canRequestInvite; its meaning for
+    // self-invites is unclear, so we attempt and handle failures.
+    return GroupInstanceWithGroup(instance: best, groupId: groupId);
   }
 
   void _scheduleNextPoll({bool immediate = false}) {
@@ -230,6 +302,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
+    _hasBaseline = false;
     state = state.copyWith(isMonitoring: true);
     AppLogger.info(
       'Started monitoring ${state.selectedGroupIds.length} groups',
@@ -291,7 +364,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       );
 
       final api = ref.read(vrchatApiProvider);
+      final inviteService = ref.read(inviteServiceProvider);
       final newInstances = <GroupInstanceWithGroup>[];
+      final inviteTargets = <GroupInstanceWithGroup>[];
       final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
       final newGroupErrors = <String, String>{};
 
@@ -342,6 +417,17 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
             .map((i) => i.instance.instanceId)
             .toSet();
 
+        if (_hasBaseline &&
+            state.isMonitoring &&
+            state.autoInviteEnabled &&
+            previousInstances.isEmpty &&
+            instances.isNotEmpty) {
+          final target = _selectInviteTarget(instances, groupId);
+          if (target != null) {
+            inviteTargets.add(target);
+          }
+        }
+
         // Track instances that weren't in previous fetch
         for (final instance in instances) {
           final instanceWithGroup = GroupInstanceWithGroup(
@@ -358,6 +444,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
             .toList();
       }
 
+      if (inviteTargets.isNotEmpty) {
+        for (final target in inviteTargets) {
+          await inviteService.inviteSelfToInstance(target.instance);
+        }
+      }
+
       state = state.copyWith(
         groupInstances: newGroupInstances,
         // Accumulate new instances across all polls until acknowledged
@@ -365,6 +457,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         groupErrors: newGroupErrors,
       );
 
+      _hasBaseline = true;
       // Reset backoff on successful fetch
       _backoffDelay = 1;
 
@@ -444,6 +537,11 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     }
   }
 }
+
+final inviteServiceProvider = Provider<InviteService>((ref) {
+  final api = ref.read(vrchatApiProvider);
+  return InviteService(api);
+});
 
 final groupMonitorProvider =
     NotifierProvider.family<GroupMonitorNotifier, GroupMonitorState, String>(
