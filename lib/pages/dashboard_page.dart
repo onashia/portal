@@ -25,6 +25,9 @@ class DashboardPage extends ConsumerStatefulWidget {
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
   bool _isSideSheetOpen = false;
+  final OverlayPortalController _debugOverlayController =
+      OverlayPortalController();
+  final LayerLink _debugOverlayLink = LayerLink();
 
   void _openSideSheet() {
     if (!_isSideSheetOpen) {
@@ -191,16 +194,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   ref.read(themeProvider.notifier).toggleTheme();
                 },
               ),
-              if (selectedGroups.isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.refresh),
-                  tooltip: 'Clear Groups',
-                  onPressed: () async {
-                    await ref
-                        .read(groupMonitorProvider(userId).notifier)
-                        .clearSelectedGroups();
-                  },
-                ),
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'Logout',
@@ -257,8 +250,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                                     monitorState,
                                     selectedGroups,
                                   ),
-                                  SizedBox(height: context.m3e.spacing.lg),
-                                  DebugInfoCard(monitorState: monitorState),
                                 ],
                               ),
                             ),
@@ -304,60 +295,58 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   }
 
   Widget _buildUserCard(BuildContext context, CurrentUser currentUser) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            CachedImage(
-              imageUrl: _getUserProfileImageUrl(currentUser),
-              width: 56,
-              height: 56,
-              shape: BoxShape.circle,
-              fallbackIcon: Icons.person,
-              boxShadow: [
-                BoxShadow(
-                  color: Theme.of(
+    return Padding(
+      padding: EdgeInsets.all(context.m3e.spacing.lg),
+      child: Row(
+        children: [
+          CachedImage(
+            imageUrl: _getUserProfileImageUrl(currentUser),
+            width: 56,
+            height: 56,
+            shape: BoxShape.circle,
+            fallbackIcon: Icons.person,
+            boxShadow: [
+              BoxShadow(
+                color: Theme.of(
+                  context,
+                ).colorScheme.shadow.withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          SizedBox(width: context.m3e.spacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  currentUser.displayName,
+                  style: Theme.of(
                     context,
-                  ).colorScheme.shadow.withValues(alpha: 0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: context.m3e.spacing.xs),
+                Row(
+                  children: [
+                    Icon(
+                      _getStatusIcon(currentUser.state),
+                      size: 16,
+                      color: _getStatusColor(context, currentUser.state),
+                    ),
+                    SizedBox(width: context.m3e.spacing.sm),
+                    Text(
+                      _getStatusText(currentUser.state),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: _getStatusColor(context, currentUser.state),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-            SizedBox(width: context.m3e.spacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    currentUser.displayName,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: context.m3e.spacing.xs),
-                  Row(
-                    children: [
-                      Icon(
-                        _getStatusIcon(currentUser.state),
-                        size: 16,
-                        color: _getStatusColor(context, currentUser.state),
-                      ),
-                      SizedBox(width: context.m3e.spacing.sm),
-                      Text(
-                        _getStatusText(currentUser.state),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: _getStatusColor(context, currentUser.state),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -435,15 +424,57 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        IntrinsicWidth(
-          child: ToolbarM3E(
-            actions: actions,
-            variant: ToolbarM3EVariant.tonal,
-            size: ToolbarM3ESize.medium,
-            shapeFamily: ToolbarM3EShapeFamily.round,
-            density: ToolbarM3EDensity.regular,
-            maxInlineActions: 2,
-            safeArea: false,
+        OverlayPortal(
+          controller: _debugOverlayController,
+          overlayChildBuilder: (context) {
+            return Positioned.fill(
+              child: Stack(
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _debugOverlayController.hide,
+                  ),
+                  CompositedTransformFollower(
+                    link: _debugOverlayLink,
+                    targetAnchor: Alignment.topRight,
+                    followerAnchor: Alignment.bottomRight,
+                    offset: Offset(0, -context.m3e.spacing.sm),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 260),
+                      child: IntrinsicWidth(
+                        child: Card(
+                          child: DebugInfoCard(
+                            monitorState: monitorState,
+                            useCard: false,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+          child: CompositedTransformTarget(
+            link: _debugOverlayLink,
+            child: IntrinsicWidth(
+              child: ToolbarM3E(
+                actions: [
+                  ...actions,
+                  ToolbarActionM3E(
+                    icon: Icons.info_outline,
+                    onPressed: _debugOverlayController.toggle,
+                    tooltip: 'Debug Info',
+                  ),
+                ],
+                variant: ToolbarM3EVariant.tonal,
+                size: ToolbarM3ESize.medium,
+                shapeFamily: ToolbarM3EShapeFamily.round,
+                density: ToolbarM3EDensity.regular,
+                maxInlineActions: 3,
+                safeArea: false,
+              ),
+            ),
           ),
         ),
         SizedBox(width: context.m3e.spacing.md),
