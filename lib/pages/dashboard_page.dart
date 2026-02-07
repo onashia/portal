@@ -11,6 +11,7 @@ import '../providers/theme_provider.dart';
 import '../constants/app_constants.dart';
 import '../constants/ui_constants.dart';
 import '../providers/group_monitor_provider.dart';
+import '../providers/group_calendar_provider.dart';
 import '../services/notification_service.dart';
 import '../utils/animation_constants.dart';
 import '../utils/vrchat_image_utils.dart';
@@ -642,8 +643,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         icon: Icons.refresh,
         onPressed: () {
           ref.read(groupMonitorProvider(userId).notifier).fetchGroupInstances();
+          ref.read(groupCalendarProvider(userId).notifier).refresh();
         },
-        tooltip: 'Refresh Instances',
+        tooltip: 'Refresh Dashboard',
       ),
       ToolbarActionM3E(
         icon: monitorState.isMonitoring
@@ -841,19 +843,30 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       );
     }
 
-    return Column(
-      children: [
-        Expanded(
-          child: _buildGroupMonitoringSection(
-            context,
-            userId,
-            monitorState,
-            selectedGroups,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: _buildGroupMonitoringSection(
+                      context,
+                      userId,
+                      monitorState,
+                      selectedGroups,
+                    ),
+                  ),
+                  SizedBox(height: spacing),
+                  SizedBox(height: 320, child: GroupEventsCard(userId: userId)),
+                ],
+              ),
+            ),
           ),
-        ),
-        SizedBox(height: spacing),
-        SizedBox(height: 320, child: GroupEventsCard(userId: userId)),
-      ],
+        );
+      },
     );
   }
 

@@ -63,8 +63,6 @@ class GroupEventsCard extends ConsumerWidget {
     GroupCalendarState calendarState,
     String todayLabel,
   ) {
-    final isLoading = calendarState.isLoading;
-
     return Row(
       children: [
         Expanded(
@@ -84,30 +82,6 @@ class GroupEventsCard extends ConsumerWidget {
               ),
             ],
           ),
-        ),
-        if (isLoading)
-          Padding(
-            padding: EdgeInsets.only(right: context.m3e.spacing.xs),
-            child: SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-          ),
-        IconButtonM3E(
-          icon: const Icon(Icons.refresh),
-          tooltip: 'Refresh events',
-          variant: IconButtonM3EVariant.standard,
-          size: IconButtonM3ESize.sm,
-          shape: IconButtonM3EShapeVariant.round,
-          onPressed: isLoading
-              ? null
-              : () {
-                  ref.read(groupCalendarProvider(userId).notifier).refresh();
-                },
         ),
       ],
     );
@@ -157,13 +131,9 @@ class GroupEventsCard extends ConsumerWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 32,
-            height: 32,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          const LoadingIndicatorM3E(
+            variant: LoadingIndicatorM3EVariant.defaultStyle,
+            semanticLabel: 'Loading events',
           ),
           SizedBox(height: context.m3e.spacing.sm),
           Text(
@@ -238,10 +208,14 @@ class _EventListItem extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final group = event.group;
     final badgeLabel = _buildBadgeLabel(event.event);
-    final avatarSize = UiConstants.groupAvatarMd;
+    final avatarSize = UiConstants.groupAvatarLg;
     final avatarRadius = context.m3e.shapes.square.sm;
-    final iconUrl = group?.iconUrl;
-    final hasImage = iconUrl?.isNotEmpty ?? false;
+    final eventImageUrl = event.event.imageUrl;
+    final groupImageUrl = group?.iconUrl;
+    final imageUrl = (eventImageUrl?.isNotEmpty ?? false)
+        ? eventImageUrl
+        : groupImageUrl;
+    final hasImage = imageUrl?.isNotEmpty ?? false;
     final groupName = group?.name ?? _fallbackGroupName(event.groupId);
 
     return Material(
@@ -250,7 +224,7 @@ class _EventListItem extends StatelessWidget {
       child: Padding(
         padding: EdgeInsets.all(context.m3e.spacing.sm),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
               width: avatarSize,
@@ -265,7 +239,7 @@ class _EventListItem extends StatelessWidget {
                 borderRadius: avatarRadius,
                 clipBehavior: Clip.antiAlias,
                 child: CachedImage(
-                  imageUrl: iconUrl ?? '',
+                  imageUrl: imageUrl ?? '',
                   width: avatarSize,
                   height: avatarSize,
                   fit: BoxFit.cover,
@@ -333,7 +307,13 @@ class _EventListItem extends StatelessWidget {
               ),
             ),
             SizedBox(width: context.m3e.spacing.sm),
-            _EventBadge(label: badgeLabel),
+            Flexible(
+              fit: FlexFit.loose,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 120),
+                child: _EventBadge(label: badgeLabel),
+              ),
+            ),
           ],
         ),
       ),
