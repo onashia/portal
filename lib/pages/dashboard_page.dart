@@ -488,15 +488,16 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         isBoosted:
                             monitorState.boostedGroupId == group.groupId &&
                             monitorState.isBoostActive,
+                        isMonitoring: monitorState.isMonitoring,
                         onToggleBoost: () {
                           final notifier = ref.read(
                             groupMonitorProvider(userId).notifier,
                           );
-                          if (monitorState.boostedGroupId == group.groupId &&
-                              monitorState.isBoostActive) {
-                            notifier.clearBoost();
-                          } else {
-                            notifier.setBoostedGroup(group.groupId);
+                          if (!monitorState.isMonitoring) {
+                            return;
+                          }
+                          if (group.groupId != null) {
+                            notifier.toggleBoostForGroup(group.groupId!);
                           }
                         },
                       ),
@@ -516,80 +517,93 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     BuildContext context,
     LimitedUserGroups group, {
     required bool isBoosted,
+    required bool isMonitoring,
     required VoidCallback onToggleBoost,
   }) {
     final scheme = Theme.of(context).colorScheme;
     final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
     final avatarSize = UiConstants.groupAvatarMd;
     final avatarRadius = context.m3e.shapes.square.sm;
-    final boostLabel = isBoosted
+    final boostLabel = !isMonitoring
+        ? 'Start monitoring to enable boost'
+        : isBoosted
         ? 'Boost active'
         : 'Boost polling for ${AppConstants.boostDurationMinutes} min';
-    final boostColor = isBoosted ? scheme.primary : scheme.onSurfaceVariant;
+    final surfaceColor = isBoosted
+        ? scheme.primaryContainer
+        : scheme.surfaceContainerLow;
+    final foregroundColor = isBoosted
+        ? scheme.onPrimaryContainer
+        : scheme.onSurfaceVariant;
+    final textColor = isBoosted ? scheme.onPrimaryContainer : scheme.onSurface;
+    final borderRadius = context.m3e.shapes.round.md;
 
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: context.m3e.spacing.sm,
-        vertical: context.m3e.spacing.xs,
-      ),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: context.m3e.shapes.round.md,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: avatarSize,
-            height: avatarSize,
-            decoration: BoxDecoration(
-              borderRadius: avatarRadius,
-              color: hasImage ? null : GroupUtils.getAvatarColor(group),
+    return Tooltip(
+      message: boostLabel,
+      child: Material(
+        color: surfaceColor,
+        borderRadius: borderRadius,
+        child: InkWell(
+          onTap: onToggleBoost,
+          borderRadius: borderRadius,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: context.m3e.spacing.sm,
+              vertical: context.m3e.spacing.xs,
             ),
-            child: ClipRRect(
-              borderRadius: avatarRadius,
-              clipBehavior: Clip.antiAlias,
-              child: CachedImage(
-                imageUrl: hasImage ? group.iconUrl! : '',
-                width: avatarSize,
-                height: avatarSize,
-                fallbackWidget: hasImage
-                    ? null
-                    : Center(
-                        child: Text(
-                          GroupUtils.getInitials(group),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                showLoadingIndicator: false,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: avatarSize,
+                  height: avatarSize,
+                  decoration: BoxDecoration(
+                    borderRadius: avatarRadius,
+                    color: hasImage ? null : GroupUtils.getAvatarColor(group),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: avatarRadius,
+                    clipBehavior: Clip.antiAlias,
+                    child: CachedImage(
+                      imageUrl: hasImage ? group.iconUrl! : '',
+                      width: avatarSize,
+                      height: avatarSize,
+                      fallbackWidget: hasImage
+                          ? null
+                          : Center(
+                              child: Text(
+                                GroupUtils.getInitials(group),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
+                      showLoadingIndicator: false,
+                    ),
+                  ),
+                ),
+                SizedBox(width: context.m3e.spacing.sm),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 160),
+                  child: Text(
+                    group.name ?? 'Group',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelMedium?.copyWith(color: textColor),
+                  ),
+                ),
+                if (isBoosted) ...[
+                  SizedBox(width: context.m3e.spacing.xs),
+                  Icon(Icons.flash_on, size: 18, color: foregroundColor),
+                ],
+              ],
             ),
           ),
-          SizedBox(width: context.m3e.spacing.sm),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 160),
-            child: Text(
-              group.name ?? 'Group',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelMedium,
-            ),
-          ),
-          SizedBox(width: context.m3e.spacing.xs),
-          IconButton(
-            onPressed: onToggleBoost,
-            tooltip: boostLabel,
-            icon: Icon(isBoosted ? Icons.flash_on : Icons.flash_on_outlined),
-            color: boostColor,
-            iconSize: 18,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            padding: EdgeInsets.zero,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -662,10 +676,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       constraints: const BoxConstraints(maxWidth: 260),
                       child: IntrinsicWidth(
                         child: Card(
-                          child: DebugInfoCard(
-                            monitorState: monitorState,
-                            useCard: false,
-                          ),
+                          child: DebugInfoCard(userId: userId, useCard: false),
                         ),
                       ),
                     ),

@@ -15,6 +15,8 @@ import 'auth_provider.dart';
 
 @immutable
 class GroupMonitorState {
+  static const _unset = Object();
+
   final List<LimitedUserGroups> allGroups;
   final Set<String> selectedGroupIds;
   final Map<String, List<GroupInstanceWithGroup>> groupInstances;
@@ -57,17 +59,17 @@ class GroupMonitorState {
     Map<String, List<GroupInstanceWithGroup>>? groupInstances,
     List<GroupInstanceWithGroup>? newInstances,
     bool? autoInviteEnabled,
-    String? boostedGroupId,
-    DateTime? boostExpiresAt,
+    Object? boostedGroupId = _unset,
+    Object? boostExpiresAt = _unset,
     int? boostPollCount,
-    int? lastBoostLatencyMs,
-    DateTime? lastBoostFetchedAt,
-    Duration? boostFirstSeenAfter,
+    Object? lastBoostLatencyMs = _unset,
+    Object? lastBoostFetchedAt = _unset,
+    Object? boostFirstSeenAfter = _unset,
     bool? isMonitoring,
     bool? isLoading,
-    String? errorMessage,
+    Object? errorMessage = _unset,
     Map<String, String>? groupErrors,
-    DateTime? lastGroupsFetchTime,
+    Object? lastGroupsFetchTime = _unset,
   }) {
     return GroupMonitorState(
       allGroups: allGroups ?? this.allGroups,
@@ -75,17 +77,31 @@ class GroupMonitorState {
       groupInstances: groupInstances ?? this.groupInstances,
       newInstances: newInstances ?? this.newInstances,
       autoInviteEnabled: autoInviteEnabled ?? this.autoInviteEnabled,
-      boostedGroupId: boostedGroupId ?? this.boostedGroupId,
-      boostExpiresAt: boostExpiresAt ?? this.boostExpiresAt,
+      boostedGroupId: boostedGroupId == _unset
+          ? this.boostedGroupId
+          : boostedGroupId as String?,
+      boostExpiresAt: boostExpiresAt == _unset
+          ? this.boostExpiresAt
+          : boostExpiresAt as DateTime?,
       boostPollCount: boostPollCount ?? this.boostPollCount,
-      lastBoostLatencyMs: lastBoostLatencyMs ?? this.lastBoostLatencyMs,
-      lastBoostFetchedAt: lastBoostFetchedAt ?? this.lastBoostFetchedAt,
-      boostFirstSeenAfter: boostFirstSeenAfter ?? this.boostFirstSeenAfter,
+      lastBoostLatencyMs: lastBoostLatencyMs == _unset
+          ? this.lastBoostLatencyMs
+          : lastBoostLatencyMs as int?,
+      lastBoostFetchedAt: lastBoostFetchedAt == _unset
+          ? this.lastBoostFetchedAt
+          : lastBoostFetchedAt as DateTime?,
+      boostFirstSeenAfter: boostFirstSeenAfter == _unset
+          ? this.boostFirstSeenAfter
+          : boostFirstSeenAfter as Duration?,
       isMonitoring: isMonitoring ?? this.isMonitoring,
       isLoading: isLoading ?? this.isLoading,
-      errorMessage: errorMessage ?? this.errorMessage,
+      errorMessage: errorMessage == _unset
+          ? this.errorMessage
+          : errorMessage as String?,
       groupErrors: groupErrors ?? this.groupErrors,
-      lastGroupsFetchTime: lastGroupsFetchTime ?? this.lastGroupsFetchTime,
+      lastGroupsFetchTime: lastGroupsFetchTime == _unset
+          ? this.lastGroupsFetchTime
+          : lastGroupsFetchTime as DateTime?,
     );
   }
 
@@ -120,6 +136,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       if (boostedGroupId != null &&
           boostExpiresAt != null &&
           boostExpiresAt.isAfter(DateTime.now())) {
+        if (!state.isMonitoring) {
+          await _clearBoost(persist: true, logExpired: false);
+          return;
+        }
         state = state.copyWith(
           boostedGroupId: boostedGroupId,
           boostExpiresAt: boostExpiresAt,
@@ -211,6 +231,14 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
+    if (!state.isMonitoring) {
+      AppLogger.warning(
+        'Cannot enable boost while monitoring is off',
+        subCategory: 'group_monitor',
+      );
+      return;
+    }
+
     if (groupId == state.boostedGroupId && state.isBoostActive) {
       await _clearBoost(persist: true, logExpired: false);
       return;
@@ -250,6 +278,14 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   Future<void> clearBoost() async {
     await _clearBoost(persist: true, logExpired: false);
+  }
+
+  Future<void> toggleBoostForGroup(String groupId) async {
+    if (state.boostedGroupId == groupId) {
+      await clearBoost();
+    } else {
+      await setBoostedGroup(groupId);
+    }
   }
 
   Future<void> _clearBoost({
@@ -548,6 +584,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     _pollingTimer = null;
     _boostPollingTimer?.cancel();
     _boostPollingTimer = null;
+    unawaited(_clearBoost(persist: true, logExpired: false));
     state = state.copyWith(isMonitoring: false);
     _backoffDelay = 1;
 

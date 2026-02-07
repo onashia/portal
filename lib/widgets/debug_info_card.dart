@@ -6,17 +6,14 @@ import '../providers/api_call_counter.dart';
 import '../providers/group_monitor_provider.dart';
 
 class DebugInfoCard extends ConsumerWidget {
-  final GroupMonitorState monitorState;
+  final String userId;
   final bool useCard;
 
-  const DebugInfoCard({
-    super.key,
-    required this.monitorState,
-    this.useCard = true,
-  });
+  const DebugInfoCard({super.key, required this.userId, this.useCard = true});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final monitorState = ref.watch(groupMonitorProvider(userId));
     final apiCallState = ref.watch(apiCallCounterProvider);
 
     final content = Padding(
