@@ -6,6 +6,7 @@ import '../constants/ui_constants.dart';
 import '../providers/group_monitor_provider.dart';
 import '../utils/group_utils.dart';
 import '../utils/vrchat_image_utils.dart';
+import 'inputs/app_text_field.dart';
 
 class GroupSelectionSideSheet extends ConsumerStatefulWidget {
   final String userId;
@@ -121,7 +122,7 @@ class _GroupSelectionSideSheetState
   }
 
   Widget _buildSearchBar(BuildContext context) {
-    return TextField(
+    return AppTextField(
       controller: _searchController,
       textInputAction: TextInputAction.search,
       decoration: InputDecoration(
