@@ -16,6 +16,7 @@ import '../utils/animation_constants.dart';
 import '../utils/vrchat_image_utils.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/debug_info_card.dart';
+import '../widgets/group_events_card.dart';
 import '../widgets/group_instance_list.dart';
 import '../utils/app_logger.dart';
 import '../utils/group_utils.dart';
@@ -232,6 +233,13 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                     constraints.maxWidth - (horizontalPadding * 2),
                   ),
                 );
+                const minGroupCardWidth = 640.0;
+                const minEventsCardWidth = 320.0;
+                final canShowSideBySide =
+                    maxWidth >=
+                    (minGroupCardWidth +
+                        minEventsCardWidth +
+                        context.m3e.spacing.lg);
                 final sideSheet = KeyedSubtree(
                   key: const ValueKey('groupSideSheet'),
                   child: GroupSelectionSideSheet(
@@ -264,11 +272,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                                   ),
                                   SizedBox(height: context.m3e.spacing.lg),
                                   Expanded(
-                                    child: _buildGroupMonitoringSection(
+                                    child: _buildDashboardCards(
                                       context,
                                       userId,
                                       monitorState,
                                       selectedGroups,
+                                      canShowSideBySide: canShowSideBySide,
                                     ),
                                   ),
                                 ],
@@ -802,6 +811,50 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       case UserStatus.active:
         return Icons.play_circle;
     }
+  }
+
+  Widget _buildDashboardCards(
+    BuildContext context,
+    String userId,
+    GroupMonitorState monitorState,
+    List<LimitedUserGroups> selectedGroups, {
+    required bool canShowSideBySide,
+  }) {
+    final spacing = context.m3e.spacing.lg;
+
+    if (canShowSideBySide) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 2,
+            child: _buildGroupMonitoringSection(
+              context,
+              userId,
+              monitorState,
+              selectedGroups,
+            ),
+          ),
+          SizedBox(width: spacing),
+          Expanded(flex: 1, child: GroupEventsCard(userId: userId)),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: _buildGroupMonitoringSection(
+            context,
+            userId,
+            monitorState,
+            selectedGroups,
+          ),
+        ),
+        SizedBox(height: spacing),
+        SizedBox(height: 320, child: GroupEventsCard(userId: userId)),
+      ],
+    );
   }
 
   Color _getStatusColor(BuildContext context, UserStatus status) {
