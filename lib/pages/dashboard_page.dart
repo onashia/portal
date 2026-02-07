@@ -834,7 +834,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
-            flex: 2,
+            flex: 3,
             child: _buildGroupMonitoringSection(
               context,
               userId,
@@ -843,7 +843,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             ),
           ),
           SizedBox(width: spacing),
-          Expanded(flex: 1, child: GroupEventsCard(userId: userId)),
+          Expanded(flex: 2, child: GroupEventsCard(userId: userId)),
         ],
       );
     }

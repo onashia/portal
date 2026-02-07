@@ -277,6 +277,22 @@ class CachedImage extends ConsumerStatefulWidget {
 
 class _CachedImageState extends ConsumerState<CachedImage> {
   Uint8List? _cachedBytes;
+  Future<Uint8List?>? _loadFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _resetLoad();
+  }
+
+  @override
+  void didUpdateWidget(CachedImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageUrl != widget.imageUrl) {
+      _cachedBytes = null;
+      _resetLoad();
+    }
+  }
 
   @override
   void dispose() {
@@ -289,20 +305,15 @@ class _CachedImageState extends ConsumerState<CachedImage> {
     if (widget.imageUrl.isEmpty) {
       return _buildFallback(context);
     }
-
-    final cacheService = ImageCacheService();
+    final loadFuture = _loadFuture;
+    if (loadFuture == null) {
+      return _buildFallback(context);
+    }
 
     return FutureBuilder<Uint8List?>(
       key: ValueKey('cached_image_${widget.imageUrl}'),
-      future: _loadImage(cacheService, ref),
+      future: loadFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          if (widget.showLoadingIndicator) {
-            return _buildLoading(context);
-          }
-          return _buildFallback(context);
-        }
-
         if (snapshot.connectionState == ConnectionState.done &&
             snapshot.data != null) {
           _cachedBytes = snapshot.data;
@@ -313,9 +324,26 @@ class _CachedImageState extends ConsumerState<CachedImage> {
           return _buildImage(bytes, context, true);
         }
 
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          if (widget.showLoadingIndicator) {
+            return _buildLoading(context);
+          }
+          return _buildFallback(context);
+        }
+
         return _buildFallback(context);
       },
     );
+  }
+
+  void _resetLoad() {
+    if (widget.imageUrl.isEmpty) {
+      _loadFuture = null;
+      return;
+    }
+
+    final cacheService = ImageCacheService();
+    _loadFuture = _loadImage(cacheService, ref);
   }
 
   Future<Uint8List?> _loadImage(
@@ -367,6 +395,7 @@ class _CachedImageState extends ConsumerState<CachedImage> {
       width: widget.width,
       height: widget.height,
       fit: widget.fit,
+      gaplessPlayback: true,
     );
 
     Widget shapedWidget;

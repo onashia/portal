@@ -243,7 +243,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       }
     }
 
-    todayEvents.sort((a, b) => a.event.startsAt.compareTo(b.event.startsAt));
+    todayEvents.sort(compareGroupCalendarEvents);
     return todayEvents;
   }
 
@@ -258,6 +258,21 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
 
     return false;
   }
+}
+
+@visibleForTesting
+int compareGroupCalendarEvents(GroupCalendarEvent a, GroupCalendarEvent b) {
+  final startCompare = a.event.startsAt.compareTo(b.event.startsAt);
+  if (startCompare != 0) {
+    return startCompare;
+  }
+
+  final endCompare = a.event.endsAt.compareTo(b.event.endsAt);
+  if (endCompare != 0) {
+    return endCompare;
+  }
+
+  return a.groupId.compareTo(b.groupId);
 }
 
 final groupCalendarProvider =
