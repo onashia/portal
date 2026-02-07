@@ -48,10 +48,6 @@ dependencies:
   # HTTP Client
   dio: ^5.9.0
   
-  # Cookie Management
-  cookie_jar: ^4.0.8
-  dio_cookie_manager: ^3.3.0
-  
   # Shared Preferences
   shared_preferences: ^2.5.4
   
@@ -64,7 +60,6 @@ dependencies:
 
   # Material 3 Expressive Design Tokens
   m3e_collection: ^0.3.7
-  side_sheet_material3: ^0.0.2
   pinput: ^6.0.2
 
 dev_dependencies:

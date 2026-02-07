@@ -1,6 +1,6 @@
-import 'package:dio/dio.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../utils/app_logger.dart';
+import '../utils/dio_error_logger.dart';
 
 enum AuthResultStatus {
   success,
@@ -21,28 +21,6 @@ class AuthService {
   final VrchatDart api;
 
   AuthService(this.api);
-
-  void _logDioException(String context, Object error) {
-    if (error is DioException) {
-      final response = error.response;
-      AppLogger.error(
-        '$context DioException',
-        subCategory: 'auth',
-        error: {
-          'type': error.type.toString(),
-          'message': error.message,
-          'uri': error.requestOptions.uri.toString(),
-          'statusCode': response?.statusCode,
-        },
-      );
-      if (response?.data != null) {
-        AppLogger.debug(
-          '$context Dio response data: ${response?.data}',
-          subCategory: 'auth',
-        );
-      }
-    }
-  }
 
   Future<AuthResult> login(String username, String password) async {
     AppLogger.info('Login attempt started', subCategory: 'auth');
@@ -132,7 +110,7 @@ class AuthService {
         );
       }
     } catch (e, s) {
-      _logDioException('Login', e);
+      logDioException('Login', e, subCategory: 'auth');
       AppLogger.error(
         'Login failed with exception',
         subCategory: 'auth',
@@ -161,7 +139,7 @@ class AuthService {
 
       return AuthResult(status: AuthResultStatus.success);
     } catch (e, s) {
-      _logDioException('Logout', e);
+      logDioException('Logout', e, subCategory: 'auth');
       AppLogger.error(
         'Logout failed with exception',
         subCategory: 'auth',
@@ -195,7 +173,7 @@ class AuthService {
         return AuthResult(status: AuthResultStatus.failure);
       }
     } catch (e, s) {
-      _logDioException('Check session', e);
+      logDioException('Check session', e, subCategory: 'auth');
       AppLogger.error(
         'Failed to check existing session',
         subCategory: 'auth',

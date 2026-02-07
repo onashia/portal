@@ -1,6 +1,6 @@
-import 'package:dio/dio.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../utils/app_logger.dart';
+import '../utils/dio_error_logger.dart';
 
 enum TwoFactorAuthResultStatus { success, failure }
 
@@ -20,28 +20,6 @@ class TwoFactorAuthService {
   final VrchatDart api;
 
   TwoFactorAuthService(this.api);
-
-  void _logDioException(String context, Object error) {
-    if (error is DioException) {
-      final response = error.response;
-      AppLogger.error(
-        '$context DioException',
-        subCategory: 'auth',
-        error: {
-          'type': error.type.toString(),
-          'message': error.message,
-          'uri': error.requestOptions.uri.toString(),
-          'statusCode': response?.statusCode,
-        },
-      );
-      if (response?.data != null) {
-        AppLogger.debug(
-          '$context Dio response data: ${response?.data}',
-          subCategory: 'auth',
-        );
-      }
-    }
-  }
 
   Future<TwoFactorAuthResult> verify2FA(String code) async {
     AppLogger.info('2FA verification started', subCategory: 'auth');
@@ -84,7 +62,7 @@ class TwoFactorAuthService {
         );
       }
     } catch (e, s) {
-      _logDioException('2FA verify', e);
+      logDioException('2FA verify', e, subCategory: 'auth');
       AppLogger.error(
         '2FA verification failed with exception',
         subCategory: 'auth',
