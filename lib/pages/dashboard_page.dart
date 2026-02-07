@@ -241,6 +241,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                     (minGroupCardWidth +
                         minEventsCardWidth +
                         context.m3e.spacing.lg);
+                final sideBySideBottomPadding = context.m3e.spacing.xxl * 3;
+                final stackedBottomPadding = context.m3e.spacing.xl;
+                final contentBottomPadding = canShowSideBySide
+                    ? sideBySideBottomPadding
+                    : stackedBottomPadding;
                 final sideSheet = KeyedSubtree(
                   key: const ValueKey('groupSideSheet'),
                   child: GroupSelectionSideSheet(
@@ -258,7 +263,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                             left: horizontalPadding,
                             right: horizontalPadding,
                             top: 24,
-                            bottom: context.m3e.spacing.xxl * 4,
+                            bottom: contentBottomPadding,
                           ), // 128px: space for floating action area (56px FAB + 24px margin + 48px buffer)
                           child: Center(
                             child: ConstrainedBox(
