@@ -1,115 +1,18 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/app_constants.dart';
-import '../constants/storage_keys.dart';
 import '../utils/app_logger.dart';
 import '../models/group_instance_with_group.dart';
 import '../services/invite_service.dart';
 import 'api_call_counter.dart';
 import 'auth_provider.dart';
+import 'group_monitor_state.dart';
+import 'group_monitor_storage.dart';
 
-@immutable
-class GroupMonitorState {
-  static const _unset = Object();
-
-  final List<LimitedUserGroups> allGroups;
-  final Set<String> selectedGroupIds;
-  final Map<String, List<GroupInstanceWithGroup>> groupInstances;
-  final List<GroupInstanceWithGroup> newInstances;
-  final bool autoInviteEnabled;
-  final String? boostedGroupId;
-  final DateTime? boostExpiresAt;
-  final int boostPollCount;
-  final int? lastBoostLatencyMs;
-  final DateTime? lastBoostFetchedAt;
-  final Duration? boostFirstSeenAfter;
-  final bool isMonitoring;
-  final bool isLoading;
-  final String? errorMessage;
-  final Map<String, String> groupErrors;
-  final DateTime? lastGroupsFetchTime;
-
-  const GroupMonitorState({
-    this.allGroups = const [],
-    this.selectedGroupIds = const {},
-    this.groupInstances = const {},
-    this.newInstances = const [],
-    this.autoInviteEnabled = true,
-    this.boostedGroupId,
-    this.boostExpiresAt,
-    this.boostPollCount = 0,
-    this.lastBoostLatencyMs,
-    this.lastBoostFetchedAt,
-    this.boostFirstSeenAfter,
-    this.isMonitoring = false,
-    this.isLoading = false,
-    this.errorMessage,
-    this.groupErrors = const {},
-    this.lastGroupsFetchTime,
-  });
-
-  GroupMonitorState copyWith({
-    List<LimitedUserGroups>? allGroups,
-    Set<String>? selectedGroupIds,
-    Map<String, List<GroupInstanceWithGroup>>? groupInstances,
-    List<GroupInstanceWithGroup>? newInstances,
-    bool? autoInviteEnabled,
-    Object? boostedGroupId = _unset,
-    Object? boostExpiresAt = _unset,
-    int? boostPollCount,
-    Object? lastBoostLatencyMs = _unset,
-    Object? lastBoostFetchedAt = _unset,
-    Object? boostFirstSeenAfter = _unset,
-    bool? isMonitoring,
-    bool? isLoading,
-    Object? errorMessage = _unset,
-    Map<String, String>? groupErrors,
-    Object? lastGroupsFetchTime = _unset,
-  }) {
-    return GroupMonitorState(
-      allGroups: allGroups ?? this.allGroups,
-      selectedGroupIds: selectedGroupIds ?? this.selectedGroupIds,
-      groupInstances: groupInstances ?? this.groupInstances,
-      newInstances: newInstances ?? this.newInstances,
-      autoInviteEnabled: autoInviteEnabled ?? this.autoInviteEnabled,
-      boostedGroupId: boostedGroupId == _unset
-          ? this.boostedGroupId
-          : boostedGroupId as String?,
-      boostExpiresAt: boostExpiresAt == _unset
-          ? this.boostExpiresAt
-          : boostExpiresAt as DateTime?,
-      boostPollCount: boostPollCount ?? this.boostPollCount,
-      lastBoostLatencyMs: lastBoostLatencyMs == _unset
-          ? this.lastBoostLatencyMs
-          : lastBoostLatencyMs as int?,
-      lastBoostFetchedAt: lastBoostFetchedAt == _unset
-          ? this.lastBoostFetchedAt
-          : lastBoostFetchedAt as DateTime?,
-      boostFirstSeenAfter: boostFirstSeenAfter == _unset
-          ? this.boostFirstSeenAfter
-          : boostFirstSeenAfter as Duration?,
-      isMonitoring: isMonitoring ?? this.isMonitoring,
-      isLoading: isLoading ?? this.isLoading,
-      errorMessage: errorMessage == _unset
-          ? this.errorMessage
-          : errorMessage as String?,
-      groupErrors: groupErrors ?? this.groupErrors,
-      lastGroupsFetchTime: lastGroupsFetchTime == _unset
-          ? this.lastGroupsFetchTime
-          : lastGroupsFetchTime as DateTime?,
-    );
-  }
-
-  bool get isBoostActive =>
-      boostedGroupId != null &&
-      boostExpiresAt != null &&
-      boostExpiresAt!.isAfter(DateTime.now());
-}
+export 'group_monitor_state.dart';
 
 class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   final String arg;
@@ -126,12 +29,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   Future<void> _loadBoostSettings() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final boostedGroupId = prefs.getString(StorageKeys.boostedGroupId);
-      final expiresAtRaw = prefs.getString(StorageKeys.boostExpiresAt);
-      final boostExpiresAt = expiresAtRaw == null
-          ? null
-          : DateTime.tryParse(expiresAtRaw);
+      final settings = await GroupMonitorStorage.loadBoostSettings();
+      final boostedGroupId = settings.groupId;
+      final boostExpiresAt = settings.expiresAt;
 
       if (boostedGroupId != null &&
           boostExpiresAt != null &&
@@ -171,8 +71,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   Future<void> _loadAutoInviteSetting() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final enabled = prefs.getBool(StorageKeys.autoInviteEnabled) ?? true;
+      final enabled = await GroupMonitorStorage.loadAutoInviteEnabled();
       state = state.copyWith(autoInviteEnabled: enabled);
       AppLogger.debug(
         'Loaded auto-invite setting: $enabled',
@@ -189,9 +88,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   Future<void> _loadSelectedGroups() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final selectedIds =
-          prefs.getStringList(StorageKeys.selectedGroupIds) ?? [];
+      final selectedIds = await GroupMonitorStorage.loadSelectedGroupIds();
       state = state.copyWith(selectedGroupIds: selectedIds.toSet());
       AppLogger.debug(
         'Loaded ${selectedIds.length} selected groups from storage',
@@ -210,8 +107,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     final newValue = !state.autoInviteEnabled;
     state = state.copyWith(autoInviteEnabled: newValue);
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(StorageKeys.autoInviteEnabled, newValue);
+      await GroupMonitorStorage.saveAutoInviteEnabled(newValue);
       AppLogger.info(
         'Auto-invite set to $newValue',
         subCategory: 'group_monitor',
@@ -323,17 +219,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     required DateTime? boostExpiresAt,
   }) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      if (groupId == null || boostExpiresAt == null) {
-        await prefs.remove(StorageKeys.boostedGroupId);
-        await prefs.remove(StorageKeys.boostExpiresAt);
-      } else {
-        await prefs.setString(StorageKeys.boostedGroupId, groupId);
-        await prefs.setString(
-          StorageKeys.boostExpiresAt,
-          boostExpiresAt.toIso8601String(),
-        );
-      }
+      await GroupMonitorStorage.saveBoostSettings(
+        groupId: groupId,
+        boostExpiresAt: boostExpiresAt,
+      );
     } catch (e) {
       AppLogger.error(
         'Failed to persist boost settings',
@@ -345,11 +234,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   Future<void> _saveSelectedGroups() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(
-        StorageKeys.selectedGroupIds,
-        state.selectedGroupIds.toList(),
-      );
+      await GroupMonitorStorage.saveSelectedGroupIds(state.selectedGroupIds);
     } catch (e) {
       AppLogger.error(
         'Failed to save selected groups',
@@ -911,8 +796,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   Future<void> clearSelectedGroups() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(StorageKeys.selectedGroupIds);
+      await GroupMonitorStorage.clearSelectedGroups();
       await _clearBoost(persist: true, logExpired: false);
 
       state = state.copyWith(
