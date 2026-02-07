@@ -2,26 +2,21 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_collection/m3e_collection.dart';
 import 'package:motor/motor.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:vrchat_dart/vrchat_dart.dart';
-import 'package:m3e_collection/m3e_collection.dart';
+
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
-import '../constants/app_constants.dart';
-import '../constants/ui_constants.dart';
 import '../providers/group_monitor_provider.dart';
-import '../providers/group_calendar_provider.dart';
+import '../providers/theme_provider.dart';
 import '../services/notification_service.dart';
 import '../utils/animation_constants.dart';
-import '../utils/vrchat_image_utils.dart';
-import '../widgets/custom_title_bar.dart';
-import '../widgets/debug_info_card.dart';
-import '../widgets/group_events_card.dart';
-import '../widgets/group_instance_list.dart';
 import '../utils/app_logger.dart';
-import '../utils/group_utils.dart';
-import '../theme/status_colors.dart';
+import '../widgets/custom_title_bar.dart';
+import '../widgets/dashboard/dashboard_action_area.dart';
+import '../widgets/dashboard/dashboard_cards.dart';
+import '../widgets/dashboard/dashboard_side_sheet_layout.dart';
+import '../widgets/dashboard/dashboard_user_card.dart';
 import '../widgets/group_selection_side_sheet.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
@@ -33,9 +28,6 @@ class DashboardPage extends ConsumerStatefulWidget {
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
   bool _isSideSheetOpen = false;
-  final OverlayPortalController _debugOverlayController =
-      OverlayPortalController();
-  final LayerLink _debugOverlayLink = LayerLink();
 
   void _openSideSheet() {
     if (!_isSideSheetOpen) {
@@ -271,18 +263,16 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _buildUserCard(
-                                    context,
-                                    currentUser,
+                                  DashboardUserCard(
+                                    currentUser: currentUser,
                                     streamedUser: streamedUser,
                                   ),
                                   SizedBox(height: context.m3e.spacing.lg),
                                   Expanded(
-                                    child: _buildDashboardCards(
-                                      context,
-                                      userId,
-                                      monitorState,
-                                      selectedGroups,
+                                    child: DashboardCards(
+                                      userId: userId,
+                                      monitorState: monitorState,
+                                      selectedGroups: selectedGroups,
                                       canShowSideBySide: canShowSideBySide,
                                     ),
                                   ),
@@ -295,11 +285,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       Positioned(
                         bottom: context.m3e.spacing.xl,
                         right: context.m3e.spacing.xl,
-                        child: _buildFloatingActionArea(
-                          context,
-                          userId,
-                          monitorState,
-                          () => _toggleSideSheetForUser(userId),
+                        child: DashboardActionArea(
+                          userId: userId,
+                          monitorState: monitorState,
+                          onManageGroups: () => _toggleSideSheetForUser(userId),
                         ),
                       ),
                     ],
@@ -312,13 +301,13 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   from: 0.0,
                   builder: (context, value, _) {
                     final progress = value.clamp(0.0, 1.0);
-                    return _buildSideSheetLayout(
-                      context: context,
+                    return DashboardSideSheetLayout(
                       content: content,
                       sideSheet: sideSheet,
                       sheetWidth: effectiveSheetWidth,
                       isDocked: canDock,
                       progress: progress,
+                      onClose: _closeSideSheet,
                     );
                   },
                 );
@@ -328,583 +317,5 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         );
       },
     );
-  }
-
-  Widget _buildUserCard(
-    BuildContext context,
-    CurrentUser currentUser, {
-    StreamedCurrentUser? streamedUser,
-  }) {
-    final status = _resolveUserStatus(currentUser, streamedUser);
-    return Padding(
-      padding: EdgeInsets.all(context.m3e.spacing.lg),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: _getStatusColor(context, status),
-                width: 2,
-              ),
-            ),
-            child: CachedImage(
-              imageUrl: _getUserProfileImageUrl(
-                currentUser,
-                streamedUser: streamedUser,
-              ),
-              width: 56,
-              height: 56,
-              shape: BoxShape.circle,
-              fallbackIcon: Icons.person,
-            ),
-          ),
-          SizedBox(width: context.m3e.spacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  streamedUser?.displayName ?? currentUser.displayName,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: context.m3e.spacing.xs),
-                Row(
-                  children: [
-                    Icon(
-                      _getStatusIcon(status),
-                      size: 16,
-                      color: _getStatusColor(context, status),
-                    ),
-                    SizedBox(width: context.m3e.spacing.sm),
-                    Text(
-                      _getStatusText(status),
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: _getStatusColor(context, status),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  UserStatus _resolveUserStatus(
-    CurrentUser currentUser,
-    StreamedCurrentUser? streamedUser,
-  ) {
-    return streamedUser?.status ?? currentUser.status;
-  }
-
-  String _getUserProfileImageUrl(
-    CurrentUser currentUser, {
-    StreamedCurrentUser? streamedUser,
-  }) {
-    if (streamedUser != null && streamedUser.profilePicOverride.isNotEmpty) {
-      return streamedUser.profilePicOverride;
-    }
-    if (currentUser.profilePicOverrideThumbnail.isNotEmpty) {
-      return currentUser.profilePicOverrideThumbnail;
-    }
-    if (streamedUser != null &&
-        streamedUser.currentAvatarThumbnailImageUrl.isNotEmpty) {
-      return streamedUser.currentAvatarThumbnailImageUrl;
-    }
-    return currentUser.currentAvatarThumbnailImageUrl;
-  }
-
-  Widget _buildGroupMonitoringSection(
-    BuildContext context,
-    String userId,
-    GroupMonitorState monitorState,
-    List<LimitedUserGroups> selectedGroups,
-  ) {
-    final scheme = Theme.of(context).colorScheme;
-    final cardTheme = Theme.of(context).cardTheme;
-    final baseShape =
-        cardTheme.shape as RoundedRectangleBorder? ??
-        RoundedRectangleBorder(borderRadius: context.m3e.shapes.round.md);
-    final outlineColor = scheme.outlineVariant.withValues(alpha: 0.4);
-
-    return Card(
-      color: scheme.surfaceContainerLow,
-      elevation: 0,
-      shadowColor: Colors.transparent,
-      shape: baseShape.copyWith(side: BorderSide(color: outlineColor)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Group Monitoring',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            SizedBox(height: context.m3e.spacing.md),
-            Expanded(
-              child: GroupInstanceList(
-                userId: userId,
-                scrollable: true,
-                onRefresh: () {
-                  ref
-                      .read(groupMonitorProvider(userId).notifier)
-                      .fetchGroupInstances();
-                },
-              ),
-            ),
-            SizedBox(height: context.m3e.spacing.md),
-            Divider(
-              color: Theme.of(
-                context,
-              ).colorScheme.outlineVariant.withValues(alpha: 0.4),
-            ),
-            SizedBox(height: context.m3e.spacing.sm),
-            Row(
-              children: [
-                Text(
-                  'Selected Groups',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                SizedBox(width: context.m3e.spacing.sm),
-                Text(
-                  '•',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                SizedBox(width: context.m3e.spacing.sm),
-                Text(
-                  selectedGroups.length.toString(),
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-            if (selectedGroups.isNotEmpty) ...[
-              SizedBox(height: context.m3e.spacing.sm),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (final group in selectedGroups) ...[
-                      _buildSelectedGroupChip(
-                        context,
-                        group,
-                        isBoosted:
-                            monitorState.boostedGroupId == group.groupId &&
-                            monitorState.isBoostActive,
-                        isMonitoring: monitorState.isMonitoring,
-                        onToggleBoost: () {
-                          final notifier = ref.read(
-                            groupMonitorProvider(userId).notifier,
-                          );
-                          if (!monitorState.isMonitoring) {
-                            return;
-                          }
-                          if (group.groupId != null) {
-                            notifier.toggleBoostForGroup(group.groupId!);
-                          }
-                        },
-                      ),
-                      SizedBox(width: context.m3e.spacing.sm),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSelectedGroupChip(
-    BuildContext context,
-    LimitedUserGroups group, {
-    required bool isBoosted,
-    required bool isMonitoring,
-    required VoidCallback onToggleBoost,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
-    final avatarSize = UiConstants.groupAvatarMd;
-    final avatarRadius = context.m3e.shapes.square.sm;
-    final boostLabel = !isMonitoring
-        ? 'Start monitoring to enable boost'
-        : isBoosted
-        ? 'Boost active'
-        : 'Boost polling for ${AppConstants.boostDurationMinutes} min';
-    final surfaceColor = isBoosted
-        ? scheme.primaryContainer
-        : scheme.surfaceContainerLow;
-    final foregroundColor = isBoosted
-        ? scheme.onPrimaryContainer
-        : scheme.onSurfaceVariant;
-    final textColor = isBoosted ? scheme.onPrimaryContainer : scheme.onSurface;
-    final borderRadius = context.m3e.shapes.round.md;
-
-    return Tooltip(
-      message: boostLabel,
-      child: Material(
-        color: surfaceColor,
-        borderRadius: borderRadius,
-        child: InkWell(
-          onTap: onToggleBoost,
-          borderRadius: borderRadius,
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: context.m3e.spacing.sm,
-              vertical: context.m3e.spacing.xs,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: avatarSize,
-                  height: avatarSize,
-                  decoration: BoxDecoration(
-                    borderRadius: avatarRadius,
-                    color: hasImage ? null : GroupUtils.getAvatarColor(group),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: avatarRadius,
-                    clipBehavior: Clip.antiAlias,
-                    child: CachedImage(
-                      imageUrl: hasImage ? group.iconUrl! : '',
-                      width: avatarSize,
-                      height: avatarSize,
-                      fallbackWidget: hasImage
-                          ? null
-                          : Center(
-                              child: Text(
-                                GroupUtils.getInitials(group),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ),
-                      showLoadingIndicator: false,
-                    ),
-                  ),
-                ),
-                SizedBox(width: context.m3e.spacing.sm),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 160),
-                  child: Text(
-                    group.name ?? 'Group',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.labelMedium?.copyWith(color: textColor),
-                  ),
-                ),
-                if (isBoosted) ...[
-                  SizedBox(width: context.m3e.spacing.xs),
-                  Icon(Icons.flash_on, size: 18, color: foregroundColor),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFloatingActionArea(
-    BuildContext context,
-    String userId,
-    GroupMonitorState monitorState,
-    VoidCallback onManageGroups,
-  ) {
-    final actions = [
-      ToolbarActionM3E(
-        icon: monitorState.autoInviteEnabled
-            ? Icons.person_add_alt_1
-            : Icons.person_off,
-        onPressed: () {
-          ref.read(groupMonitorProvider(userId).notifier).toggleAutoInvite();
-        },
-        tooltip: monitorState.autoInviteEnabled
-            ? 'Auto-Invite On'
-            : 'Auto-Invite Off',
-        label: monitorState.autoInviteEnabled
-            ? 'Auto-Invite On'
-            : 'Auto-Invite Off',
-      ),
-      ToolbarActionM3E(
-        icon: Icons.refresh,
-        onPressed: () {
-          ref.read(groupMonitorProvider(userId).notifier).fetchGroupInstances();
-          ref.read(groupCalendarProvider(userId).notifier).refresh();
-        },
-        tooltip: 'Refresh Dashboard',
-      ),
-      ToolbarActionM3E(
-        icon: monitorState.isMonitoring
-            ? Icons.pause_circle
-            : Icons.play_circle,
-        onPressed: () {
-          final notifier = ref.read(groupMonitorProvider(userId).notifier);
-          if (monitorState.isMonitoring) {
-            notifier.stopMonitoring();
-          } else {
-            notifier.startMonitoring();
-          }
-        },
-        tooltip: monitorState.isMonitoring
-            ? 'Stop Monitoring'
-            : 'Start Monitoring',
-      ),
-    ];
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        OverlayPortal(
-          controller: _debugOverlayController,
-          overlayChildBuilder: (context) {
-            return Positioned.fill(
-              child: Stack(
-                children: [
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _debugOverlayController.hide,
-                  ),
-                  CompositedTransformFollower(
-                    link: _debugOverlayLink,
-                    targetAnchor: Alignment.topRight,
-                    followerAnchor: Alignment.bottomRight,
-                    offset: Offset(0, -context.m3e.spacing.sm),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 260),
-                      child: IntrinsicWidth(
-                        child: Card(
-                          child: DebugInfoCard(userId: userId, useCard: false),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-          child: CompositedTransformTarget(
-            link: _debugOverlayLink,
-            child: IntrinsicWidth(
-              child: ToolbarM3E(
-                actions: [
-                  ...actions,
-                  ToolbarActionM3E(
-                    icon: Icons.info_outline,
-                    onPressed: _debugOverlayController.toggle,
-                    tooltip: 'Debug Info',
-                  ),
-                ],
-                variant: ToolbarM3EVariant.tonal,
-                size: ToolbarM3ESize.medium,
-                shapeFamily: ToolbarM3EShapeFamily.round,
-                density: ToolbarM3EDensity.regular,
-                maxInlineActions: 5,
-                safeArea: false,
-              ),
-            ),
-          ),
-        ),
-        SizedBox(width: context.m3e.spacing.md),
-        ExtendedFabM3E(
-          icon: const Icon(Icons.groups),
-          label: const Text('Manage Groups'),
-          kind: FabM3EKind.primary,
-          size: FabM3ESize.regular,
-          shapeFamily: FabM3EShapeFamily.round,
-          onPressed: onManageGroups,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSideSheetLayout({
-    required BuildContext context,
-    required Widget content,
-    required Widget sideSheet,
-    required double sheetWidth,
-    required bool isDocked,
-    required double progress,
-  }) {
-    final topInset = 0.0;
-    final rightInset = context.m3e.spacing.lg;
-    final bottomInset = context.m3e.spacing.lg;
-    final shellWidth = sheetWidth + rightInset;
-    final clampedProgress = progress.clamp(0.0, 1.0);
-    final opacityProgress = Curves.easeOut.transform(
-      (clampedProgress * 2).clamp(0.0, 1.0),
-    );
-    const minVisibleOpacity = 0.02;
-    final isVisible = opacityProgress > minVisibleOpacity;
-    final dockedPadding = isDocked ? shellWidth * clampedProgress : 0.0;
-    final sheetTranslateX = shellWidth * (1 - clampedProgress);
-
-    return SizedBox.expand(
-      child: Stack(
-        children: [
-          Padding(
-            padding: EdgeInsets.only(right: dockedPadding),
-            child: content,
-          ),
-          if (!isDocked && isVisible)
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: _closeSideSheet,
-                behavior: HitTestBehavior.opaque,
-                child: const ColoredBox(color: Colors.transparent),
-              ),
-            ),
-          Positioned(
-            right: 0,
-            top: topInset,
-            bottom: 0,
-            child: ClipRect(
-              child: Transform.translate(
-                offset: Offset(sheetTranslateX, 0),
-                child: SizedBox(
-                  width: shellWidth,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    widthFactor: 1.0,
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                        right: rightInset,
-                        bottom: bottomInset,
-                      ),
-                      child: IgnorePointer(
-                        ignoring: !isVisible,
-                        child: Opacity(
-                          opacity: opacityProgress,
-                          child: sideSheet,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  IconData _getStatusIcon(UserStatus status) {
-    switch (status) {
-      case UserStatus.askMe:
-      case UserStatus.busy:
-      case UserStatus.joinMe:
-        return Icons.circle;
-      case UserStatus.offline:
-        return Icons.offline_bolt;
-      case UserStatus.active:
-        return Icons.play_circle;
-    }
-  }
-
-  Widget _buildDashboardCards(
-    BuildContext context,
-    String userId,
-    GroupMonitorState monitorState,
-    List<LimitedUserGroups> selectedGroups, {
-    required bool canShowSideBySide,
-  }) {
-    final spacing = context.m3e.spacing.lg;
-
-    if (canShowSideBySide) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            flex: 3,
-            child: _buildGroupMonitoringSection(
-              context,
-              userId,
-              monitorState,
-              selectedGroups,
-            ),
-          ),
-          SizedBox(width: spacing),
-          Expanded(flex: 2, child: GroupEventsCard(userId: userId)),
-        ],
-      );
-    }
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SingleChildScrollView(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: IntrinsicHeight(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: _buildGroupMonitoringSection(
-                      context,
-                      userId,
-                      monitorState,
-                      selectedGroups,
-                    ),
-                  ),
-                  SizedBox(height: spacing),
-                  SizedBox(height: 320, child: GroupEventsCard(userId: userId)),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Color _getStatusColor(BuildContext context, UserStatus status) {
-    final scheme = Theme.of(context).colorScheme;
-    final statusColors = Theme.of(context).extension<StatusColors>();
-
-    switch (status) {
-      case UserStatus.active:
-        return statusColors?.active ?? scheme.primary;
-      case UserStatus.askMe:
-        return statusColors?.askMe ?? scheme.tertiary;
-      case UserStatus.busy:
-        return statusColors?.busy ?? scheme.error;
-      case UserStatus.joinMe:
-        return statusColors?.joinMe ?? scheme.secondary;
-      case UserStatus.offline:
-        return statusColors?.offline ?? scheme.outline;
-    }
-  }
-
-  String _getStatusText(UserStatus status) {
-    switch (status) {
-      case UserStatus.active:
-        return 'Active';
-      case UserStatus.askMe:
-        return 'Ask Me';
-      case UserStatus.busy:
-        return 'Busy';
-      case UserStatus.joinMe:
-        return 'Join Me';
-      case UserStatus.offline:
-        return 'Offline';
-    }
   }
 }
