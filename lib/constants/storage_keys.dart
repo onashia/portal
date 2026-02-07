@@ -10,4 +10,10 @@ class StorageKeys {
 
   /// Auto-invite setting for new group instances
   static const String autoInviteEnabled = 'autoInviteEnabled';
+
+  /// Boosted group ID for high-frequency polling
+  static const String boostedGroupId = 'boostedGroupId';
+
+  /// Boosted group expiration timestamp (ISO-8601)
+  static const String boostExpiresAt = 'boostExpiresAt';
 }

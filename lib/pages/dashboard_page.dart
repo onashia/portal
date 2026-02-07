@@ -8,6 +8,7 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../constants/app_constants.dart';
 import '../constants/ui_constants.dart';
 import '../providers/group_monitor_provider.dart';
 import '../services/notification_service.dart';
@@ -481,7 +482,24 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 child: Row(
                   children: [
                     for (final group in selectedGroups) ...[
-                      _buildSelectedGroupChip(context, group),
+                      _buildSelectedGroupChip(
+                        context,
+                        group,
+                        isBoosted:
+                            monitorState.boostedGroupId == group.groupId &&
+                            monitorState.isBoostActive,
+                        onToggleBoost: () {
+                          final notifier = ref.read(
+                            groupMonitorProvider(userId).notifier,
+                          );
+                          if (monitorState.boostedGroupId == group.groupId &&
+                              monitorState.isBoostActive) {
+                            notifier.clearBoost();
+                          } else {
+                            notifier.setBoostedGroup(group.groupId);
+                          }
+                        },
+                      ),
                       SizedBox(width: context.m3e.spacing.sm),
                     ],
                   ],
@@ -496,12 +514,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
   Widget _buildSelectedGroupChip(
     BuildContext context,
-    LimitedUserGroups group,
-  ) {
+    LimitedUserGroups group, {
+    required bool isBoosted,
+    required VoidCallback onToggleBoost,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
     final avatarSize = UiConstants.groupAvatarMd;
     final avatarRadius = context.m3e.shapes.square.sm;
+    final boostLabel = isBoosted
+        ? 'Boost active'
+        : 'Boost polling for ${AppConstants.boostDurationMinutes} min';
+    final boostColor = isBoosted ? scheme.primary : scheme.onSurfaceVariant;
 
     return Container(
       padding: EdgeInsets.symmetric(
@@ -554,6 +578,16 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelMedium,
             ),
+          ),
+          SizedBox(width: context.m3e.spacing.xs),
+          IconButton(
+            onPressed: onToggleBoost,
+            tooltip: boostLabel,
+            icon: Icon(isBoosted ? Icons.flash_on : Icons.flash_on_outlined),
+            color: boostColor,
+            iconSize: 18,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            padding: EdgeInsets.zero,
           ),
         ],
       ),

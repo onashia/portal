@@ -59,6 +59,48 @@ class DebugInfoCard extends ConsumerWidget {
             label: 'API Calls',
             value: apiCallState.totalCalls.toString(),
           ),
+          SizedBox(height: context.m3e.spacing.sm),
+          _buildMetricRow(
+            context,
+            label: 'Boost Active',
+            value: monitorState.isBoostActive.toString(),
+          ),
+          _buildMetricRow(
+            context,
+            label: 'Boost Group',
+            value: monitorState.boostedGroupId == null
+                ? '—'
+                : _getGroupName(monitorState, monitorState.boostedGroupId!),
+          ),
+          _buildMetricRow(
+            context,
+            label: 'Boost Expires In',
+            value: _formatDuration(
+              monitorState.boostExpiresAt?.difference(DateTime.now()),
+            ),
+          ),
+          _buildMetricRow(
+            context,
+            label: 'Boost Polls',
+            value: monitorState.boostPollCount.toString(),
+          ),
+          _buildMetricRow(
+            context,
+            label: 'Boost Last Latency',
+            value: monitorState.lastBoostLatencyMs == null
+                ? '—'
+                : '${monitorState.lastBoostLatencyMs} ms',
+          ),
+          _buildMetricRow(
+            context,
+            label: 'Boost Last FetchedAt',
+            value: _formatDateTime(monitorState.lastBoostFetchedAt),
+          ),
+          _buildMetricRow(
+            context,
+            label: 'Boost First Seen After',
+            value: _formatDuration(monitorState.boostFirstSeenAfter),
+          ),
           if (monitorState.groupErrors.isNotEmpty) ...[
             SizedBox(height: context.m3e.spacing.md),
             Text(
@@ -105,6 +147,23 @@ class DebugInfoCard extends ConsumerWidget {
     } catch (_) {
       return groupId.substring(0, 8);
     }
+  }
+
+  String _formatDuration(Duration? duration) {
+    if (duration == null) return '—';
+    final totalSeconds = duration.inSeconds;
+    if (totalSeconds <= 0) return '00:00';
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  String _formatDateTime(DateTime? value) {
+    if (value == null) return '—';
+    final hours = value.hour.toString().padLeft(2, '0');
+    final minutes = value.minute.toString().padLeft(2, '0');
+    final seconds = value.second.toString().padLeft(2, '0');
+    return '$hours:$minutes:$seconds';
   }
 
   Widget _buildMetricRow(
