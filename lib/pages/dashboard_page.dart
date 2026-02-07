@@ -701,7 +701,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 size: ToolbarM3ESize.medium,
                 shapeFamily: ToolbarM3EShapeFamily.round,
                 density: ToolbarM3EDensity.regular,
-                maxInlineActions: 3,
+                maxInlineActions: 5,
                 safeArea: false,
               ),
             ),
