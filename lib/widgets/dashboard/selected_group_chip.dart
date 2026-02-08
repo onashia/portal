@@ -4,8 +4,7 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../../constants/app_constants.dart';
 import '../../constants/ui_constants.dart';
-import '../../utils/group_utils.dart';
-import '../cached_image.dart';
+import '../group_selection/group_avatar.dart';
 
 class SelectedGroupChip extends StatelessWidget {
   final LimitedUserGroups group;
@@ -24,9 +23,6 @@ class SelectedGroupChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
-    final avatarSize = UiConstants.groupAvatarMd;
-    final avatarRadius = context.m3e.shapes.square.sm;
     final boostLabel = !isMonitoring
         ? 'Start monitoring to enable boost'
         : isBoosted
@@ -57,35 +53,10 @@ class SelectedGroupChip extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: avatarSize,
-                  height: avatarSize,
-                  decoration: BoxDecoration(
-                    borderRadius: avatarRadius,
-                    color: hasImage ? null : GroupUtils.getAvatarColor(group),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: avatarRadius,
-                    clipBehavior: Clip.antiAlias,
-                    child: CachedImage(
-                      imageUrl: hasImage ? group.iconUrl! : '',
-                      width: avatarSize,
-                      height: avatarSize,
-                      fallbackWidget: hasImage
-                          ? null
-                          : Center(
-                              child: Text(
-                                GroupUtils.getInitials(group),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ),
-                      showLoadingIndicator: false,
-                    ),
-                  ),
+                GroupAvatar(
+                  group: group,
+                  size: UiConstants.groupAvatarMd,
+                  borderRadius: context.m3e.shapes.square.sm,
                 ),
                 SizedBox(width: context.m3e.spacing.sm),
                 ConstrainedBox(

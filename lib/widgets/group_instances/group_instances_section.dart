@@ -3,7 +3,7 @@ import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../../constants/ui_constants.dart';
 import '../../models/group_instance_with_group.dart';
-import '../cached_image.dart';
+import '../group_selection/group_avatar.dart';
 import 'group_instance_card.dart';
 
 class GroupInstancesSection extends StatelessWidget {
@@ -44,26 +44,14 @@ class GroupInstancesSection extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final avatarRadius = context.m3e.shapes.square.sm;
-
     return Row(
       children: [
-        if (group.iconUrl != null && group.iconUrl!.isNotEmpty)
-          ClipRRect(
-            borderRadius: avatarRadius,
-            clipBehavior: Clip.antiAlias,
-            child: SizedBox(
-              width: UiConstants.groupAvatarMd,
-              height: UiConstants.groupAvatarMd,
-              child: CachedImage(
-                imageUrl: group.iconUrl!,
-                width: UiConstants.groupAvatarMd,
-                height: UiConstants.groupAvatarMd,
-                fit: BoxFit.cover,
-                showLoadingIndicator: false,
-              ),
-            ),
-          ),
+        GroupAvatar(
+          group: group,
+          size: UiConstants.groupAvatarMd,
+          borderRadius: context.m3e.shapes.square.sm,
+          showFallback: false,
+        ),
         SizedBox(width: context.m3e.spacing.sm),
         Expanded(
           child: Text(

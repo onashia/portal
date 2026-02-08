@@ -4,8 +4,7 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../../constants/ui_constants.dart';
 import '../../models/group_calendar_event.dart';
-import '../../utils/group_utils.dart';
-import '../cached_image.dart';
+import '../group_selection/group_avatar.dart';
 import 'event_badge.dart';
 import 'timeline_widgets.dart';
 
@@ -27,14 +26,6 @@ class EventsListItem extends StatelessWidget {
     final group = event.group;
     final badgeLabel = _buildBadgeLabel(event.event);
     final avatarSize = UiConstants.groupAvatarLg;
-    final rowHeight = avatarSize;
-    final avatarRadius = context.m3e.shapes.square.sm;
-    final eventImageUrl = event.event.imageUrl;
-    final groupImageUrl = group?.iconUrl;
-    final imageUrl = (eventImageUrl?.isNotEmpty ?? false)
-        ? eventImageUrl
-        : groupImageUrl;
-    final hasImage = imageUrl?.isNotEmpty ?? false;
     final groupName = group?.name ?? _fallbackGroupName(event.groupId);
 
     return Column(
@@ -45,45 +36,15 @@ class EventsListItem extends StatelessWidget {
           children: [
             TimelineRail(
               label: _formatTime(event.event.startsAt),
-              height: rowHeight,
+              height: avatarSize,
               isFirst: isFirst,
               isLast: isLast,
             ),
             SizedBox(width: context.m3e.spacing.sm),
-            Container(
-              width: avatarSize,
-              height: avatarSize,
-              decoration: BoxDecoration(
-                borderRadius: avatarRadius,
-                color: hasImage
-                    ? null
-                    : GroupUtils.getAvatarColor(group ?? LimitedUserGroups()),
-              ),
-              child: ClipRRect(
-                borderRadius: avatarRadius,
-                clipBehavior: Clip.antiAlias,
-                child: CachedImage(
-                  imageUrl: imageUrl ?? '',
-                  width: avatarSize,
-                  height: avatarSize,
-                  fit: BoxFit.cover,
-                  showLoadingIndicator: false,
-                  fallbackWidget: hasImage
-                      ? null
-                      : Center(
-                          child: Text(
-                            GroupUtils.getInitials(
-                              group ?? LimitedUserGroups(),
-                            ),
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                          ),
-                        ),
-                ),
-              ),
+            GroupAvatar(
+              group: group ?? LimitedUserGroups(),
+              size: UiConstants.groupAvatarLg,
+              borderRadius: context.m3e.shapes.square.sm,
             ),
             SizedBox(width: context.m3e.spacing.sm),
             Expanded(
