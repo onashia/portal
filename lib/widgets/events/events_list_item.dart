@@ -4,6 +4,7 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../../constants/ui_constants.dart';
 import '../../models/group_calendar_event.dart';
+import '../../utils/group_utils.dart';
 import '../group_selection/group_avatar.dart';
 import 'event_badge.dart';
 import 'timeline_widgets.dart';
@@ -109,9 +110,6 @@ class EventsListItem extends StatelessWidget {
   }
 
   String _fallbackGroupName(String groupId) {
-    if (groupId.length <= 8) {
-      return groupId;
-    }
-    return groupId.substring(0, 8);
+    return GroupUtils.getShortGroupId(groupId);
   }
 }

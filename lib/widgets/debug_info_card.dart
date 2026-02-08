@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
+
 import '../constants/app_typography.dart';
 import '../providers/api_call_counter.dart';
 import '../providers/group_monitor_provider.dart';
+import '../utils/group_utils.dart';
 
 class DebugInfoCard extends ConsumerWidget {
   final String userId;
@@ -140,9 +142,9 @@ class DebugInfoCard extends ConsumerWidget {
   String _getGroupName(GroupMonitorState state, String groupId) {
     try {
       final group = state.allGroups.firstWhere((g) => g.groupId == groupId);
-      return group.name ?? groupId.substring(0, 8);
+      return group.name ?? GroupUtils.getShortGroupId(groupId);
     } catch (_) {
-      return groupId.substring(0, 8);
+      return GroupUtils.getShortGroupId(groupId);
     }
   }
 

@@ -9,7 +9,10 @@ class MemberCountBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: EdgeInsets.symmetric(
+        horizontal: context.m3e.spacing.md,
+        vertical: context.m3e.spacing.sm,
+      ),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.secondaryContainer,
         borderRadius: context.m3e.shapes.round.md,

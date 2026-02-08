@@ -35,7 +35,10 @@ class GroupInstanceList extends ConsumerWidget {
         children: [
           for (var i = 0; i < groupsWithInstances.length; i++)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: EdgeInsets.symmetric(
+                horizontal: context.m3e.spacing.xl,
+                vertical: context.m3e.spacing.md,
+              ),
               child: GroupInstancesSection(
                 group: monitorState.allGroups.firstWhere(
                   (g) => g.groupId == groupsWithInstances[i].key,
@@ -58,7 +61,10 @@ class GroupInstanceList extends ConsumerWidget {
       itemBuilder: (context, index) {
         final entry = groupsWithInstances[index];
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: EdgeInsets.symmetric(
+            horizontal: context.m3e.spacing.xl,
+            vertical: context.m3e.spacing.md,
+          ),
           child: GroupInstancesSection(
             group: monitorState.allGroups.firstWhere(
               (g) => g.groupId == entry.key,

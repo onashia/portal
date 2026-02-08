@@ -47,4 +47,11 @@ class GroupUtils {
     // Fixed saturation and lightness for consistent appearance across all colors
     return HSLColor.fromAHSL(1.0, hue, 0.7, 0.6).toColor();
   }
+
+  static String getShortGroupId(String groupId) {
+    if (groupId.length <= 8) {
+      return groupId;
+    }
+    return groupId.substring(0, 8);
+  }
 }

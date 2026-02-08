@@ -64,7 +64,10 @@ class GroupInstancesSection extends StatelessWidget {
           ),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: EdgeInsets.symmetric(
+            horizontal: context.m3e.spacing.sm,
+            vertical: context.m3e.spacing.xs,
+          ),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.primaryContainer,
             borderRadius: context.m3e.shapes.round.md,
