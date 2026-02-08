@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:m3e_collection/m3e_collection.dart';
+
+import '../../constants/icon_sizes.dart';
+import '../common/empty_state.dart';
 
 class GroupsEmptyState extends StatelessWidget {
   final bool hasAnyGroups;
@@ -16,39 +18,22 @@ class GroupsEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final scheme = Theme.of(context).colorScheme;
     final showSecondaryLine = !hasAnyGroups && !isSearching;
+    final message = showSecondaryLine
+        ? 'You are not a member of any groups'
+        : null;
+    final title = isSearching
+        ? 'No groups match "$searchQuery"'
+        : 'No groups found';
 
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(context.m3e.spacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.group_off, size: 64, color: scheme.onSurfaceVariant),
-            SizedBox(height: context.m3e.spacing.lg),
-            Text(
-              isSearching
-                  ? 'No groups match "$searchQuery"'
-                  : 'No groups found',
-              style: textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            if (showSecondaryLine) ...[
-              SizedBox(height: context.m3e.spacing.sm),
-              Text(
-                'You are not a member of any groups',
-                style: textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ],
-        ),
+    return EmptyState(
+      icon: Icons.group_off,
+      title: title,
+      message: message,
+      messageStyle: textTheme.bodySmall?.copyWith(
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
+      iconSize: IconSizes.xl,
     );
   }
 }

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
+
 import '../providers/group_calendar_provider.dart';
 import '../providers/group_monitor_provider.dart';
+import 'common/empty_state.dart';
+import 'common/loading_state.dart';
 import 'events/events_card_header.dart';
-import 'events/events_card_states.dart';
 import 'events/events_list_item.dart';
 
 class GroupEventsCard extends ConsumerWidget {
@@ -60,7 +62,7 @@ class GroupEventsCard extends ConsumerWidget {
     GroupMonitorState monitorState,
   ) {
     if (monitorState.selectedGroupIds.isEmpty) {
-      return const EventsEmptyState(
+      return const EmptyState(
         icon: Icons.event_busy,
         title: 'No Groups Selected',
         message: 'Select groups in Group Monitoring to see events.',
@@ -68,11 +70,14 @@ class GroupEventsCard extends ConsumerWidget {
     }
 
     if (calendarState.isLoading && calendarState.todayEvents.isEmpty) {
-      return const EventsLoadingState();
+      return const LoadingState(
+        semanticLabel: 'Loading events',
+        message: 'Loading events...',
+      );
     }
 
     if (calendarState.todayEvents.isEmpty) {
-      return const EventsEmptyState(
+      return const EmptyState(
         icon: Icons.event_available,
         title: 'No Events Today',
         message: 'Your groups have nothing scheduled for today.',

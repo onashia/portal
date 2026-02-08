@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 
+import '../../constants/icon_sizes.dart';
+import '../common/empty_state.dart';
+import '../common/loading_state.dart';
 import '../custom_title_bar.dart';
 import 'login_theme_toggle.dart';
 
@@ -17,15 +20,7 @@ class LoginLoadingScaffold extends ConsumerWidget {
         showBranding: false,
         actions: const [LoginThemeToggle()],
       ),
-      body: Center(
-        child: Transform.scale(
-          scale: 2.0,
-          child: const LoadingIndicatorM3E(
-            variant: LoadingIndicatorM3EVariant.defaultStyle,
-            semanticLabel: 'Loading portal',
-          ),
-        ),
-      ),
+      body: const LoadingState(semanticLabel: 'Loading portal', scale: 2.0),
     );
   }
 }
@@ -42,6 +37,8 @@ class LoginErrorScaffold extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: CustomTitleBar(
         title: 'portal.',
@@ -49,30 +46,14 @@ class LoginErrorScaffold extends ConsumerWidget {
         showBranding: false,
         actions: const [LoginThemeToggle()],
       ),
-      body: Center(
-        child: Padding(
-          padding: EdgeInsets.all(context.m3e.spacing.lg),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.error_outline,
-                size: 64,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              SizedBox(height: context.m3e.spacing.md),
-              Text(
-                'An error occurred',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              SizedBox(height: context.m3e.spacing.sm),
-              Text(
-                error.toString(),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-          ),
-        ),
+      body: EmptyState(
+        icon: Icons.error_outline,
+        title: 'An error occurred',
+        message: error.toString(),
+        iconSize: IconSizes.xl,
+        iconColor: scheme.error,
+        titleStyle: Theme.of(context).textTheme.headlineMedium,
+        padding: EdgeInsets.all(context.m3e.spacing.lg),
       ),
     );
   }
