@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
-import '../constants/ui_constants.dart';
+
 import '../providers/group_monitor_provider.dart';
-import '../utils/group_utils.dart';
-import '../utils/vrchat_image_utils.dart';
+import 'group_selection/group_avatar.dart';
+import 'group_selection/groups_empty_state.dart';
+import 'group_selection/groups_loading_state.dart';
 import 'inputs/app_text_field.dart';
 
 class GroupSelectionSideSheet extends ConsumerStatefulWidget {
@@ -140,9 +141,13 @@ class _GroupSelectionSideSheetState
     final isSearching = _searchQuery.isNotEmpty;
 
     final content = monitorState.isLoading
-        ? _buildLoadingAvailableState(context)
+        ? const GroupsLoadingState()
         : filteredGroups.isEmpty
-        ? _buildEmptyAvailableState(context, hasAnyGroups, isSearching)
+        ? GroupsEmptyState(
+            hasAnyGroups: hasAnyGroups,
+            isSearching: isSearching,
+            searchQuery: _searchQuery,
+          )
         : _buildAvailableGroupsList(context, filteredGroups, selectedIds);
 
     return Column(children: [Expanded(child: content)]);
@@ -209,7 +214,7 @@ class _GroupSelectionSideSheetState
           }
         },
         selected: isSelected,
-        leading: _buildGroupAvatar(context, group),
+        leading: GroupAvatar(group: group),
         title: Text(
           group.name ?? 'Unknown Group',
           maxLines: 1,
@@ -232,107 +237,6 @@ class _GroupSelectionSideSheetState
         tileColor: Colors.transparent,
         selectedTileColor: scheme.primaryContainer,
         iconColor: scheme.onSurfaceVariant,
-      ),
-    );
-  }
-
-  Widget _buildGroupAvatar(BuildContext context, LimitedUserGroups group) {
-    final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
-
-    return Container(
-      width: UiConstants.groupAvatarLg,
-      height: UiConstants.groupAvatarLg,
-      decoration: BoxDecoration(
-        borderRadius: context.m3e.shapes.square.md,
-        color: hasImage ? null : GroupUtils.getAvatarColor(group),
-      ),
-      child: ClipRRect(
-        borderRadius: context.m3e.shapes.square.md,
-        clipBehavior: Clip.antiAlias,
-        child: CachedImage(
-          imageUrl: hasImage ? group.iconUrl! : '',
-          width: UiConstants.groupAvatarLg,
-          height: UiConstants.groupAvatarLg,
-          fallbackWidget: hasImage
-              ? null
-              : Center(
-                  child: Text(
-                    GroupUtils.getInitials(group),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-          showLoadingIndicator: false,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoadingAvailableState(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(context.m3e.spacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const LoadingIndicatorM3E(
-              variant: LoadingIndicatorM3EVariant.defaultStyle,
-              semanticLabel: 'Loading available groups',
-            ),
-            SizedBox(height: context.m3e.spacing.lg),
-            Text(
-              'Loading available groups...',
-              style: context.m3e.typography.base.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyAvailableState(
-    BuildContext context,
-    bool hasAnyGroups,
-    bool isSearching,
-  ) {
-    final textTheme = Theme.of(context).textTheme;
-    final scheme = Theme.of(context).colorScheme;
-    final showSecondaryLine = !hasAnyGroups && !isSearching;
-
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(context.m3e.spacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.group_off, size: 64, color: scheme.onSurfaceVariant),
-            SizedBox(height: context.m3e.spacing.lg),
-            Text(
-              isSearching
-                  ? 'No groups match "$_searchQuery"'
-                  : 'No groups found',
-              style: textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            if (showSecondaryLine) ...[
-              SizedBox(height: context.m3e.spacing.sm),
-              Text(
-                'You are not a member of any groups',
-                style: textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }
