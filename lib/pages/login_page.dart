@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
-import 'package:motor/motor.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../providers/auth_provider.dart';
-import '../utils/animation_constants.dart';
 import '../widgets/custom_title_bar.dart';
+import '../widgets/login/login_submit_button.dart';
+import '../widgets/login/login_back_button.dart';
+import '../widgets/login/login_error_message.dart';
 import '../widgets/login/login_branding.dart';
 import '../widgets/login/login_form_card.dart';
 import '../widgets/login/login_form_fields.dart';
@@ -136,7 +137,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                           passwordFocusNode: _passwordFocusNode,
                           obscurePassword: _obscurePassword,
                           errorMessage: passwordErrorMessage,
-                          errorMessageWidget: _ErrorMessage(
+                          errorMessageWidget: LoginErrorMessage(
                             passwordErrorMessage,
                           ),
                         )
@@ -146,20 +147,20 @@ class _LoginPageState extends ConsumerState<LoginPage>
                           focusNode: _twoFactorFocusNode,
                           errorMessage: authState.errorMessage,
                           onSubmit: _handleSubmit,
-                          errorMessageWidget: _ErrorMessage(
+                          errorMessageWidget: LoginErrorMessage(
                             authState.errorMessage,
                           ),
                         ),
                       if (authState.requiresTwoFactorAuth)
                         SizedBox(height: context.m3e.spacing.lg),
-                      _LoginSubmitButton(
+                      LoginSubmitButton(
                         authState: authState,
                         onPressed: _handleSubmit,
                       ),
                       if (authState.requiresTwoFactorAuth)
                         Padding(
                           padding: EdgeInsets.only(top: context.m3e.spacing.md),
-                          child: _LoginBackButton(
+                          child: LoginBackButton(
                             onPressed: () {
                               _passwordController.clear();
                               ref.read(authProvider.notifier).logout();
@@ -196,92 +197,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
           ),
         );
       },
-    );
-  }
-}
-
-class _LoginSubmitButton extends StatelessWidget {
-  final AuthState authState;
-  final VoidCallback onPressed;
-
-  const _LoginSubmitButton({required this.authState, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    final isLoading = authState.isLoading;
-    final buttonText = authState.status == AuthStatus.requiresEmailVerification
-        ? 'Retry Login'
-        : authState.requiresTwoFactorAuth
-        ? 'Verify'
-        : 'Sign In';
-
-    return ButtonM3E(
-      onPressed: isLoading ? null : onPressed,
-      label: isLoading
-          ? SizedBox(
-              height: 20,
-              width: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Theme.of(context).colorScheme.onPrimary,
-              ),
-            )
-          : Text(buttonText),
-      style: ButtonM3EStyle.filled,
-      size: ButtonM3ESize.md,
-      shape: ButtonM3EShape.square,
-    );
-  }
-}
-
-class _LoginBackButton extends StatelessWidget {
-  final VoidCallback onPressed;
-
-  const _LoginBackButton({required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return ButtonM3E(
-      onPressed: onPressed,
-      label: const Text('Back to login'),
-      style: ButtonM3EStyle.text,
-      size: ButtonM3ESize.sm,
-      shape: ButtonM3EShape.square,
-    );
-  }
-}
-
-class _ErrorMessage extends StatelessWidget {
-  final String? message;
-
-  const _ErrorMessage(this.message);
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleMotionBuilder(
-      motion: AnimationConstants.expressiveSpatialDefault,
-      value: message != null ? 1.0 : 0.0,
-      builder: (context, value, child) {
-        return ClipRect(
-          child: Align(
-            alignment: Alignment.topCenter,
-            heightFactor: value.clamp(0.0, 1.0),
-            child: child,
-          ),
-        );
-      },
-      child: Opacity(
-        opacity: message != null ? 1.0 : 0.0,
-        child: Padding(
-          padding: EdgeInsets.only(top: context.m3e.spacing.sm),
-          child: Text(
-            message ?? '',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.error,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
