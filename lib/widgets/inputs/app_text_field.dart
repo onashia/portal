@@ -1,6 +1,38 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+InputDecoration _buildAppInputDecoration(
+  BuildContext context,
+  InputDecoration? decoration,
+) {
+  final scheme = Theme.of(context).colorScheme;
+  final inputBorder = Theme.of(context).inputDecorationTheme.border;
+  final borderRadius = inputBorder is OutlineInputBorder
+      ? inputBorder.borderRadius
+      : BorderRadius.zero;
+  final enabledBorder = OutlineInputBorder(
+    borderRadius: borderRadius,
+    borderSide: BorderSide(color: scheme.surfaceContainerHighest, width: 1),
+  );
+  final focusedBorder = OutlineInputBorder(
+    borderRadius: borderRadius,
+    borderSide: BorderSide(color: scheme.primary, width: 2),
+  );
+  final errorBorder = OutlineInputBorder(
+    borderRadius: borderRadius,
+    borderSide: BorderSide(color: scheme.error, width: 2),
+  );
+
+  return (decoration ?? const InputDecoration()).copyWith(
+    filled: true,
+    fillColor: scheme.surfaceContainerLow,
+    enabledBorder: enabledBorder,
+    focusedBorder: focusedBorder,
+    errorBorder: errorBorder,
+    focusedErrorBorder: errorBorder,
+  );
+}
+
 class AppTextField extends StatelessWidget {
   final TextEditingController? controller;
   final FocusNode? focusNode;
@@ -29,32 +61,7 @@ class AppTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final inputBorder = Theme.of(context).inputDecorationTheme.border;
-    final borderRadius = inputBorder is OutlineInputBorder
-        ? inputBorder.borderRadius
-        : BorderRadius.zero;
-    final enabledBorder = OutlineInputBorder(
-      borderRadius: borderRadius,
-      borderSide: BorderSide(color: scheme.surfaceContainerHighest, width: 1),
-    );
-    final focusedBorder = OutlineInputBorder(
-      borderRadius: borderRadius,
-      borderSide: BorderSide(color: scheme.primary, width: 2),
-    );
-    final errorBorder = OutlineInputBorder(
-      borderRadius: borderRadius,
-      borderSide: BorderSide(color: scheme.error, width: 2),
-    );
-    final effectiveDecoration = (decoration ?? const InputDecoration())
-        .copyWith(
-          filled: true,
-          fillColor: scheme.surfaceContainerLow,
-          enabledBorder: enabledBorder,
-          focusedBorder: focusedBorder,
-          errorBorder: errorBorder,
-          focusedErrorBorder: errorBorder,
-        );
+    final effectiveDecoration = _buildAppInputDecoration(context, decoration);
 
     return TextField(
       controller: controller,
@@ -101,32 +108,7 @@ class AppTextFormField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final inputBorder = Theme.of(context).inputDecorationTheme.border;
-    final borderRadius = inputBorder is OutlineInputBorder
-        ? inputBorder.borderRadius
-        : BorderRadius.zero;
-    final enabledBorder = OutlineInputBorder(
-      borderRadius: borderRadius,
-      borderSide: BorderSide(color: scheme.surfaceContainerHighest, width: 1),
-    );
-    final focusedBorder = OutlineInputBorder(
-      borderRadius: borderRadius,
-      borderSide: BorderSide(color: scheme.primary, width: 2),
-    );
-    final errorBorder = OutlineInputBorder(
-      borderRadius: borderRadius,
-      borderSide: BorderSide(color: scheme.error, width: 2),
-    );
-    final effectiveDecoration = (decoration ?? const InputDecoration())
-        .copyWith(
-          filled: true,
-          fillColor: scheme.surfaceContainerLow,
-          enabledBorder: enabledBorder,
-          focusedBorder: focusedBorder,
-          errorBorder: errorBorder,
-          focusedErrorBorder: errorBorder,
-        );
+    final effectiveDecoration = _buildAppInputDecoration(context, decoration);
 
     return TextFormField(
       controller: controller,
