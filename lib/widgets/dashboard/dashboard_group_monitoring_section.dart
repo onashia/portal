@@ -7,7 +7,7 @@ import '../../constants/app_constants.dart';
 import '../../constants/ui_constants.dart';
 import '../../providers/group_monitor_provider.dart';
 import '../../utils/group_utils.dart';
-import '../../utils/vrchat_image_utils.dart';
+import '../cached_image.dart';
 import '../group_instance_list.dart';
 
 class DashboardGroupMonitoringSection extends ConsumerWidget {

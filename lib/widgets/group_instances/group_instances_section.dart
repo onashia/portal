@@ -3,7 +3,7 @@ import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../../constants/ui_constants.dart';
 import '../../models/group_instance_with_group.dart';
-import '../../utils/vrchat_image_utils.dart';
+import '../cached_image.dart';
 import 'group_instance_card.dart';
 
 class GroupInstancesSection extends StatelessWidget {

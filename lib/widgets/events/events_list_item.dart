@@ -5,7 +5,7 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 import '../../constants/ui_constants.dart';
 import '../../models/group_calendar_event.dart';
 import '../../utils/group_utils.dart';
-import '../../utils/vrchat_image_utils.dart';
+import '../cached_image.dart';
 import 'event_badge.dart';
 import 'timeline_widgets.dart';
 

@@ -4,7 +4,7 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../../constants/ui_constants.dart';
 import '../../utils/group_utils.dart';
-import '../../utils/vrchat_image_utils.dart';
+import '../cached_image.dart';
 
 class GroupAvatar extends StatelessWidget {
   final LimitedUserGroups group;

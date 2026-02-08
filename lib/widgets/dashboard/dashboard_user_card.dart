@@ -3,7 +3,7 @@ import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../../theme/status_colors.dart';
-import '../../utils/vrchat_image_utils.dart';
+import '../cached_image.dart';
 
 class DashboardUserCard extends StatelessWidget {
   final CurrentUser currentUser;
