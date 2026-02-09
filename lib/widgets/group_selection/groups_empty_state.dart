@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../constants/icon_sizes.dart';
 import '../common/empty_state.dart';
 
 class GroupsEmptyState extends StatelessWidget {
@@ -33,7 +32,6 @@ class GroupsEmptyState extends StatelessWidget {
       messageStyle: textTheme.bodySmall?.copyWith(
         color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
-      iconSize: IconSizes.xl,
     );
   }
 }

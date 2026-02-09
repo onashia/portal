@@ -6,7 +6,6 @@ import 'package:m3e_collection/m3e_collection.dart';
 import 'package:motor/motor.dart';
 import 'package:window_manager/window_manager.dart';
 
-import '../constants/icon_sizes.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import '../providers/theme_provider.dart';
@@ -113,9 +112,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           icon: Icons.error_outline,
           title: 'An error occurred',
           message: authValue.error.toString(),
-          iconSize: IconSizes.xl,
           iconColor: scheme.error,
-          titleStyle: Theme.of(context).textTheme.headlineMedium,
         ),
       );
     }

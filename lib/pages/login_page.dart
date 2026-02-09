@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:window_manager/window_manager.dart';
 
-import '../constants/icon_sizes.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/common/empty_state.dart';
 import '../widgets/custom_title_bar.dart';
@@ -114,9 +113,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
           icon: Icons.error_outline,
           title: 'An error occurred',
           message: authValue.error.toString(),
-          iconSize: IconSizes.xl,
           iconColor: scheme.error,
-          titleStyle: Theme.of(context).textTheme.headlineMedium,
           padding: EdgeInsets.all(context.m3e.spacing.lg),
         ),
       );
