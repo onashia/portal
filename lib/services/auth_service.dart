@@ -1,6 +1,7 @@
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../utils/app_logger.dart';
 import '../utils/dio_error_logger.dart';
+import '../utils/error_utils.dart';
 
 enum AuthResultStatus {
   success,
@@ -69,7 +70,7 @@ class AuthService {
               failureMessage.contains('Check your email') ||
               failureMessage.contains('logging in from somewhere new');
 
-          final errorMessage = 'Login failed: $failureMessage';
+          final errorMessage = formatApiError('Login failed', failure);
 
           if (requiresEmailVerification) {
             return AuthResult(
@@ -119,7 +120,7 @@ class AuthService {
       );
       return AuthResult(
         status: AuthResultStatus.failure,
-        errorMessage: 'Login failed: ${e.toString()}',
+        errorMessage: formatApiError('Login failed', e),
       );
     }
   }
@@ -148,7 +149,7 @@ class AuthService {
       );
       return AuthResult(
         status: AuthResultStatus.failure,
-        errorMessage: 'Logout failed: ${e.toString()}',
+        errorMessage: formatApiError('Logout failed', e),
       );
     }
   }
@@ -182,7 +183,7 @@ class AuthService {
       );
       return AuthResult(
         status: AuthResultStatus.failure,
-        errorMessage: e.toString(),
+        errorMessage: formatApiError('Session check failed', e),
       );
     }
   }

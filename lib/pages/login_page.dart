@@ -68,24 +68,20 @@ class _LoginPageState extends ConsumerState<LoginPage>
     final code = _twoFactorController.text;
     final requiresTwoFactor = authState.requiresTwoFactorAuth;
 
-    try {
-      if (requiresTwoFactor) {
-        await ref.read(authProvider.notifier).verify2FA(code);
-        if (!mounted) return;
-        final newState = ref.read(authProvider).value;
-        if (newState?.status == AuthStatus.authenticated) {
-          _twoFactorController.clear();
-        }
-      } else {
-        await ref.read(authProvider.notifier).login(username, password);
-        if (!mounted) return;
-        final newState = ref.read(authProvider).value;
-        if (newState?.status == AuthStatus.authenticated) {
-          _passwordController.clear();
-        }
+    if (requiresTwoFactor) {
+      await ref.read(authProvider.notifier).verify2FA(code);
+      if (!mounted) return;
+      final newState = ref.read(authProvider).value;
+      if (newState?.status == AuthStatus.authenticated) {
+        _twoFactorController.clear();
       }
-    } catch (e) {
-      if (mounted) {}
+    } else {
+      await ref.read(authProvider.notifier).login(username, password);
+      if (!mounted) return;
+      final newState = ref.read(authProvider).value;
+      if (newState?.status == AuthStatus.authenticated) {
+        _passwordController.clear();
+      }
     }
   }
 

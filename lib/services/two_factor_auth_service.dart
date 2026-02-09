@@ -1,6 +1,7 @@
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../utils/app_logger.dart';
 import '../utils/dio_error_logger.dart';
+import '../utils/error_utils.dart';
 
 enum TwoFactorAuthResultStatus { success, failure }
 
@@ -32,10 +33,13 @@ class TwoFactorAuthService {
       final (success, failure) = verify2faResponse;
 
       if (failure != null) {
-        AppLogger.error('2FA verification failed', subCategory: 'auth');
+        AppLogger.error(
+          '2FA verification failed: ${failure.toString()}',
+          subCategory: 'auth',
+        );
         return TwoFactorAuthResult(
           status: TwoFactorAuthResultStatus.failure,
-          errorMessage: '2FA verification failed: ${failure.toString()}',
+          errorMessage: formatApiError('2FA verification failed', failure),
         );
       }
 
@@ -71,7 +75,7 @@ class TwoFactorAuthService {
       );
       return TwoFactorAuthResult(
         status: TwoFactorAuthResultStatus.failure,
-        errorMessage: '2FA verification failed: ${e.toString()}',
+        errorMessage: formatApiError('2FA verification failed', e),
       );
     }
   }
