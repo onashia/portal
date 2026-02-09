@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../constants/icon_sizes.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/common/empty_state.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/login/login_submit_button.dart';
 import '../widgets/login/login_back_button.dart';
@@ -99,104 +101,127 @@ class _LoginPageState extends ConsumerState<LoginPage>
   Widget build(BuildContext context) {
     final authValue = ref.watch(authProvider);
 
-    return authValue.when(
-      loading: () => const LoginLoadingScaffold(),
-      error: (error, stack) => LoginErrorScaffold(error: error, stack: stack),
-      data: (authState) {
-        final passwordErrorMessage =
-            authState.status == AuthStatus.error ||
-                authState.status == AuthStatus.requiresEmailVerification
-            ? authState.errorMessage
-            : null;
+    if (authValue.isLoading) {
+      return const LoginLoadingScaffold();
+    }
 
-        return Scaffold(
-          appBar: CustomTitleBar(
-            title: 'portal.',
-            icon: Icons.tonality,
-            showBranding: false,
-            actions: const [LoginThemeToggle()],
-          ),
-          body: DragToResizeArea(
-            child: Semantics(
-              label: 'Login form for VRChat portal',
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final cardWidth = _getCardWidth(constraints.maxWidth);
-                  const logoVisualHeight = 68;
-                  final shiftAmount = logoVisualHeight / 2;
+    if (authValue.hasError) {
+      final scheme = Theme.of(context).colorScheme;
+      return Scaffold(
+        appBar: CustomTitleBar(
+          title: 'portal.',
+          icon: Icons.tonality,
+          showBranding: false,
+          actions: const [LoginThemeToggle()],
+        ),
+        body: EmptyState(
+          icon: Icons.error_outline,
+          title: 'An error occurred',
+          message: authValue.error.toString(),
+          iconSize: IconSizes.xl,
+          iconColor: scheme.error,
+          titleStyle: Theme.of(context).textTheme.headlineMedium,
+          padding: EdgeInsets.all(context.m3e.spacing.lg),
+        ),
+      );
+    }
 
-                  final formBody = Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (!authState.requiresTwoFactorAuth)
-                        LoginFormFields(
-                          usernameController: _usernameController,
-                          passwordController: _passwordController,
-                          usernameFocusNode: _usernameFocusNode,
-                          passwordFocusNode: _passwordFocusNode,
-                          obscurePassword: _obscurePassword,
-                          errorMessage: passwordErrorMessage,
-                          errorMessageWidget: LoginErrorMessage(
-                            passwordErrorMessage,
-                          ),
-                        )
-                      else
-                        TwoFactorFormFields(
-                          controller: _twoFactorController,
-                          focusNode: _twoFactorFocusNode,
-                          errorMessage: authState.errorMessage,
-                          onSubmit: _handleSubmit,
-                          errorMessageWidget: LoginErrorMessage(
-                            authState.errorMessage,
-                          ),
-                        ),
-                      if (authState.requiresTwoFactorAuth)
-                        SizedBox(height: context.m3e.spacing.lg),
-                      LoginSubmitButton(
-                        authState: authState,
-                        onPressed: _handleSubmit,
+    final authState = authValue.value;
+    if (authState == null) {
+      return const SizedBox.shrink();
+    }
+    final passwordErrorMessage =
+        authState.status == AuthStatus.error ||
+            authState.status == AuthStatus.requiresEmailVerification
+        ? authState.errorMessage
+        : null;
+
+    return Scaffold(
+      appBar: CustomTitleBar(
+        title: 'portal.',
+        icon: Icons.tonality,
+        showBranding: false,
+        actions: const [LoginThemeToggle()],
+      ),
+      body: DragToResizeArea(
+        child: Semantics(
+          label: 'Login form for VRChat portal',
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final cardWidth = _getCardWidth(constraints.maxWidth);
+              const logoVisualHeight = 68;
+              final shiftAmount = logoVisualHeight / 2;
+
+              final formBody = Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!authState.requiresTwoFactorAuth)
+                    LoginFormFields(
+                      usernameController: _usernameController,
+                      passwordController: _passwordController,
+                      usernameFocusNode: _usernameFocusNode,
+                      passwordFocusNode: _passwordFocusNode,
+                      obscurePassword: _obscurePassword,
+                      errorMessage: passwordErrorMessage,
+                      errorMessageWidget: LoginErrorMessage(
+                        passwordErrorMessage,
                       ),
-                      if (authState.requiresTwoFactorAuth)
-                        Padding(
-                          padding: EdgeInsets.only(top: context.m3e.spacing.md),
-                          child: LoginBackButton(
-                            onPressed: () {
-                              _passwordController.clear();
-                              ref.read(authProvider.notifier).logout();
-                              _twoFactorController.clear();
-                            },
-                          ),
-                        ),
-                    ],
-                  );
-
-                  return Center(
-                    child: Transform.translate(
-                      offset: Offset(0, -shiftAmount),
-                      child: SingleChildScrollView(
-                        padding: EdgeInsets.all(context.m3e.spacing.lg),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const LoginBranding(),
-                            LoginFormCard(
-                              authState: authState,
-                              formKey: _formKey,
-                              formBody: formBody,
-                              cardWidth: cardWidth,
-                            ),
-                          ],
-                        ),
+                    )
+                  else
+                    TwoFactorFormFields(
+                      controller: _twoFactorController,
+                      focusNode: _twoFactorFocusNode,
+                      errorMessage: authState.errorMessage,
+                      onSubmit: _handleSubmit,
+                      errorMessageWidget: LoginErrorMessage(
+                        authState.errorMessage,
                       ),
                     ),
-                  );
-                },
-              ),
-            ),
+                  if (authState.requiresTwoFactorAuth)
+                    SizedBox(height: context.m3e.spacing.lg),
+                  LoginSubmitButton(
+                    authState: authState,
+                    onPressed: _handleSubmit,
+                  ),
+                  if (authState.requiresTwoFactorAuth)
+                    Padding(
+                      padding: EdgeInsets.only(top: context.m3e.spacing.md),
+                      child: LoginBackButton(
+                        onPressed: () {
+                          _passwordController.clear();
+                          ref.read(authProvider.notifier).logout();
+                          _twoFactorController.clear();
+                        },
+                      ),
+                    ),
+                ],
+              );
+
+              return Center(
+                child: Transform.translate(
+                  offset: Offset(0, -shiftAmount),
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.all(context.m3e.spacing.lg),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const LoginBranding(),
+                        LoginFormCard(
+                          authState: authState,
+                          formKey: _formKey,
+                          formBody: formBody,
+                          cardWidth: cardWidth,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
