@@ -33,8 +33,8 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
     final actions = [
       ToolbarActionM3E(
         icon: widget.monitorState.autoInviteEnabled
-            ? Icons.person_add_alt_1
-            : Icons.person_off,
+            ? Icons.event_available
+            : Icons.event_busy,
         onPressed: () {
           ref
               .read(groupMonitorProvider(widget.userId).notifier)
