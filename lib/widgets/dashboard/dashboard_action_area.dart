@@ -57,24 +57,6 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
         },
         tooltip: 'Refresh Dashboard',
       ),
-      ToolbarActionM3E(
-        icon: widget.monitorState.isMonitoring
-            ? Icons.pause_circle
-            : Icons.play_circle,
-        onPressed: () {
-          final notifier = ref.read(
-            groupMonitorProvider(widget.userId).notifier,
-          );
-          if (widget.monitorState.isMonitoring) {
-            notifier.stopMonitoring();
-          } else {
-            notifier.startMonitoring();
-          }
-        },
-        tooltip: widget.monitorState.isMonitoring
-            ? 'Stop Monitoring'
-            : 'Start Monitoring',
-      ),
     ];
 
     return Row(

@@ -24,9 +24,7 @@ class SelectedGroupChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final boostLabel = !isMonitoring
-        ? 'Start monitoring to enable boost'
-        : isBoosted
+    final boostLabel = isBoosted
         ? 'Boost active'
         : 'Boost polling for ${AppConstants.boostDurationMinutes} min';
     final surfaceColor = isBoosted

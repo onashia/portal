@@ -36,27 +36,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       if (boostedGroupId != null &&
           boostExpiresAt != null &&
           boostExpiresAt.isAfter(DateTime.now())) {
-        if (!state.isMonitoring) {
-          await _clearBoost(persist: true, logExpired: false);
-          return;
-        }
-        state = state.copyWith(
-          boostedGroupId: boostedGroupId,
-          boostExpiresAt: boostExpiresAt,
-          boostPollCount: 0,
-          lastBoostLatencyMs: null,
-          lastBoostFetchedAt: null,
-          boostFirstSeenAfter: null,
-        );
-        _boostStartedAt = boostExpiresAt.subtract(
-          const Duration(minutes: AppConstants.boostDurationMinutes),
-        );
-        _boostPollCount = 0;
-        _boostFirstSeenLogged = false;
-        AppLogger.debug(
-          'Loaded boosted group: $boostedGroupId',
-          subCategory: 'group_monitor',
-        );
+        await _clearBoost(persist: true, logExpired: false);
+        return;
       } else if (boostedGroupId != null || boostExpiresAt != null) {
         await _clearBoost(persist: true, logExpired: true);
       }
@@ -94,6 +75,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         'Loaded ${selectedIds.length} selected groups from storage',
         subCategory: 'group_monitor',
       );
+      if (selectedIds.isNotEmpty && !state.isMonitoring) {
+        startMonitoring();
+      }
     } catch (e) {
       AppLogger.error(
         'Failed to load selected groups',
@@ -314,8 +298,14 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       if (state.boostedGroupId == groupId) {
         unawaited(_clearBoost(persist: true, logExpired: false));
       }
+      if (newSelection.isEmpty && state.isMonitoring) {
+        stopMonitoring();
+      }
     } else {
       newSelection.add(groupId);
+      if (newSelection.length == 1 && !state.isMonitoring) {
+        startMonitoring();
+      }
     }
 
     state = state.copyWith(

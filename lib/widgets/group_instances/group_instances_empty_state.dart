@@ -23,10 +23,8 @@ class GroupInstancesEmptyState extends StatelessWidget {
 
     return EmptyState(
       icon: hasErrors ? Icons.error_outline : Icons.wifi_off,
-      title: state.isMonitoring ? 'No Instances Open' : 'Monitoring Paused',
-      message: state.isMonitoring
-          ? 'No instances are currently open for your selected groups'
-          : 'Start monitoring to see open instances',
+      title: 'No Instances Open',
+      message: 'No instances are currently open for your selected groups',
       iconColor: hasErrors ? scheme.error : null,
     );
   }

@@ -20,9 +20,6 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
   });
 
   void _toggleBoostForGroup(WidgetRef ref, String? groupId) {
-    if (!monitorState.isMonitoring) {
-      return;
-    }
     if (groupId != null) {
       ref
           .read(groupMonitorProvider(userId).notifier)
