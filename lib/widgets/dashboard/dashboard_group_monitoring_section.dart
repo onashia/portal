@@ -45,7 +45,7 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
       shadowColor: Colors.transparent,
       shape: baseShape.copyWith(side: BorderSide(color: outlineColor)),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(context.m3e.spacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

@@ -26,7 +26,7 @@ class UserProfileImage extends StatelessWidget {
         : Colors.transparent;
 
     return Container(
-      padding: const EdgeInsets.all(2),
+      padding: EdgeInsets.zero,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(color: borderColor, width: 2),

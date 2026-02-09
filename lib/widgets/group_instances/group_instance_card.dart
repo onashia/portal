@@ -47,7 +47,7 @@ class GroupInstanceCard extends StatelessWidget {
           borderRadius: borderRadius,
           onTap: () {},
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.all(context.m3e.spacing.xl),
             child: Row(
               children: [
                 WorldThumbnail(imageUrl: world.thumbnailImageUrl),

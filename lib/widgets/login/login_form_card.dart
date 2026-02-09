@@ -38,7 +38,7 @@ class LoginFormCard extends StatelessWidget {
               constraints: BoxConstraints(maxWidth: cardWidth),
               child: Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(32),
+                  padding: EdgeInsets.all(context.m3e.spacing.xl * 2),
                   child: Form(
                     key: formKey,
                     child: Column(
