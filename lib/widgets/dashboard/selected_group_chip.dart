@@ -3,6 +3,7 @@ import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../../constants/app_constants.dart';
+import '../../constants/icon_sizes.dart';
 import '../../constants/ui_constants.dart';
 import '../group_selection/group_avatar.dart';
 
@@ -72,7 +73,11 @@ class SelectedGroupChip extends StatelessWidget {
                 ),
                 if (isBoosted) ...[
                   SizedBox(width: context.m3e.spacing.xs),
-                  Icon(Icons.flash_on, size: 18, color: foregroundColor),
+                  Icon(
+                    Icons.flash_on,
+                    size: IconSizes.xs,
+                    color: foregroundColor,
+                  ),
                 ],
               ],
             ),

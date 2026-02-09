@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../constants/icon_sizes.dart';
 
 class WindowButton extends StatefulWidget {
   final IconData icon;
@@ -72,7 +73,7 @@ class WindowButtonState extends State<WindowButton> {
             width: 46,
             height: 40,
             decoration: BoxDecoration(color: backgroundColor),
-            child: Icon(widget.icon, size: 16, color: iconColor),
+            child: Icon(widget.icon, size: IconSizes.xs, color: iconColor),
           ),
         ),
       ),

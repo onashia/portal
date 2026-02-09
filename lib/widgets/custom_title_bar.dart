@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../constants/icon_sizes.dart';
 import 'window/window_button_bar.dart';
 
 class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
@@ -48,7 +49,7 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
                 child: Row(
                   children: [
                     if (showBranding) ...[
-                      Icon(icon, size: 18, color: fgColor),
+                      Icon(icon, size: IconSizes.xs, color: fgColor),
                       SizedBox(width: context.m3e.spacing.sm),
                       Text(
                         title,
