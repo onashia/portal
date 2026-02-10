@@ -54,7 +54,6 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
             Expanded(
               child: GroupInstanceList(
                 userId: userId,
-                scrollable: true,
                 onRefresh: () {
                   ref
                       .read(groupMonitorProvider(userId).notifier)

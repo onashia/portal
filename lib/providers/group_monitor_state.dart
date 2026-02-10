@@ -11,6 +11,7 @@ class GroupMonitorState {
   final Set<String> selectedGroupIds;
   final Map<String, List<GroupInstanceWithGroup>> groupInstances;
   final List<GroupInstanceWithGroup> newInstances;
+  final String? newestInstanceId;
   final bool autoInviteEnabled;
   final String? boostedGroupId;
   final DateTime? boostExpiresAt;
@@ -29,6 +30,7 @@ class GroupMonitorState {
     this.selectedGroupIds = const {},
     this.groupInstances = const {},
     this.newInstances = const [],
+    this.newestInstanceId,
     this.autoInviteEnabled = true,
     this.boostedGroupId,
     this.boostExpiresAt,
@@ -48,6 +50,7 @@ class GroupMonitorState {
     Set<String>? selectedGroupIds,
     Map<String, List<GroupInstanceWithGroup>>? groupInstances,
     List<GroupInstanceWithGroup>? newInstances,
+    String? newestInstanceId,
     bool? autoInviteEnabled,
     Object? boostedGroupId = _unset,
     Object? boostExpiresAt = _unset,
@@ -66,6 +69,7 @@ class GroupMonitorState {
       selectedGroupIds: selectedGroupIds ?? this.selectedGroupIds,
       groupInstances: groupInstances ?? this.groupInstances,
       newInstances: newInstances ?? this.newInstances,
+      newestInstanceId: newestInstanceId ?? this.newestInstanceId,
       autoInviteEnabled: autoInviteEnabled ?? this.autoInviteEnabled,
       boostedGroupId: boostedGroupId == _unset
           ? this.boostedGroupId
@@ -94,6 +98,14 @@ class GroupMonitorState {
           : lastGroupsFetchTime as DateTime?,
     );
   }
+
+  List<GroupInstanceWithGroup> get allInstancesSorted =>
+      groupInstances.values.expand((instances) => instances).toList()
+        ..sort((a, b) {
+          final aTime = a.firstDetectedAt ?? DateTime.now();
+          final bTime = b.firstDetectedAt ?? DateTime.now();
+          return bTime.compareTo(aTime);
+        });
 
   bool get isBoostActive =>
       boostedGroupId != null &&
