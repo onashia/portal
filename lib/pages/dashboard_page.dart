@@ -150,50 +150,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         title: 'portal.',
         icon: Icons.tonality,
         actions: [
-          if (monitorState.newInstances.isNotEmpty)
-            Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.notifications),
-                  tooltip:
-                      'New instances (${monitorState.newInstances.length})',
-                  onPressed: () {
-                    ref
-                        .read(groupMonitorProvider(userId).notifier)
-                        .acknowledgeNewInstances();
-                  },
-                ),
-                if (monitorState.newInstances.isNotEmpty)
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
-                      ),
-                      child: Text(
-                        monitorState.newInstances.length > 9
-                            ? '9+'
-                            : monitorState.newInstances.length.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
           IconButtonM3E(
             icon: Icon(
               themeMode == ThemeMode.dark

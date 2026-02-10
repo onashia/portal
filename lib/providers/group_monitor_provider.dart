@@ -594,13 +594,15 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       }
 
       String? newestInstanceId;
-      if (newInstances.isNotEmpty) {
-        final newestInstance = newInstances.reduce((a, b) {
-          final aTime = a.firstDetectedAt ?? DateTime.now();
-          final bTime = b.firstDetectedAt ?? DateTime.now();
-          return aTime.isAfter(bTime) ? a : b;
-        });
-        newestInstanceId = newestInstance.instance.instanceId;
+      final allInstances =
+          newGroupInstances.values.expand((instances) => instances).toList()
+            ..sort((a, b) {
+              final aTime = a.firstDetectedAt ?? DateTime.now();
+              final bTime = b.firstDetectedAt ?? DateTime.now();
+              return bTime.compareTo(aTime);
+            });
+      if (allInstances.isNotEmpty) {
+        newestInstanceId = allInstances.first.instance.instanceId;
       }
 
       if (inviteTargets.isNotEmpty) {
@@ -611,7 +613,6 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
       state = state.copyWith(
         groupInstances: newGroupInstances,
-        newInstances: [...state.newInstances, ...newInstances],
         newestInstanceId: newestInstanceId,
         groupErrors: newGroupErrors,
       );
@@ -708,6 +709,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       final previousInstanceIds = previousInstances
           .map((i) => i.instance.instanceId)
           .toSet();
+      final previousInstancesMap = {
+        for (var inst in previousInstances) inst.instance.instanceId: inst,
+      };
 
       if (!_boostFirstSeenLogged && instances.isNotEmpty) {
         final startedAt = _boostStartedAt;
@@ -738,6 +742,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         final instanceWithGroup = GroupInstanceWithGroup(
           instance: instance,
           groupId: groupId,
+          firstDetectedAt: previousInstanceIds.contains(instance.instanceId)
+              ? previousInstancesMap[instance.instanceId]?.firstDetectedAt
+              : DateTime.now(),
         );
         if (!previousInstanceIds.contains(instance.instanceId)) {
           newInstances.add(instanceWithGroup);
@@ -763,9 +770,21 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       final updatedGroupErrors = Map<String, String>.from(state.groupErrors);
       updatedGroupErrors.remove(groupId);
 
+      String? newestInstanceId;
+      final allInstances =
+          updatedGroupInstances.values.expand((instances) => instances).toList()
+            ..sort((a, b) {
+              final aTime = a.firstDetectedAt ?? DateTime.now();
+              final bTime = b.firstDetectedAt ?? DateTime.now();
+              return bTime.compareTo(aTime);
+            });
+      if (allInstances.isNotEmpty) {
+        newestInstanceId = allInstances.first.instance.instanceId;
+      }
+
       state = state.copyWith(
         groupInstances: updatedGroupInstances,
-        newInstances: [...state.newInstances, ...newInstances],
+        newestInstanceId: newestInstanceId,
         groupErrors: updatedGroupErrors,
         boostPollCount: _boostPollCount,
         lastBoostLatencyMs: latencyMs,
@@ -813,14 +832,6 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     }
   }
 
-  void acknowledgeNewInstances() {
-    state = state.copyWith(newInstances: [], newestInstanceId: null);
-    AppLogger.debug(
-      'Acknowledged all new instances',
-      subCategory: 'group_monitor',
-    );
-  }
-
   Future<void> clearSelectedGroups() async {
     try {
       await GroupMonitorStorage.clearSelectedGroups();
@@ -829,7 +840,6 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       state = state.copyWith(
         selectedGroupIds: {},
         groupInstances: {},
-        newInstances: [],
         newestInstanceId: null,
         boostedGroupId: null,
         boostExpiresAt: null,

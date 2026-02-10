@@ -10,7 +10,6 @@ class GroupMonitorState {
   final List<LimitedUserGroups> allGroups;
   final Set<String> selectedGroupIds;
   final Map<String, List<GroupInstanceWithGroup>> groupInstances;
-  final List<GroupInstanceWithGroup> newInstances;
   final String? newestInstanceId;
   final bool autoInviteEnabled;
   final String? boostedGroupId;
@@ -29,7 +28,6 @@ class GroupMonitorState {
     this.allGroups = const [],
     this.selectedGroupIds = const {},
     this.groupInstances = const {},
-    this.newInstances = const [],
     this.newestInstanceId,
     this.autoInviteEnabled = true,
     this.boostedGroupId,
@@ -49,7 +47,6 @@ class GroupMonitorState {
     List<LimitedUserGroups>? allGroups,
     Set<String>? selectedGroupIds,
     Map<String, List<GroupInstanceWithGroup>>? groupInstances,
-    List<GroupInstanceWithGroup>? newInstances,
     String? newestInstanceId,
     bool? autoInviteEnabled,
     Object? boostedGroupId = _unset,
@@ -68,7 +65,6 @@ class GroupMonitorState {
       allGroups: allGroups ?? this.allGroups,
       selectedGroupIds: selectedGroupIds ?? this.selectedGroupIds,
       groupInstances: groupInstances ?? this.groupInstances,
-      newInstances: newInstances ?? this.newInstances,
       newestInstanceId: newestInstanceId ?? this.newestInstanceId,
       autoInviteEnabled: autoInviteEnabled ?? this.autoInviteEnabled,
       boostedGroupId: boostedGroupId == _unset
