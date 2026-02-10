@@ -47,7 +47,7 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Group Monitoring',
+              'Active Instances',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             SizedBox(height: context.m3e.spacing.md),

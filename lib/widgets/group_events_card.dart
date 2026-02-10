@@ -65,7 +65,7 @@ class GroupEventsCard extends ConsumerWidget {
       return const EmptyState(
         icon: Icons.event_busy,
         title: 'No Groups Selected',
-        message: 'Select groups in Group Monitoring to see events.',
+        message: 'Select groups in Manage Groups to see events.',
       );
     }
 
