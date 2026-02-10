@@ -37,7 +37,7 @@ class GroupEventsCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             EventsCardHeader(todayLabel: todayLabel),
-            SizedBox(height: context.m3e.spacing.md),
+            SizedBox(height: context.m3e.spacing.lg),
             Expanded(
               child: _buildContent(context, calendarState, monitorState),
             ),

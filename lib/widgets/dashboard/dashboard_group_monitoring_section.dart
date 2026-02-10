@@ -35,6 +35,10 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
         cardTheme.shape as RoundedRectangleBorder? ??
         RoundedRectangleBorder(borderRadius: context.m3e.shapes.round.md);
     final outlineColor = scheme.outlineVariant.withValues(alpha: 0.4);
+    final instanceCount = monitorState.groupInstances.values.fold<int>(
+      0,
+      (sum, instances) => sum + instances.length,
+    );
 
     return Card(
       color: scheme.surfaceContainerLow,
@@ -46,11 +50,23 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Active Instances',
-              style: Theme.of(context).textTheme.titleLarge,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Active Instances',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                SizedBox(height: context.m3e.spacing.xs),
+                Text(
+                  '$instanceCount active instance${instanceCount == 1 ? '' : 's'}',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
-            SizedBox(height: context.m3e.spacing.md),
+            SizedBox(height: context.m3e.spacing.lg),
             Expanded(
               child: GroupInstanceList(
                 userId: userId,
