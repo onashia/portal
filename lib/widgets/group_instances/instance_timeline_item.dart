@@ -84,14 +84,14 @@ class InstanceTimelineItem extends StatelessWidget {
               Container(
                 padding: EdgeInsets.symmetric(
                   horizontal: context.m3e.spacing.sm,
-                  vertical: context.m3e.spacing.xs,
+                  vertical: context.m3e.spacing.sm,
                 ),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.primary,
                   borderRadius: context.m3e.shapes.round.xs,
                 ),
                 child: Text(
-                  'NEW',
+                  'New',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: Theme.of(context).colorScheme.onPrimary,
                     fontWeight: FontWeight.bold,
