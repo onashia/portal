@@ -73,7 +73,7 @@ class WindowButtonState extends State<WindowButton> {
             width: 46,
             height: 40,
             decoration: BoxDecoration(color: backgroundColor),
-            child: Icon(widget.icon, size: IconSizes.xs, color: iconColor),
+            child: Icon(widget.icon, size: IconSizes.xxs, color: iconColor),
           ),
         ),
       ),

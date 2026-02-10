@@ -73,7 +73,7 @@ class SelectedGroupChip extends StatelessWidget {
                   SizedBox(width: context.m3e.spacing.xs),
                   Icon(
                     Icons.flash_on,
-                    size: IconSizes.xs,
+                    size: IconSizes.xxs,
                     color: foregroundColor,
                   ),
                 ],

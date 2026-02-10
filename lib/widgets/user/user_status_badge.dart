@@ -13,7 +13,7 @@ class UserStatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(status.icon, size: IconSizes.xs, color: status.getColor(context)),
+        Icon(status.icon, size: IconSizes.xxs, color: status.getColor(context)),
         SizedBox(width: context.m3e.spacing.sm),
         Text(
           status.text,

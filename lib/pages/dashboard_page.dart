@@ -13,6 +13,7 @@ import '../services/notification_service.dart';
 import '../utils/animation_constants.dart';
 import '../utils/app_logger.dart';
 import '../widgets/common/empty_state.dart';
+import '../constants/icon_sizes.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/dashboard/dashboard_action_area.dart';
 import '../widgets/dashboard/dashboard_cards.dart';
@@ -92,16 +93,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           title: 'portal.',
           icon: Icons.tonality,
           actions: [
-            IconButtonM3E(
+            IconButton(
               icon: Icon(
                 themeMode == ThemeMode.dark
                     ? Icons.light_mode_outlined
                     : Icons.dark_mode_outlined,
+                size: IconSizes.xs,
               ),
               tooltip: themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
-              variant: IconButtonM3EVariant.standard,
-              size: IconButtonM3ESize.sm,
-              shape: IconButtonM3EShapeVariant.round,
               onPressed: () {
                 ref.read(themeProvider.notifier).toggleTheme();
               },
@@ -150,22 +149,20 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         title: 'portal.',
         icon: Icons.tonality,
         actions: [
-          IconButtonM3E(
+          IconButton(
             icon: Icon(
               themeMode == ThemeMode.dark
                   ? Icons.light_mode_outlined
                   : Icons.dark_mode_outlined,
+              size: IconSizes.xs,
             ),
             tooltip: themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
-            variant: IconButtonM3EVariant.standard,
-            size: IconButtonM3ESize.sm,
-            shape: IconButtonM3EShapeVariant.round,
             onPressed: () {
               ref.read(themeProvider.notifier).toggleTheme();
             },
           ),
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout, size: IconSizes.xs),
             tooltip: 'Logout',
             onPressed: () async {
               ref.read(groupMonitorProvider(userId).notifier).stopMonitoring();
