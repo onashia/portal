@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
+import '../../theme/user_status_extension.dart';
 import '../user/user_profile_image.dart';
-import '../user/user_status_badge.dart';
 
 class DashboardUserCard extends StatelessWidget {
   final CurrentUser currentUser;
@@ -36,8 +36,9 @@ class DashboardUserCard extends StatelessWidget {
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 SizedBox(height: context.m3e.spacing.xs),
-                UserStatusBadge(
-                  status: streamedUser?.status ?? currentUser.status,
+                Text(
+                  _resolveUserInfoText(),
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ],
             ),
@@ -45,5 +46,25 @@ class DashboardUserCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _resolveUserInfoText() {
+    final pronouns = currentUser.pronouns;
+    final statusDescription =
+        streamedUser?.statusDescription ?? currentUser.statusDescription;
+
+    if (pronouns.isNotEmpty && statusDescription.isNotEmpty) {
+      return '$pronouns • $statusDescription';
+    }
+
+    if (pronouns.isNotEmpty) {
+      return pronouns;
+    }
+
+    if (statusDescription.isNotEmpty) {
+      return statusDescription;
+    }
+
+    return (streamedUser?.status ?? currentUser.status).text;
   }
 }
