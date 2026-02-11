@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 
 import 'status_colors.dart';
+import 'vrchat_status_colors.dart';
 
 class AppTheme {
   static ThemeData lightTheme = _buildTheme(Brightness.light);
@@ -44,6 +45,11 @@ class AppTheme {
           busy: const Color(0xFFEF9A9A), // pastel red
           joinMe: const Color(0xFF90CAF9), // pastel light blue
           offline: const Color(0xFFBDBDBD), // pastel grey
+        ),
+        VrchatStatusColors(
+          operational: const Color(0xFF81C784), // green
+          degraded: const Color(0xFFFFB74D), // orange/yellow
+          outage: const Color(0xFFE57373), // red
         ),
       ],
       textTheme: textTheme,

@@ -6,4 +6,6 @@ class AppConstants {
   static const int boostPollingJitterSeconds = 2;
   static const int boostDurationMinutes = 15;
   static const int maxAvatarCacheSize = 100;
+  static const int vrchatStatusPollingIntervalSeconds = 300;
+  static const int vrchatStatusPollingJitterSeconds = 60;
 }
