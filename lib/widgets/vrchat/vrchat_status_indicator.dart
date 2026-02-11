@@ -176,9 +176,12 @@ class VrchatStatusWidget extends ConsumerWidget {
           ),
         ),
         actions: [
-          TextButton(
+          ButtonM3E(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text('Close'),
+            label: Text('Close'),
+            style: ButtonM3EStyle.text,
+            size: ButtonM3ESize.sm,
+            shape: ButtonM3EShape.square,
           ),
         ],
       ),
