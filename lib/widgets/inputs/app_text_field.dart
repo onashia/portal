@@ -6,30 +6,10 @@ InputDecoration _buildAppInputDecoration(
   InputDecoration? decoration,
 ) {
   final scheme = Theme.of(context).colorScheme;
-  final inputBorder = Theme.of(context).inputDecorationTheme.border;
-  final borderRadius = inputBorder is OutlineInputBorder
-      ? inputBorder.borderRadius
-      : BorderRadius.zero;
-  final enabledBorder = OutlineInputBorder(
-    borderRadius: borderRadius,
-    borderSide: BorderSide(color: scheme.surfaceContainerHighest, width: 1),
-  );
-  final focusedBorder = OutlineInputBorder(
-    borderRadius: borderRadius,
-    borderSide: BorderSide(color: scheme.primary, width: 2),
-  );
-  final errorBorder = OutlineInputBorder(
-    borderRadius: borderRadius,
-    borderSide: BorderSide(color: scheme.error, width: 2),
-  );
 
   return (decoration ?? const InputDecoration()).copyWith(
     filled: true,
     fillColor: scheme.surfaceContainerLow,
-    enabledBorder: enabledBorder,
-    focusedBorder: focusedBorder,
-    errorBorder: errorBorder,
-    focusedErrorBorder: errorBorder,
   );
 }
 
