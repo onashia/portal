@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 
-import '../constants/app_typography.dart';
 import '../providers/api_call_counter.dart';
 import '../providers/group_monitor_provider.dart';
 import '../utils/group_utils.dart';
@@ -32,7 +31,10 @@ class DebugInfoCard extends ConsumerWidget {
                 color: Theme.of(context).colorScheme.primary,
               ),
               SizedBox(width: context.m3e.spacing.sm),
-              Text('Debug Info', style: AppTypography.titleMedium),
+              Text(
+                'Debug Info',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ],
           ),
           SizedBox(height: context.m3e.spacing.sm),
@@ -104,7 +106,7 @@ class DebugInfoCard extends ConsumerWidget {
             SizedBox(height: context.m3e.spacing.md),
             Text(
               'Errors: ${monitorState.groupErrors.length}',
-              style: AppTypography.bodyMedium.copyWith(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.error,
               ),
             ),
@@ -114,7 +116,7 @@ class DebugInfoCard extends ConsumerWidget {
                 padding: EdgeInsets.only(top: context.m3e.spacing.xs),
                 child: Text(
                   '• ${_getGroupName(monitorState, entry.key)}: ${entry.value}',
-                  style: AppTypography.bodyMedium.copyWith(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.error,
                   ),
                 ),
@@ -126,7 +128,7 @@ class DebugInfoCard extends ConsumerWidget {
               padding: EdgeInsets.only(top: context.m3e.spacing.md),
               child: Text(
                 'All groups returned empty instance lists',
-                style: context.m3e.typography.base.bodyMedium?.copyWith(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.error,
                 ),
               ),
