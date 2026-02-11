@@ -13,4 +13,9 @@ class UiConstants {
   static const double timelineRailWidth = 84.0;
   static const double timelineDotSize = 8.0;
   static const double timelineLineWidth = 2.0;
+
+  static const double vrchatStatusDialogMaxWidth = 700.0;
+  static const double vrchatCompactLoaderSize = 8.0;
+  static const double vrchatCompactLoaderStrokeWidth = 1.5;
+  static const double vrchatStatusDotSize = 8.0;
 }

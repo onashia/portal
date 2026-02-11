@@ -5,6 +5,8 @@ import 'package:m3e_collection/m3e_collection.dart';
 import '../../models/vrchat_status.dart';
 import '../../theme/vrchat_status_colors.dart';
 import '../../providers/vrchat_status_provider.dart';
+import '../../constants/ui_constants.dart';
+import '../../constants/icon_sizes.dart';
 
 class VrchatStatusWidget extends ConsumerWidget {
   const VrchatStatusWidget({super.key});
@@ -17,10 +19,13 @@ class VrchatStatusWidget extends ConsumerWidget {
     return GestureDetector(
       onTap: () => _showStatusDialog(context, statusStateValue),
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: EdgeInsets.symmetric(
+          horizontal: context.m3e.spacing.md,
+          vertical: context.m3e.spacing.sm,
+        ),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.m3e.shapes.round.sm,
         ),
         child: _buildCompactView(context, statusStateValue),
       ),
@@ -33,11 +38,13 @@ class VrchatStatusWidget extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            width: 8,
-            height: 8,
-            child: CircularProgressIndicator(strokeWidth: 1.5),
+            width: UiConstants.vrchatCompactLoaderSize,
+            height: UiConstants.vrchatCompactLoaderSize,
+            child: CircularProgressIndicator(
+              strokeWidth: UiConstants.vrchatCompactLoaderStrokeWidth,
+            ),
           ),
-          SizedBox(width: 6),
+          SizedBox(width: context.m3e.spacing.md),
           Text('Loading...', style: Theme.of(context).textTheme.bodySmall),
         ],
       );
@@ -49,10 +56,10 @@ class VrchatStatusWidget extends ConsumerWidget {
         children: [
           Icon(
             Icons.error_outline,
-            size: 12,
+            size: IconSizes.xxs,
             color: Theme.of(context).colorScheme.error,
           ),
-          SizedBox(width: 6),
+          SizedBox(width: context.m3e.spacing.md),
           Text(
             'Error',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -70,11 +77,11 @@ class VrchatStatusWidget extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 8,
-          height: 8,
+          width: UiConstants.vrchatStatusDotSize,
+          height: UiConstants.vrchatStatusDotSize,
           decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
         ),
-        SizedBox(width: 6),
+        SizedBox(width: context.m3e.spacing.md),
         Flexible(
           child: Text(
             status.description,
@@ -83,12 +90,15 @@ class VrchatStatusWidget extends ConsumerWidget {
           ),
         ),
         if (status.activeIncidents.isNotEmpty) ...[
-          SizedBox(width: 6),
+          SizedBox(width: context.m3e.spacing.sm),
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: EdgeInsets.symmetric(
+              horizontal: context.m3e.spacing.xs,
+              vertical: 2,
+            ),
             decoration: BoxDecoration(
               color: statusColor.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: context.m3e.shapes.round.md,
             ),
             child: Text(
               '${status.activeIncidents.length}',
@@ -139,25 +149,27 @@ class VrchatStatusWidget extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('VRChat Status'),
-        content: SizedBox(
-          width: 500,
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: UiConstants.vrchatStatusDialogMaxWidth,
+          ),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildOverallStatus(context, status, statusColor),
-                SizedBox(height: 16),
+                SizedBox(height: context.m3e.spacing.md),
                 _buildServicesSection(
                   context,
                   status.serviceGroups,
                   Theme.of(context).extension<VrchatStatusColors>()!,
                 ),
                 if (status.activeIncidents.isNotEmpty) ...[
-                  SizedBox(height: 16),
+                  SizedBox(height: context.m3e.spacing.md),
                   _buildIncidentsSection(context, status.activeIncidents),
                 ],
-                SizedBox(height: 16),
+                SizedBox(height: context.m3e.spacing.md),
                 _buildLastUpdated(context, status.lastUpdated),
               ],
             ),
@@ -179,16 +191,20 @@ class VrchatStatusWidget extends ConsumerWidget {
     Color statusColor,
   ) {
     return Container(
-      padding: EdgeInsets.all(12),
+      padding: EdgeInsets.all(context.m3e.spacing.md),
       decoration: BoxDecoration(
         color: statusColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: context.m3e.shapes.round.sm,
         border: Border.all(color: statusColor.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
-          Icon(_getStatusIcon(status.indicator), color: statusColor, size: 24),
-          SizedBox(width: 12),
+          Icon(
+            _getStatusIcon(status.indicator),
+            color: statusColor,
+            size: IconSizes.sm,
+          ),
+          SizedBox(width: context.m3e.spacing.md),
           Expanded(
             child: Text(
               status.description,
@@ -261,7 +277,7 @@ class VrchatStatusWidget extends ConsumerWidget {
     final isOperational = serviceStatus.toLowerCase() == 'operational';
 
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 4),
+      padding: EdgeInsets.symmetric(vertical: context.m3e.spacing.xs),
       child: Row(
         children: [
           Container(
@@ -272,10 +288,11 @@ class VrchatStatusWidget extends ConsumerWidget {
               shape: BoxShape.circle,
             ),
           ),
-          SizedBox(width: 10),
+          SizedBox(width: context.m3e.spacing.md),
           Expanded(
             child: Text(name, style: Theme.of(context).textTheme.bodyMedium),
           ),
+          SizedBox(width: context.m3e.spacing.xxl),
           Text(
             serviceStatus,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -314,7 +331,7 @@ class VrchatStatusWidget extends ConsumerWidget {
             context,
           ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
         ),
-        SizedBox(height: 8),
+        SizedBox(height: context.m3e.spacing.sm),
         ...incidents.map((incident) => _buildIncidentItem(context, incident)),
       ],
     );
@@ -326,9 +343,9 @@ class VrchatStatusWidget extends ConsumerWidget {
         : null;
 
     return Card(
-      margin: EdgeInsets.only(bottom: 8),
+      margin: EdgeInsets.only(bottom: context.m3e.spacing.sm),
       child: Padding(
-        padding: EdgeInsets.all(12),
+        padding: EdgeInsets.all(context.m3e.spacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -336,10 +353,10 @@ class VrchatStatusWidget extends ConsumerWidget {
               children: [
                 Icon(
                   _getIncidentStatusIcon(incident.status),
-                  size: 16,
+                  size: IconSizes.xxs,
                   color: _getIncidentStatusColor(context, incident.status),
                 ),
-                SizedBox(width: 8),
+                SizedBox(width: context.m3e.spacing.md),
                 Expanded(
                   child: Text(
                     incident.name,
@@ -350,12 +367,12 @@ class VrchatStatusWidget extends ConsumerWidget {
                 ),
               ],
             ),
-            SizedBox(height: 8),
+            SizedBox(height: context.m3e.spacing.sm),
             Container(
-              padding: EdgeInsets.all(8),
+              padding: EdgeInsets.all(context.m3e.spacing.sm),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: context.m3e.shapes.round.xs,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -368,14 +385,14 @@ class VrchatStatusWidget extends ConsumerWidget {
                     ),
                   ),
                   if (latestUpdate != null) ...[
-                    SizedBox(height: 4),
+                    SizedBox(height: context.m3e.spacing.xs),
                     Text(
                       latestUpdate.body,
                       style: Theme.of(context).textTheme.bodySmall,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    SizedBox(height: 4),
+                    SizedBox(height: context.m3e.spacing.xs),
                     Text(
                       _formatTimestamp(latestUpdate.createdAt),
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
