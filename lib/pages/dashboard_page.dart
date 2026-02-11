@@ -214,9 +214,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       padding: EdgeInsets.only(
                         left: horizontalPadding,
                         right: horizontalPadding,
-                        top: 24,
+                        top: context.m3e.spacing.xl,
                         bottom: contentBottomPadding,
-                      ), // 128px: space for floating action area (56px FAB + 24px margin + 48px buffer)
+                      ),
                       child: Center(
                         child: ConstrainedBox(
                           constraints: BoxConstraints(maxWidth: maxWidth),
