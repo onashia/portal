@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:motor/motor.dart';
+
 import '../../constants/icon_sizes.dart';
+import '../../utils/animation_constants.dart';
 
 class WindowButton extends StatefulWidget {
   final IconData icon;
@@ -29,18 +32,43 @@ class WindowButtonState extends State<WindowButton> {
   bool _isHovered = false;
   bool _isPressed = false;
 
+  double get _targetValue {
+    if (_isPressed) return 1.0;
+    if (_isHovered) return 0.5;
+    return 0.0;
+  }
+
+  Color _interpolateBackgroundColor(double value) {
+    if (value <= 0.5) {
+      final t = value / 0.5;
+      return Color.lerp(
+        Colors.transparent,
+        widget.hoverColor,
+        t.clamp(0.0, 1.0),
+      )!;
+    } else {
+      final t = (value - 0.5) / 0.5;
+      return Color.lerp(
+        widget.hoverColor,
+        widget.pressedColor,
+        t.clamp(0.0, 1.0),
+      )!;
+    }
+  }
+
+  Color _interpolateIconColor(double value) {
+    if (widget.activeForegroundColor == null) {
+      return widget.foregroundColor;
+    }
+    return Color.lerp(
+      widget.foregroundColor,
+      widget.activeForegroundColor!,
+      value.clamp(0.0, 1.0),
+    )!;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final backgroundColor = _isPressed
-        ? widget.pressedColor
-        : _isHovered
-        ? widget.hoverColor
-        : Colors.transparent;
-    final iconColor =
-        (_isHovered || _isPressed) && widget.activeForegroundColor != null
-        ? widget.activeForegroundColor!
-        : widget.foregroundColor;
-
     return Tooltip(
       message: widget.tooltip,
       child: Material(
@@ -67,13 +95,24 @@ class WindowButtonState extends State<WindowButton> {
               _isPressed = false;
             });
           },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            curve: Curves.easeOut,
-            width: 46,
-            height: 40,
-            decoration: BoxDecoration(color: backgroundColor),
-            child: Icon(widget.icon, size: IconSizes.xxs, color: iconColor),
+          child: SingleMotionBuilder(
+            motion: AnimationConstants.standardEffectsFast,
+            value: _targetValue,
+            from: 0.0,
+            builder: (context, value, child) {
+              return Container(
+                width: 46,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: _interpolateBackgroundColor(value),
+                ),
+                child: Icon(
+                  widget.icon,
+                  size: IconSizes.xxs,
+                  color: _interpolateIconColor(value),
+                ),
+              );
+            },
           ),
         ),
       ),
