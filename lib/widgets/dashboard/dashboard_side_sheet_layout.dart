@@ -5,7 +5,6 @@ class DashboardSideSheetLayout extends StatelessWidget {
   final Widget content;
   final Widget sideSheet;
   final double sheetWidth;
-  final bool isDocked;
   final double progress;
   final VoidCallback onClose;
 
@@ -14,7 +13,6 @@ class DashboardSideSheetLayout extends StatelessWidget {
     required this.content,
     required this.sideSheet,
     required this.sheetWidth,
-    required this.isDocked,
     required this.progress,
     required this.onClose,
   });
@@ -31,17 +29,13 @@ class DashboardSideSheetLayout extends StatelessWidget {
     );
     const minVisibleOpacity = 0.02;
     final isVisible = opacityProgress > minVisibleOpacity;
-    final dockedPadding = isDocked ? shellWidth * clampedProgress : 0.0;
     final sheetTranslateX = shellWidth * (1 - clampedProgress);
 
     return SizedBox.expand(
       child: Stack(
         children: [
-          Padding(
-            padding: EdgeInsets.only(right: dockedPadding),
-            child: content,
-          ),
-          if (!isDocked && isVisible)
+          content,
+          if (isVisible)
             Positioned.fill(
               child: GestureDetector(
                 onTap: onClose,

@@ -175,9 +175,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             const sheetTargetWidth = 380.0;
-            const minContentWidth = 640.0;
             final totalWidth = constraints.maxWidth;
-            final canDock = totalWidth >= (sheetTargetWidth + minContentWidth);
             final effectiveSheetWidth = totalWidth < sheetTargetWidth
                 ? totalWidth
                 : sheetTargetWidth;
@@ -242,15 +240,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       ),
                     ),
                   ),
-                  Positioned(
-                    bottom: context.m3e.spacing.xl,
-                    right: context.m3e.spacing.xl,
-                    child: DashboardActionArea(
-                      userId: userId,
-                      monitorState: monitorState,
-                      onManageGroups: () => _toggleSideSheetForUser(userId),
-                    ),
-                  ),
                 ],
               ),
             );
@@ -261,13 +250,27 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               from: 0.0,
               builder: (context, value, _) {
                 final progress = value.clamp(0.0, 1.0);
-                return DashboardSideSheetLayout(
-                  content: content,
-                  sideSheet: sideSheet,
-                  sheetWidth: effectiveSheetWidth,
-                  isDocked: canDock,
-                  progress: progress,
-                  onClose: _closeSideSheet,
+                return Stack(
+                  children: [
+                    DashboardSideSheetLayout(
+                      content: content,
+                      sideSheet: sideSheet,
+                      sheetWidth: effectiveSheetWidth,
+                      progress: progress,
+                      onClose: _closeSideSheet,
+                    ),
+                    Positioned(
+                      bottom: context.m3e.spacing.xl,
+                      right: context.m3e.spacing.xl,
+                      child: DashboardActionArea(
+                        userId: userId,
+                        monitorState: monitorState,
+                        onManageGroups: () => _toggleSideSheetForUser(userId),
+                        sheetWidth: effectiveSheetWidth,
+                        progress: progress,
+                      ),
+                    ),
+                  ],
                 );
               },
             );
