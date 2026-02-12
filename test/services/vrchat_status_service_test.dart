@@ -702,7 +702,7 @@ void main() {
         ),
       );
 
-      expect(() => service.fetchStatus(), throwsA(anything));
+      expect(() => service.fetchStatus(), throwsA(isA<DioException>()));
     });
 
     test('6.2: DioException with timeout', () async {
@@ -724,7 +724,7 @@ void main() {
         ),
       );
 
-      expect(() => service.fetchStatus(), throwsA(anything));
+      expect(() => service.fetchStatus(), throwsA(isA<DioException>()));
     });
   });
 
