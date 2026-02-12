@@ -3,160 +3,108 @@ import 'package:portal/utils/error_utils.dart';
 
 void main() {
   group('formatApiError - Credential Errors', () {
-    test('maps "missing credentials" → Invalid Username/Email or Password', () {
-      final result = formatApiError('Login failed', 'missing credentials');
-      expect(result, contains('Invalid Username/Email or Password'));
-    });
+    const expectedMessage = 'Invalid Username/Email or Password';
+    const prefix = 'Login failed';
 
-    test('maps "invalid credentials" → Invalid Username/Email or Password', () {
-      final result = formatApiError('Login failed', 'invalid credentials');
-      expect(result, contains('Invalid Username/Email or Password'));
-    });
+    final testCases = {
+      'missing credentials',
+      'invalid credentials',
+      'invalid username',
+      'invalid password',
+      'invalid email',
+      'authentication failed',
+      'login failed',
+    };
 
-    test('maps "invalid username" → Invalid Username/Email or Password', () {
-      final result = formatApiError('Login failed', 'invalid username');
-      expect(result, contains('Invalid Username/Email or Password'));
-    });
-
-    test('maps "invalid password" → Invalid Username/Email or Password', () {
-      final result = formatApiError('Login failed', 'invalid password');
-      expect(result, contains('Invalid Username/Email or Password'));
-    });
-
-    test('maps "invalid email" → Invalid Username/Email or Password', () {
-      final result = formatApiError('Login failed', 'invalid email');
-      expect(result, contains('Invalid Username/Email or Password'));
-    });
-
-    test(
-      'maps "authentication failed" → Invalid Username/Email or Password',
-      () {
-        final result = formatApiError('Login failed', 'authentication failed');
-        expect(result, contains('Invalid Username/Email or Password'));
-      },
-    );
-
-    test('maps "login failed" → Invalid Username/Email or Password', () {
-      final result = formatApiError('Login failed', 'login failed');
-      expect(result, contains('Invalid Username/Email or Password'));
-    });
+    for (final error in testCases) {
+      test('maps "$error" → $expectedMessage', () {
+        final result = formatApiError(prefix, error);
+        expect(result, contains(expectedMessage));
+      });
+    }
   });
 
   group('formatApiError - 2FA Errors', () {
-    test('maps "invalid 2fa" → Invalid 2FA Code', () {
-      final result = formatApiError('2FA verification failed', 'invalid 2fa');
-      expect(result, contains('Invalid 2FA Code'));
-    });
+    const expectedMessage = 'Invalid 2FA Code';
+    const prefix = '2FA verification failed';
 
-    test('maps "invalid 2fa code" → Invalid 2FA Code', () {
-      final result = formatApiError(
-        '2FA verification failed',
-        'invalid 2fa code',
-      );
-      expect(result, contains('Invalid 2FA Code'));
-    });
+    final testCases = {
+      'invalid 2fa',
+      'invalid 2fa code',
+      'invalid code',
+      'incorrect 2fa',
+      'incorrect code',
+      '2fa failed',
+      'two-factor authentication',
+      '2fa error',
+    };
 
-    test('maps "invalid code" → Invalid 2FA Code', () {
-      final result = formatApiError('2FA verification failed', 'invalid code');
-      expect(result, contains('Invalid 2FA Code'));
-    });
-
-    test('maps "incorrect 2fa" → Invalid 2FA Code', () {
-      final result = formatApiError('2FA verification failed', 'incorrect 2fa');
-      expect(result, contains('Invalid 2FA Code'));
-    });
-
-    test('maps "incorrect code" → Invalid 2FA Code', () {
-      final result = formatApiError(
-        '2FA verification failed',
-        'incorrect code',
-      );
-      expect(result, contains('Invalid 2FA Code'));
-    });
-
-    test('maps "2fa failed" → Invalid 2FA Code', () {
-      final result = formatApiError('2FA verification failed', '2fa failed');
-      expect(result, contains('Invalid 2FA Code'));
-    });
-
-    test('maps "two-factor authentication" → Invalid 2FA Code', () {
-      final result = formatApiError(
-        '2FA verification failed',
-        'two-factor authentication',
-      );
-      expect(result, contains('Invalid 2FA Code'));
-    });
-
-    test('maps "2fa error" → Invalid 2FA Code', () {
-      final result = formatApiError('2FA verification failed', '2fa error');
-      expect(result, contains('Invalid 2FA Code'));
-    });
+    for (final error in testCases) {
+      test('maps "$error" → $expectedMessage', () {
+        final result = formatApiError(prefix, error);
+        expect(result, contains(expectedMessage));
+      });
+    }
   });
 
   group('formatApiError - Rate Limiting', () {
-    test(
-      'maps "too many requests" → Too many attempts, please try again later',
-      () {
-        final result = formatApiError('Login failed', 'too many requests');
-        expect(result, contains('Too many attempts, please try again later'));
-      },
-    );
+    const expectedMessage = 'Too many attempts, please try again later';
+    const prefix = 'Login failed';
 
-    test('maps "429" → Too many attempts, please try again later', () {
-      final result = formatApiError('Login failed', '429 Too Many Requests');
-      expect(result, contains('Too many attempts, please try again later'));
-    });
+    final testCases = {'too many requests', '429 Too Many Requests'};
+
+    for (final error in testCases) {
+      test('maps "$error" → $expectedMessage', () {
+        final result = formatApiError(prefix, error);
+        expect(result, contains(expectedMessage));
+      });
+    }
   });
 
   group('formatApiError - Network Errors', () {
-    test('maps "timeout" → Connection timed out', () {
-      final result = formatApiError('Login failed', 'timeout');
-      expect(result, contains('Connection timed out'));
-    });
+    const prefix = 'Login failed';
 
-    test('maps "timed out" → Connection timed out', () {
-      final result = formatApiError('Login failed', 'timed out');
-      expect(result, contains('Connection timed out'));
-    });
+    final testCases = {
+      'timeout': 'Connection timed out',
+      'timed out': 'Connection timed out',
+      'connection failed': 'Connection error',
+      'network error': 'Connection error',
+    };
 
-    test('maps "network" → Connection error', () {
-      final result = formatApiError('Login failed', 'network error');
-      expect(result, contains('Connection error'));
-    });
-
-    test('maps "connection" → Connection error', () {
-      final result = formatApiError('Login failed', 'connection failed');
-      expect(result, contains('Connection error'));
-    });
-
-    test('maps "network error" → Connection error', () {
-      final result = formatApiError('Login failed', 'network error');
-      expect(result, contains('Connection error'));
-    });
+    for (final entry in testCases.entries) {
+      test('maps "${entry.key}" → ${entry.value}', () {
+        final result = formatApiError(prefix, entry.key);
+        expect(result, contains(entry.value));
+      });
+    }
   });
 
   group('formatApiError - Account Status', () {
-    test('maps "account locked" → Account temporarily unavailable', () {
-      final result = formatApiError('Login failed', 'account locked');
-      expect(result, contains('Account temporarily unavailable'));
-    });
+    const expectedMessage = 'Account temporarily unavailable';
+    const prefix = 'Login failed';
 
-    test('maps "account suspended" → Account temporarily unavailable', () {
-      final result = formatApiError('Login failed', 'account suspended');
-      expect(result, contains('Account temporarily unavailable'));
-    });
+    final testCases = {'account locked', 'account suspended'};
+
+    for (final error in testCases) {
+      test('maps "$error" → $expectedMessage', () {
+        final result = formatApiError(prefix, error);
+        expect(result, contains(expectedMessage));
+      });
+    }
   });
 
   group('formatApiError - Email Verification', () {
-    test('maps "check your email" → Email verification required', () {
-      final result = formatApiError('Login failed', 'check your email');
-      expect(result, contains('Email verification required'));
-    });
+    const expectedMessage = 'Email verification required';
+    const prefix = 'Login failed';
 
-    test('maps "verify your email" → Email verification required', () {
-      final result = formatApiError('Login failed', 'verify your email');
-      expect(result, contains('Email verification required'));
-    });
+    final testCases = {'check your email', 'verify your email'};
+
+    for (final error in testCases) {
+      test('maps "$error" → $expectedMessage', () {
+        final result = formatApiError(prefix, error);
+        expect(result, contains(expectedMessage));
+      });
+    }
   });
 
   group('formatApiError - Case Insensitive', () {
