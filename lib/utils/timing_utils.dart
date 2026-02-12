@@ -46,9 +46,12 @@ class TimingUtils {
   /// Example: 2 hours ago → "2 hours ago"
   /// Example: 3 days ago → "3 days ago"
   /// Example: 10 days ago → "10/1/26" (M/D/YY format)
-  static String formatRelativeTimeVerbose(DateTime timestamp) {
-    final now = DateTime.now();
-    final elapsed = now.difference(timestamp);
+  ///
+  /// [now] is optional and defaults to DateTime.now(). Providing a fixed [now]
+  /// is useful for testing to make time comparisons deterministic.
+  static String formatRelativeTimeVerbose(DateTime timestamp, {DateTime? now}) {
+    final currentTime = now ?? DateTime.now();
+    final elapsed = currentTime.difference(timestamp);
 
     if (elapsed.inMinutes < 1) return 'Just now';
     if (elapsed.inHours < 1) return '${elapsed.inMinutes} min ago';
