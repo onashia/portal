@@ -135,7 +135,7 @@ void main() {
       expect(result, endsWith('...'));
     });
 
-    test('returns full message for short errors (≤50 chars)', () {
+    test('returns full mapped message for short errors', () {
       final shortError = 'Invalid credentials';
       final result = formatApiError('Login failed', shortError);
       expect(
