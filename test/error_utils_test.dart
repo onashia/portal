@@ -131,7 +131,7 @@ void main() {
       final result = formatApiError('Login failed', longError);
       final prefixLength = 'Login failed: '.length;
       expect(result.length, lessThan(longError.length));
-      expect(result.length, lessThan(47 + prefixLength + 4));
+      expect(result.length, prefixLength + 50);
       expect(result, endsWith('...'));
     });
 
