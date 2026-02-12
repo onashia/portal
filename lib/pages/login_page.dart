@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../constants/ui_constants.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/common/empty_state.dart';
 import '../widgets/custom_title_bar.dart';
@@ -85,11 +86,19 @@ class _LoginPageState extends ConsumerState<LoginPage>
   }
 
   double _getCardWidth(double screenWidth) {
-    if (screenWidth < 400) return screenWidth - 32;
-    if (screenWidth < 600) return 280;
-    if (screenWidth < 900) return 340;
-    if (screenWidth < 1200) return 380;
-    return 420;
+    if (screenWidth < UiConstants.loginBreakpointXs) {
+      return screenWidth - UiConstants.loginSmallScreenMargin;
+    }
+    if (screenWidth < UiConstants.loginBreakpointSm) {
+      return UiConstants.loginCardWidthSm;
+    }
+    if (screenWidth < UiConstants.loginBreakpointMd) {
+      return UiConstants.loginCardWidthMd;
+    }
+    if (screenWidth < UiConstants.loginBreakpointLg) {
+      return UiConstants.loginCardWidthLg;
+    }
+    return UiConstants.loginCardWidthXl;
   }
 
   @override
@@ -142,8 +151,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
           child: LayoutBuilder(
             builder: (context, constraints) {
               final cardWidth = _getCardWidth(constraints.maxWidth);
-              const logoVisualHeight = 68;
-              final shiftAmount = logoVisualHeight / 2;
+              final shiftAmount = UiConstants.loginLogoVisualHeight / 2;
 
               final formBody = Column(
                 mainAxisSize: MainAxisSize.min,

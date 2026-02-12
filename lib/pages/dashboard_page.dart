@@ -15,6 +15,7 @@ import '../utils/app_logger.dart';
 import '../widgets/common/empty_state.dart';
 import '../constants/icon_sizes.dart';
 import '../widgets/custom_title_bar.dart';
+import '../constants/ui_constants.dart';
 import '../widgets/dashboard/dashboard_action_area.dart';
 import '../widgets/dashboard/dashboard_cards.dart';
 import '../widgets/dashboard/dashboard_side_sheet_layout.dart';
@@ -76,7 +77,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       return Scaffold(
         body: Center(
           child: Transform.scale(
-            scale: 2.0,
+            scale: UiConstants.dashboardLoadingScale,
             child: const LoadingIndicatorM3E(
               variant: LoadingIndicatorM3EVariant.defaultStyle,
               semanticLabel: 'Loading portal',
@@ -127,7 +128,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       return Scaffold(
         body: Center(
           child: Transform.scale(
-            scale: 2.0,
+            scale: UiConstants.dashboardLoadingScale,
             child: const LoadingIndicatorM3E(
               variant: LoadingIndicatorM3EVariant.defaultStyle,
               semanticLabel: 'Loading portal',
@@ -174,22 +175,23 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       body: DragToResizeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            const sheetTargetWidth = 380.0;
             final totalWidth = constraints.maxWidth;
-            final effectiveSheetWidth = totalWidth < sheetTargetWidth
+            final effectiveSheetWidth =
+                totalWidth < UiConstants.dashboardSheetTargetWidth
                 ? totalWidth
-                : sheetTargetWidth;
+                : UiConstants.dashboardSheetTargetWidth;
             final horizontalPadding = context.m3e.spacing.xxl * 2;
             final maxWidth = math.max(
               0.0,
-              math.min(1200.0, constraints.maxWidth - (horizontalPadding * 2)),
+              math.min(
+                UiConstants.dashboardMaxContentWidth,
+                constraints.maxWidth - (horizontalPadding * 2),
+              ),
             );
-            const minGroupCardWidth = 640.0;
-            const minEventsCardWidth = 320.0;
             final canShowSideBySide =
                 maxWidth >=
-                (minGroupCardWidth +
-                    minEventsCardWidth +
+                (UiConstants.dashboardMinGroupCardWidth +
+                    UiConstants.dashboardMinEventsCardWidth +
                     context.m3e.spacing.lg);
             final sideBySideBottomPadding = context.m3e.spacing.xxl * 3;
             final stackedBottomPadding = context.m3e.spacing.xl;
