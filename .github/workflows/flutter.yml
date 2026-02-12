@@ -60,10 +60,14 @@ jobs:
       - name: Build macOS
         run: flutter build macos --release
 
+      - name: Sanitize ref name
+        id: sanitize
+        run: echo "sanitized_ref=$(echo '${{ github.ref_name }}' | sed 's/[\/\\:]/-/g')" >> $GITHUB_OUTPUT
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v6
         with:
-          name: portal-macos-${{ github.ref_name }}-${{ github.sha }}
+          name: portal-macos-${{ steps.sanitize.outputs.sanitized_ref }}-${{ github.sha }}
           path: build/macos/Build/Products/Release/*.app
           retention-days: 90
 
@@ -95,9 +99,14 @@ jobs:
       - name: Build Windows
         run: flutter build windows --release
 
+      - name: Sanitize ref name
+        id: sanitize
+        run: echo "sanitized_ref=$(echo '${{ github.ref_name }}' | sed 's/[\/\\:]/-/g')" >> $GITHUB_OUTPUT
+        shell: bash
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v6
         with:
-          name: portal-windows-${{ github.ref_name }}-${{ github.sha }}
+          name: portal-windows-${{ steps.sanitize.outputs.sanitized_ref }}-${{ github.sha }}
           path: build/windows/x64/runner/Release/*
           retention-days: 90
