@@ -33,7 +33,9 @@ class GroupAvatar extends StatelessWidget {
       height: avatarSize,
       decoration: BoxDecoration(
         borderRadius: borderRadius ?? defaultBorderRadius,
-        color: hasImage ? null : GroupUtils.getAvatarColor(group),
+        color: hasImage
+            ? null
+            : GroupUtils.getAvatarColor(group, context: context),
       ),
       child: ClipRRect(
         borderRadius: borderRadius ?? defaultBorderRadius,
