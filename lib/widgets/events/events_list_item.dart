@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
@@ -36,7 +37,7 @@ class EventsListItem extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             TimelineRail(
-              label: _formatTime(event.event.startsAt),
+              label: DateFormat.jm().format(event.event.startsAt),
               height: avatarSize,
               isFirst: isFirst,
               isLast: isLast,
@@ -98,15 +99,6 @@ class EventsListItem extends StatelessWidget {
       return 'Other';
     }
     return rawCategory[0].toUpperCase() + rawCategory.substring(1);
-  }
-
-  String _formatTime(DateTime date) {
-    final hour = date.hour;
-    final minute = date.minute.toString().padLeft(2, '0');
-    final isAm = hour < 12;
-    final hour12 = hour % 12 == 0 ? 12 : hour % 12;
-    final suffix = isAm ? 'AM' : 'PM';
-    return '$hour12:$minute $suffix';
   }
 
   String _fallbackGroupName(String groupId) {

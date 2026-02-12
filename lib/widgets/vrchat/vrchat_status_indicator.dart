@@ -7,6 +7,7 @@ import '../../theme/vrchat_status_colors.dart';
 import '../../providers/vrchat_status_provider.dart';
 import '../../constants/ui_constants.dart';
 import '../../constants/icon_sizes.dart';
+import '../../utils/timing_utils.dart';
 
 class VrchatStatusWidget extends ConsumerWidget {
   const VrchatStatusWidget({super.key});
@@ -170,7 +171,12 @@ class VrchatStatusWidget extends ConsumerWidget {
                   _buildIncidentsSection(context, status.activeIncidents),
                 ],
                 SizedBox(height: context.m3e.spacing.md),
-                _buildLastUpdated(context, status.lastUpdated),
+                Text(
+                  'Last updated: ${TimingUtils.formatRelativeTimeVerbose(status.lastUpdated)}',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
           ),
@@ -397,7 +403,9 @@ class VrchatStatusWidget extends ConsumerWidget {
                     ),
                     SizedBox(height: context.m3e.spacing.xs),
                     Text(
-                      _formatTimestamp(latestUpdate.createdAt),
+                      TimingUtils.formatRelativeTimeVerbose(
+                        latestUpdate.createdAt,
+                      ),
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
@@ -412,24 +420,6 @@ class VrchatStatusWidget extends ConsumerWidget {
     );
   }
 
-  Widget _buildLastUpdated(BuildContext context, DateTime lastUpdated) {
-    final elapsed = DateTime.now().difference(lastUpdated);
-    final text = elapsed.inMinutes < 1
-        ? 'Just now'
-        : elapsed.inHours < 1
-        ? '${elapsed.inMinutes} min ago'
-        : elapsed.inDays < 1
-        ? '${elapsed.inHours} hour${elapsed.inHours > 1 ? 's' : ''} ago'
-        : '${elapsed.inDays} day${elapsed.inDays > 1 ? 's' : ''} ago';
-
-    return Text(
-      'Last updated: $text',
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
-    );
-  }
-
   String _formatIncidentStatus(IncidentStatus status) {
     switch (status) {
       case IncidentStatus.investigating:
@@ -440,23 +430,6 @@ class VrchatStatusWidget extends ConsumerWidget {
         return 'Monitoring';
       case IncidentStatus.resolved:
         return 'Resolved';
-    }
-  }
-
-  String _formatTimestamp(DateTime timestamp) {
-    final now = DateTime.now();
-    final elapsed = now.difference(timestamp);
-
-    if (elapsed.inMinutes < 1) {
-      return 'Just now';
-    } else if (elapsed.inHours < 1) {
-      return '${elapsed.inMinutes} min ago';
-    } else if (elapsed.inDays < 1) {
-      return '${elapsed.inHours}h ago';
-    } else if (elapsed.inDays < 7) {
-      return '${elapsed.inDays}d ago';
-    } else {
-      return '${timestamp.month}/${timestamp.day}/${timestamp.year % 100}';
     }
   }
 

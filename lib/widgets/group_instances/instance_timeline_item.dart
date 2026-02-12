@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../../constants/ui_constants.dart';
@@ -28,7 +29,7 @@ class InstanceTimelineItem extends StatelessWidget {
     final instance = instanceWithGroup.instance;
     final world = instance.world;
     final detectedTime = instanceWithGroup.firstDetectedAt;
-    final timeLabel = _formatTime(detectedTime);
+    final timeLabel = DateFormat.jm().format(detectedTime ?? DateTime.now());
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -104,15 +105,5 @@ class InstanceTimelineItem extends StatelessWidget {
         if (!isLast) TimelineConnector(height: context.m3e.spacing.sm),
       ],
     );
-  }
-
-  String _formatTime(DateTime? date) {
-    final dt = date ?? DateTime.now();
-    final hour = dt.hour;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final isAm = hour < 12;
-    final hour12 = hour % 12 == 0 ? 12 : hour % 12;
-    final suffix = isAm ? 'AM' : 'PM';
-    return '$hour12:$minute $suffix';
   }
 }
