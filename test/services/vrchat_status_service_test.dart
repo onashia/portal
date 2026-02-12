@@ -713,7 +713,7 @@ void main() {
         ),
       );
 
-      expect(() => service.fetchStatus(), throwsA(anything));
+      expect(() => service.fetchStatus(), throwsA(isA<DioException>()));
     });
 
     test('6.3: Generic DioException', () async {
@@ -737,7 +737,7 @@ void main() {
       );
       when(() => mockDio.get(any())).thenAnswer((_) async => response);
 
-      expect(() => service.fetchStatus(), throwsA(anything));
+      expect(() => service.fetchStatus(), throwsA(isA<Error>()));
     });
 
     test('7.2: Response data is not a Map (list instead)', () async {
@@ -748,13 +748,13 @@ void main() {
       );
       when(() => mockDio.get(any())).thenAnswer((_) async => response);
 
-      expect(() => service.fetchStatus(), throwsA(anything));
+      expect(() => service.fetchStatus(), throwsA(isA<Error>()));
     });
 
     test('7.3: Missing status field', () async {
       mockSuccessResponse({'components': [], 'incidents': []});
 
-      expect(() => service.fetchStatus(), throwsA(anything));
+      expect(() => service.fetchStatus(), throwsA(isA<Error>()));
     });
 
     test('7.4: Components is not a List (object instead)', () async {
@@ -764,7 +764,7 @@ void main() {
         'incidents': [],
       });
 
-      expect(() => service.fetchStatus(), throwsA(anything));
+      expect(() => service.fetchStatus(), throwsA(isA<Error>()));
     });
 
     test('7.5: Incidents is not a List (object instead)', () async {
@@ -774,7 +774,7 @@ void main() {
         'incidents': {},
       });
 
-      expect(() => service.fetchStatus(), throwsA(anything));
+      expect(() => service.fetchStatus(), throwsA(isA<Error>()));
     });
   });
 }
