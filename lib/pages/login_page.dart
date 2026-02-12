@@ -1,9 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_collection/m3e_collection.dart';
 import 'package:window_manager/window_manager.dart';
+
+import '../constants/ui_constants.dart';
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
+import '../widgets/common/empty_state.dart';
 import '../widgets/custom_title_bar.dart';
+import '../widgets/login/login_submit_button.dart';
+import '../widgets/login/login_back_button.dart';
+import '../widgets/login/login_error_message.dart';
+import '../widgets/login/login_branding.dart';
+import '../widgets/login/login_form_card.dart';
+import '../widgets/login/login_form_fields.dart';
+import '../widgets/login/login_scaffolds.dart';
+import '../widgets/login/login_theme_toggle.dart';
+import '../widgets/login/two_factor_form_fields.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -12,17 +24,36 @@ class LoginPage extends ConsumerStatefulWidget {
   ConsumerState<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends ConsumerState<LoginPage> {
+class _LoginPageState extends ConsumerState<LoginPage>
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _twoFactorController = TextEditingController();
+  final _obscurePassword = ValueNotifier<bool>(true);
+  final _usernameFocusNode = FocusNode();
+  final _passwordFocusNode = FocusNode();
+  final _twoFactorFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _usernameFocusNode.requestFocus();
+      }
+    });
+  }
 
   @override
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
     _twoFactorController.dispose();
+    _obscurePassword.dispose();
+    _usernameFocusNode.dispose();
+    _passwordFocusNode.dispose();
+    _twoFactorFocusNode.dispose();
     super.dispose();
   }
 
@@ -32,275 +63,163 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final authState = ref.read(authProvider).value;
     if (authState == null) return;
 
-    if (authState.requiresTwoFactorAuth) {
-      final code = _twoFactorController.text;
+    final username = _usernameController.text;
+    final password = _passwordController.text;
+    final code = _twoFactorController.text;
+    final requiresTwoFactor = authState.requiresTwoFactorAuth;
+
+    if (requiresTwoFactor) {
       await ref.read(authProvider.notifier).verify2FA(code);
       if (!mounted) return;
-      _twoFactorController.clear();
+      final newState = ref.read(authProvider).value;
+      if (newState?.status == AuthStatus.authenticated) {
+        _twoFactorController.clear();
+      }
     } else {
-      await ref
-          .read(authProvider.notifier)
-          .login(_usernameController.text, _passwordController.text);
+      await ref.read(authProvider.notifier).login(username, password);
       if (!mounted) return;
-      _passwordController.clear();
+      final newState = ref.read(authProvider).value;
+      if (newState?.status == AuthStatus.authenticated) {
+        _passwordController.clear();
+      }
     }
+  }
+
+  double _getCardWidth(double screenWidth) {
+    if (screenWidth < UiConstants.loginBreakpointXs) {
+      return screenWidth - UiConstants.loginSmallScreenMargin;
+    }
+    if (screenWidth < UiConstants.loginBreakpointSm) {
+      return UiConstants.loginCardWidthSm;
+    }
+    if (screenWidth < UiConstants.loginBreakpointMd) {
+      return UiConstants.loginCardWidthMd;
+    }
+    if (screenWidth < UiConstants.loginBreakpointLg) {
+      return UiConstants.loginCardWidthLg;
+    }
+    return UiConstants.loginCardWidthXl;
   }
 
   @override
   Widget build(BuildContext context) {
     final authValue = ref.watch(authProvider);
 
-    return authValue.when(
-      loading: () => Scaffold(
+    if (authValue.isLoading) {
+      return const LoginLoadingScaffold();
+    }
+
+    if (authValue.hasError) {
+      final scheme = Theme.of(context).colorScheme;
+      return Scaffold(
         appBar: CustomTitleBar(
           title: 'portal.',
           icon: Icons.tonality,
-          actions: [
-            IconButton(
-              icon: Icon(
-                ref.watch(themeProvider) == ThemeMode.light
-                    ? Icons.dark_mode
-                    : Icons.light_mode,
-              ),
-              tooltip: 'Toggle Theme',
-              onPressed: () {
-                ref.read(themeProvider.notifier).toggleTheme();
-              },
-            ),
-          ],
+          showBranding: false,
+          actions: const [LoginThemeToggle()],
         ),
-        body: const Center(child: CircularProgressIndicator()),
+        body: EmptyState(
+          icon: Icons.error_outline,
+          title: 'An error occurred',
+          message: authValue.error.toString(),
+          iconColor: scheme.error,
+          padding: EdgeInsets.all(context.m3e.spacing.lg),
+        ),
+      );
+    }
+
+    final authState = authValue.value;
+    if (authState == null) {
+      return const SizedBox.shrink();
+    }
+    final passwordErrorMessage =
+        authState.status == AuthStatus.error ||
+            authState.status == AuthStatus.requiresEmailVerification
+        ? authState.errorMessage
+        : null;
+
+    return Scaffold(
+      appBar: CustomTitleBar(
+        title: 'portal.',
+        icon: Icons.tonality,
+        showBranding: false,
+        actions: const [LoginThemeToggle()],
       ),
-      error: (error, stack) => Scaffold(
-        appBar: CustomTitleBar(
-          title: 'portal.',
-          icon: Icons.tonality,
-          actions: [
-            IconButton(
-              icon: Icon(
-                ref.watch(themeProvider) == ThemeMode.light
-                    ? Icons.dark_mode
-                    : Icons.light_mode,
-              ),
-              tooltip: 'Toggle Theme',
-              onPressed: () {
-                ref.read(themeProvider.notifier).toggleTheme();
-              },
-            ),
-          ],
-        ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                const SizedBox(height: 16),
-                Text(
-                  'An error occurred',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  error.toString(),
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-      data: (authState) => Scaffold(
-        appBar: CustomTitleBar(
-          title: 'portal.',
-          icon: Icons.tonality,
-          actions: [
-            IconButton(
-              icon: Icon(
-                ref.watch(themeProvider) == ThemeMode.light
-                    ? Icons.dark_mode
-                    : Icons.light_mode,
-              ),
-              tooltip: 'Toggle Theme',
-              onPressed: () {
-                ref.read(themeProvider.notifier).toggleTheme();
-              },
-            ),
-          ],
-        ),
-        body: DragToResizeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Icon(
-                            Icons.tonality,
-                            size: 64,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            authState.requiresTwoFactorAuth
-                                ? 'Two-Factor Authentication'
-                                : 'Welcome to portal.',
-                            style: Theme.of(context).textTheme.headlineMedium,
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            authState.requiresTwoFactorAuth
-                                ? 'Enter your verification code'
-                                : 'Sign in to your VRChat account',
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 32),
-                          if (!authState.requiresTwoFactorAuth) ...[
-                            TextFormField(
-                              controller: _usernameController,
-                              decoration: const InputDecoration(
-                                labelText: 'Username',
-                                hintText: 'Enter your username',
-                                prefixIcon: Icon(Icons.person_outline),
-                              ),
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter your username';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _passwordController,
-                              decoration: const InputDecoration(
-                                labelText: 'Password',
-                                hintText: 'Enter your password',
-                                prefixIcon: Icon(Icons.lock_outline),
-                              ),
-                              obscureText: true,
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter your password';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 16),
-                          ] else
-                            TextFormField(
-                              controller: _twoFactorController,
-                              decoration: const InputDecoration(
-                                labelText: 'Authenticator Code',
-                                hintText: 'Enter 6-digit code',
-                                prefixIcon: Icon(Icons.security),
-                              ),
-                              keyboardType: TextInputType.number,
-                              maxLength: 6,
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter your verification code';
-                                }
-                                if (value.length != 6) {
-                                  return 'Code must be 6 digits';
-                                }
-                                return null;
-                              },
-                            ),
-                          if (authState.errorMessage != null) ...[
-                            const SizedBox(height: 16),
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .errorContainer
-                                    .withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.error_outline,
-                                    color: Theme.of(context).colorScheme.error,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      authState.errorMessage!,
-                                      style: TextStyle(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.error,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 24),
-                          FilledButton(
-                            onPressed: authState.status == AuthStatus.loading
-                                ? null
-                                : _handleSubmit,
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            child: authState.status == AuthStatus.loading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : Text(
-                                    authState.status ==
-                                            AuthStatus.requiresEmailVerification
-                                        ? 'Retry Login'
-                                        : authState.requiresTwoFactorAuth
-                                        ? 'Verify'
-                                        : 'Sign In',
-                                  ),
-                          ),
-                          if (authState.requiresTwoFactorAuth) ...[
-                            const SizedBox(height: 16),
-                            TextButton(
-                              onPressed: () {
-                                ref.read(authProvider.notifier).logout();
-                                _twoFactorController.clear();
-                              },
-                              child: const Text('Back to login'),
-                            ),
-                          ],
-                        ],
+      body: DragToResizeArea(
+        child: Semantics(
+          label: 'Login form for VRChat portal',
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final cardWidth = _getCardWidth(constraints.maxWidth);
+              final shiftAmount = UiConstants.loginLogoVisualHeight / 2;
+
+              final formBody = Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!authState.requiresTwoFactorAuth)
+                    LoginFormFields(
+                      usernameController: _usernameController,
+                      passwordController: _passwordController,
+                      usernameFocusNode: _usernameFocusNode,
+                      passwordFocusNode: _passwordFocusNode,
+                      obscurePassword: _obscurePassword,
+                      errorMessage: passwordErrorMessage,
+                      errorMessageWidget: LoginErrorMessage(
+                        passwordErrorMessage,
                       ),
+                    )
+                  else
+                    TwoFactorFormFields(
+                      controller: _twoFactorController,
+                      focusNode: _twoFactorFocusNode,
+                      errorMessage: authState.errorMessage,
+                      onSubmit: _handleSubmit,
+                      errorMessageWidget: LoginErrorMessage(
+                        authState.errorMessage,
+                      ),
+                    ),
+                  if (authState.requiresTwoFactorAuth)
+                    SizedBox(height: context.m3e.spacing.lg),
+                  LoginSubmitButton(
+                    authState: authState,
+                    onPressed: _handleSubmit,
+                  ),
+                  if (authState.requiresTwoFactorAuth)
+                    Padding(
+                      padding: EdgeInsets.only(top: context.m3e.spacing.md),
+                      child: LoginBackButton(
+                        onPressed: () {
+                          _passwordController.clear();
+                          ref.read(authProvider.notifier).logout();
+                          _twoFactorController.clear();
+                        },
+                      ),
+                    ),
+                ],
+              );
+
+              return Center(
+                child: Transform.translate(
+                  offset: Offset(0, -shiftAmount),
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.all(context.m3e.spacing.lg),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const LoginBranding(),
+                        LoginFormCard(
+                          authState: authState,
+                          formKey: _formKey,
+                          formBody: formBody,
+                          cardWidth: cardWidth,
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ),
       ),

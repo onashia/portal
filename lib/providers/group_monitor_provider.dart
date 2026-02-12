@@ -1,59 +1,18 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/app_constants.dart';
 import '../utils/app_logger.dart';
 import '../models/group_instance_with_group.dart';
+import '../services/invite_service.dart';
 import 'api_call_counter.dart';
 import 'auth_provider.dart';
+import 'group_monitor_state.dart';
+import 'group_monitor_storage.dart';
 
-@immutable
-class GroupMonitorState {
-  final List<LimitedUserGroups> allGroups;
-  final Set<String> selectedGroupIds;
-  final Map<String, List<GroupInstanceWithGroup>> groupInstances;
-  final List<GroupInstanceWithGroup> newInstances;
-  final bool isMonitoring;
-  final bool isLoading;
-  final String? errorMessage;
-  final Map<String, String> groupErrors;
-
-  const GroupMonitorState({
-    this.allGroups = const [],
-    this.selectedGroupIds = const {},
-    this.groupInstances = const {},
-    this.newInstances = const [],
-    this.isMonitoring = false,
-    this.isLoading = false,
-    this.errorMessage,
-    this.groupErrors = const {},
-  });
-
-  GroupMonitorState copyWith({
-    List<LimitedUserGroups>? allGroups,
-    Set<String>? selectedGroupIds,
-    Map<String, List<GroupInstanceWithGroup>>? groupInstances,
-    List<GroupInstanceWithGroup>? newInstances,
-    bool? isMonitoring,
-    bool? isLoading,
-    String? errorMessage,
-    Map<String, String>? groupErrors,
-  }) {
-    return GroupMonitorState(
-      allGroups: allGroups ?? this.allGroups,
-      selectedGroupIds: selectedGroupIds ?? this.selectedGroupIds,
-      groupInstances: groupInstances ?? this.groupInstances,
-      newInstances: newInstances ?? this.newInstances,
-      isMonitoring: isMonitoring ?? this.isMonitoring,
-      isLoading: isLoading ?? this.isLoading,
-      errorMessage: errorMessage ?? this.errorMessage,
-      groupErrors: groupErrors ?? this.groupErrors,
-    );
-  }
-}
+export 'group_monitor_state.dart';
 
 class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   final String arg;
@@ -63,18 +22,62 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   @override
   GroupMonitorState build() {
     _loadSelectedGroups();
-    return GroupMonitorState();
+    _loadAutoInviteSetting();
+    _loadBoostSettings();
+    return const GroupMonitorState(isLoading: true);
+  }
+
+  Future<void> _loadBoostSettings() async {
+    try {
+      final settings = await GroupMonitorStorage.loadBoostSettings();
+      final boostedGroupId = settings.groupId;
+      final boostExpiresAt = settings.expiresAt;
+
+      if (boostedGroupId != null &&
+          boostExpiresAt != null &&
+          boostExpiresAt.isAfter(DateTime.now())) {
+        await _clearBoost(persist: true, logExpired: false);
+        return;
+      } else if (boostedGroupId != null || boostExpiresAt != null) {
+        await _clearBoost(persist: true, logExpired: true);
+      }
+    } catch (e) {
+      AppLogger.error(
+        'Failed to load boost settings',
+        subCategory: 'group_monitor',
+        error: e,
+      );
+    }
+  }
+
+  Future<void> _loadAutoInviteSetting() async {
+    try {
+      final enabled = await GroupMonitorStorage.loadAutoInviteEnabled();
+      state = state.copyWith(autoInviteEnabled: enabled);
+      AppLogger.debug(
+        'Loaded auto-invite setting: $enabled',
+        subCategory: 'group_monitor',
+      );
+    } catch (e) {
+      AppLogger.error(
+        'Failed to load auto-invite setting',
+        subCategory: 'group_monitor',
+        error: e,
+      );
+    }
   }
 
   Future<void> _loadSelectedGroups() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final selectedIds = prefs.getStringList('selectedGroupIds') ?? [];
+      final selectedIds = await GroupMonitorStorage.loadSelectedGroupIds();
       state = state.copyWith(selectedGroupIds: selectedIds.toSet());
       AppLogger.debug(
         'Loaded ${selectedIds.length} selected groups from storage',
         subCategory: 'group_monitor',
       );
+      if (selectedIds.isNotEmpty && !state.isMonitoring) {
+        startMonitoring();
+      }
     } catch (e) {
       AppLogger.error(
         'Failed to load selected groups',
@@ -84,13 +87,138 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     }
   }
 
+  Future<void> toggleAutoInvite() async {
+    final newValue = !state.autoInviteEnabled;
+    state = state.copyWith(autoInviteEnabled: newValue);
+    try {
+      await GroupMonitorStorage.saveAutoInviteEnabled(newValue);
+      AppLogger.info(
+        'Auto-invite set to $newValue',
+        subCategory: 'group_monitor',
+      );
+    } catch (e) {
+      AppLogger.error(
+        'Failed to save auto-invite setting',
+        subCategory: 'group_monitor',
+        error: e,
+      );
+    }
+  }
+
+  Future<void> setBoostedGroup(String? groupId) async {
+    if (groupId == null || groupId.isEmpty) {
+      await _clearBoost(persist: true, logExpired: false);
+      return;
+    }
+
+    if (!state.isMonitoring) {
+      AppLogger.warning(
+        'Cannot enable boost while monitoring is off',
+        subCategory: 'group_monitor',
+      );
+      return;
+    }
+
+    if (groupId == state.boostedGroupId && state.isBoostActive) {
+      await _clearBoost(persist: true, logExpired: false);
+      return;
+    }
+
+    if (!state.selectedGroupIds.contains(groupId)) {
+      AppLogger.warning(
+        'Cannot boost unselected group $groupId',
+        subCategory: 'group_monitor',
+      );
+      return;
+    }
+
+    final expiresAt = DateTime.now().add(
+      const Duration(minutes: AppConstants.boostDurationMinutes),
+    );
+    _boostStartedAt = DateTime.now();
+    _boostPollCount = 0;
+    _boostFirstSeenLogged = false;
+    state = state.copyWith(boostedGroupId: groupId, boostExpiresAt: expiresAt);
+    state = state.copyWith(
+      boostPollCount: 0,
+      lastBoostLatencyMs: null,
+      lastBoostFetchedAt: null,
+      boostFirstSeenAfter: null,
+    );
+    await _persistBoostSettings(groupId: groupId, boostExpiresAt: expiresAt);
+    AppLogger.info(
+      'Boosted group set to $groupId',
+      subCategory: 'group_monitor',
+    );
+
+    if (state.isMonitoring) {
+      _scheduleNextBoostPoll(immediate: true);
+    }
+  }
+
+  Future<void> clearBoost() async {
+    await _clearBoost(persist: true, logExpired: false);
+  }
+
+  Future<void> toggleBoostForGroup(String groupId) async {
+    if (state.boostedGroupId == groupId) {
+      await clearBoost();
+    } else {
+      await setBoostedGroup(groupId);
+    }
+  }
+
+  Future<void> _clearBoost({
+    required bool persist,
+    required bool logExpired,
+  }) async {
+    _boostPollingTimer?.cancel();
+    _boostPollingTimer = null;
+    _boostStartedAt = null;
+    _boostPollCount = 0;
+    _boostFirstSeenLogged = false;
+    state = state.copyWith(
+      boostedGroupId: null,
+      boostExpiresAt: null,
+      boostPollCount: 0,
+      lastBoostLatencyMs: null,
+      lastBoostFetchedAt: null,
+      boostFirstSeenAfter: null,
+    );
+
+    if (persist) {
+      await _persistBoostSettings(groupId: null, boostExpiresAt: null);
+    }
+
+    if (logExpired) {
+      AppLogger.info(
+        'Boost expired, reverting to normal polling',
+        subCategory: 'group_monitor',
+      );
+    }
+  }
+
+  Future<void> _persistBoostSettings({
+    required String? groupId,
+    required DateTime? boostExpiresAt,
+  }) async {
+    try {
+      await GroupMonitorStorage.saveBoostSettings(
+        groupId: groupId,
+        boostExpiresAt: boostExpiresAt,
+      );
+    } catch (e) {
+      AppLogger.error(
+        'Failed to persist boost settings',
+        subCategory: 'group_monitor',
+        error: e,
+      );
+    }
+  }
+
   Future<void> _saveSelectedGroups() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(
-        'selectedGroupIds',
-        state.selectedGroupIds.toList(),
-      );
+      await GroupMonitorStorage.saveSelectedGroupIds(state.selectedGroupIds);
     } catch (e) {
       AppLogger.error(
         'Failed to save selected groups',
@@ -119,7 +247,11 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         subCategory: 'group_monitor',
       );
 
-      state = state.copyWith(allGroups: groups, isLoading: false);
+      state = state.copyWith(
+        allGroups: groups,
+        isLoading: false,
+        lastGroupsFetchTime: DateTime.now(),
+      );
     } catch (e, s) {
       AppLogger.error(
         'Failed to fetch user groups',
@@ -134,6 +266,23 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     }
   }
 
+  Future<void> fetchUserGroupsIfNeeded({int minIntervalSeconds = 5}) async {
+    if (state.lastGroupsFetchTime != null) {
+      final timeSinceLastFetch = DateTime.now().difference(
+        state.lastGroupsFetchTime!,
+      );
+      if (timeSinceLastFetch.inSeconds < minIntervalSeconds) {
+        AppLogger.debug(
+          'Skipping fetch: last fetch was ${timeSinceLastFetch.inSeconds}s ago',
+          subCategory: 'group_monitor',
+        );
+        return;
+      }
+    }
+
+    await fetchUserGroups();
+  }
+
   void toggleGroupSelection(String groupId) {
     final newSelection = Set<String>.from(state.selectedGroupIds);
     final newGroupInstances = Map<String, List<GroupInstanceWithGroup>>.from(
@@ -146,8 +295,17 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       // Clear cached data for deselected group to free memory
       newGroupInstances.remove(groupId);
       newGroupErrors.remove(groupId);
+      if (state.boostedGroupId == groupId) {
+        unawaited(_clearBoost(persist: true, logExpired: false));
+      }
+      if (newSelection.isEmpty && state.isMonitoring) {
+        stopMonitoring();
+      }
     } else {
       newSelection.add(groupId);
+      if (newSelection.length == 1 && !state.isMonitoring) {
+        startMonitoring();
+      }
     }
 
     state = state.copyWith(
@@ -163,7 +321,101 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   }
 
   Timer? _pollingTimer;
+  Timer? _boostPollingTimer;
   int _backoffDelay = 1;
+  bool _isFetching = false;
+  bool _hasBaseline = false;
+  DateTime? _boostStartedAt;
+  int _boostPollCount = 0;
+  bool _boostFirstSeenLogged = false;
+  final _random = math.Random();
+
+  int _nextPollDelaySeconds() {
+    final base = AppConstants.pollingIntervalSeconds;
+    final jitter = AppConstants.pollingJitterSeconds;
+    if (jitter <= 0) {
+      return base;
+    }
+    final delta = _random.nextInt(jitter * 2 + 1) - jitter;
+    return math.max(1, base + delta);
+  }
+
+  int _nextBoostPollDelaySeconds() {
+    final base = AppConstants.boostPollingIntervalSeconds;
+    final jitter = AppConstants.boostPollingJitterSeconds;
+    if (jitter <= 0) {
+      return base;
+    }
+    final delta = _random.nextInt(jitter * 2 + 1) - jitter;
+    return math.max(1, base + delta);
+  }
+
+  void _scheduleNextBoostPoll({bool immediate = false}) {
+    _boostPollingTimer?.cancel();
+
+    if (!state.isMonitoring || !state.isBoostActive) {
+      return;
+    }
+
+    final delaySeconds = immediate ? 0 : _nextBoostPollDelaySeconds();
+    _boostPollingTimer = Timer(Duration(seconds: delaySeconds), () async {
+      await fetchBoostedGroupInstances();
+      _scheduleNextBoostPoll();
+    });
+  }
+
+  Future<bool> _ensureBoostActive() async {
+    if (state.isBoostActive) {
+      return true;
+    }
+
+    if (state.boostedGroupId != null || state.boostExpiresAt != null) {
+      await _clearBoost(persist: true, logExpired: true);
+    }
+    return false;
+  }
+
+  GroupInstanceWithGroup? _selectInviteTarget(
+    List<Instance> instances,
+    String groupId,
+  ) {
+    if (instances.isEmpty) {
+      return null;
+    }
+
+    Instance? best;
+    for (final instance in instances) {
+      if (best == null || instance.nUsers > best.nUsers) {
+        best = instance;
+      }
+    }
+
+    if (best == null || best.worldId.isEmpty || best.instanceId.isEmpty) {
+      AppLogger.warning(
+        'Skipping invite: invalid instance identifiers for group $groupId',
+        subCategory: 'group_monitor',
+      );
+      return null;
+    }
+
+    // We intentionally do not gate on canRequestInvite; its meaning for
+    // self-invites is unclear, so we attempt and handle failures.
+    return GroupInstanceWithGroup(instance: best, groupId: groupId);
+  }
+
+  void _scheduleNextPoll({bool immediate = false}) {
+    _pollingTimer?.cancel();
+
+    if (!state.isMonitoring) {
+      return;
+    }
+
+    final delaySeconds = immediate ? 0 : _nextPollDelaySeconds();
+    _pollingTimer = Timer(Duration(seconds: delaySeconds), () async {
+      await fetchGroupInstances();
+      _scheduleNextPoll();
+    });
+  }
 
   void startMonitoring() {
     AppLogger.info('Starting monitoring', subCategory: 'group_monitor');
@@ -176,6 +428,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
+    _hasBaseline = false;
     state = state.copyWith(isMonitoring: true);
     AppLogger.info(
       'Started monitoring ${state.selectedGroupIds.length} groups',
@@ -183,13 +436,11 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     );
 
     try {
-      _pollingTimer = Timer.periodic(
-        Duration(seconds: AppConstants.pollingIntervalSeconds),
-        (_) => fetchGroupInstances(),
-      );
-
       // Initial fetch to populate data immediately
-      fetchGroupInstances();
+      _scheduleNextPoll(immediate: true);
+      if (state.isBoostActive) {
+        _scheduleNextBoostPoll(immediate: true);
+      }
     } catch (e, s) {
       AppLogger.error(
         'Failed to start monitoring',
@@ -206,6 +457,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
     _pollingTimer?.cancel();
     _pollingTimer = null;
+    _boostPollingTimer?.cancel();
+    _boostPollingTimer = null;
+    unawaited(_clearBoost(persist: true, logExpired: false));
     state = state.copyWith(isMonitoring: false);
     _backoffDelay = 1;
 
@@ -218,6 +472,14 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       subCategory: 'group_monitor',
     );
 
+    if (_isFetching) {
+      AppLogger.debug(
+        'Fetch already in progress, skipping',
+        subCategory: 'group_monitor',
+      );
+      return;
+    }
+
     if (state.selectedGroupIds.isEmpty) {
       AppLogger.warning(
         'No groups selected, skipping instance fetch',
@@ -226,6 +488,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
+    _isFetching = true;
     try {
       AppLogger.debug(
         'Fetching instances for ${state.selectedGroupIds.length} groups',
@@ -233,7 +496,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       );
 
       final api = ref.read(vrchatApiProvider);
+      final inviteService = ref.read(inviteServiceProvider);
       final newInstances = <GroupInstanceWithGroup>[];
+      final inviteTargets = <GroupInstanceWithGroup>[];
       final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
       final newGroupErrors = <String, String>{};
 
@@ -283,30 +548,76 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         final previousInstanceIds = previousInstances
             .map((i) => i.instance.instanceId)
             .toSet();
+        final previousInstancesMap = {
+          for (var inst in previousInstances) inst.instance.instanceId: inst,
+        };
 
-        // Track instances that weren't in previous fetch
+        if (_hasBaseline &&
+            state.isMonitoring &&
+            state.autoInviteEnabled &&
+            previousInstances.isEmpty &&
+            instances.isNotEmpty) {
+          final target = _selectInviteTarget(instances, groupId);
+          if (target != null) {
+            inviteTargets.add(target);
+          }
+        }
+
         for (final instance in instances) {
           final instanceWithGroup = GroupInstanceWithGroup(
             instance: instance,
             groupId: groupId,
+            firstDetectedAt: previousInstanceIds.contains(instance.instanceId)
+                ? previousInstancesMap[instance.instanceId]?.firstDetectedAt
+                : DateTime.now(),
           );
           if (!previousInstanceIds.contains(instance.instanceId)) {
             newInstances.add(instanceWithGroup);
           }
         }
 
+        final newInstancesMap = {
+          for (var inst in newInstances) inst.instance.instanceId: inst,
+        };
+
         newGroupInstances[groupId] = instances
-            .map((i) => GroupInstanceWithGroup(instance: i, groupId: groupId))
+            .map(
+              (i) => GroupInstanceWithGroup(
+                instance: i,
+                groupId: groupId,
+                firstDetectedAt:
+                    newInstancesMap[i.instanceId]?.firstDetectedAt ??
+                    previousInstancesMap[i.instanceId]?.firstDetectedAt,
+              ),
+            )
             .toList();
+      }
+
+      String? newestInstanceId;
+      final allInstances =
+          newGroupInstances.values.expand((instances) => instances).toList()
+            ..sort((a, b) {
+              final aTime = a.firstDetectedAt ?? DateTime.now();
+              final bTime = b.firstDetectedAt ?? DateTime.now();
+              return bTime.compareTo(aTime);
+            });
+      if (allInstances.isNotEmpty) {
+        newestInstanceId = allInstances.first.instance.instanceId;
+      }
+
+      if (inviteTargets.isNotEmpty) {
+        for (final target in inviteTargets) {
+          await inviteService.inviteSelfToInstance(target.instance);
+        }
       }
 
       state = state.copyWith(
         groupInstances: newGroupInstances,
-        // Accumulate new instances across all polls until acknowledged
-        newInstances: [...state.newInstances, ...newInstances],
+        newestInstanceId: newestInstanceId,
         groupErrors: newGroupErrors,
       );
 
+      _hasBaseline = true;
       // Reset backoff on successful fetch
       _backoffDelay = 1;
 
@@ -330,6 +641,176 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         1,
         AppConstants.maxBackoffDelay,
       );
+    } finally {
+      _isFetching = false;
+    }
+  }
+
+  Future<void> fetchBoostedGroupInstances() async {
+    if (!state.isMonitoring) {
+      return;
+    }
+
+    final isActive = await _ensureBoostActive();
+    if (!isActive) {
+      return;
+    }
+
+    final groupId = state.boostedGroupId;
+    if (groupId == null) {
+      return;
+    }
+
+    if (!state.selectedGroupIds.contains(groupId)) {
+      await _clearBoost(persist: true, logExpired: false);
+      return;
+    }
+
+    if (_isFetching) {
+      AppLogger.debug(
+        'Fetch already in progress, skipping boosted poll',
+        subCategory: 'group_monitor',
+      );
+      if (state.boostedGroupId != null) {
+        AppLogger.debug(
+          'Boost poll skipped due to in-flight fetch for ${state.boostedGroupId}',
+          subCategory: 'group_monitor',
+        );
+      }
+      return;
+    }
+
+    _isFetching = true;
+    try {
+      _boostPollCount += 1;
+      final pollStart = DateTime.now();
+      AppLogger.debug(
+        'Boost poll #$_boostPollCount started for $groupId',
+        subCategory: 'group_monitor',
+      );
+
+      ref.read(apiCallCounterProvider.notifier).incrementApiCall();
+      final api = ref.read(vrchatApiProvider);
+      final inviteService = ref.read(inviteServiceProvider);
+      final response = await api.rawApi
+          .getUsersApi()
+          .getUserGroupInstancesForGroup(userId: arg, groupId: groupId);
+
+      final instances = response.data?.instances ?? [];
+      final fetchedAt = response.data?.fetchedAt;
+      final latencyMs = DateTime.now().difference(pollStart).inMilliseconds;
+      AppLogger.debug(
+        'Boost poll #$_boostPollCount for $groupId latency=${latencyMs}ms '
+        'instances=${instances.length}'
+        '${fetchedAt != null ? ' fetchedAt=$fetchedAt' : ''}',
+        subCategory: 'group_monitor',
+      );
+      final previousInstances = state.groupInstances[groupId] ?? [];
+      final previousInstanceIds = previousInstances
+          .map((i) => i.instance.instanceId)
+          .toSet();
+      final previousInstancesMap = {
+        for (var inst in previousInstances) inst.instance.instanceId: inst,
+      };
+
+      if (!_boostFirstSeenLogged && instances.isNotEmpty) {
+        final startedAt = _boostStartedAt;
+        final delta = startedAt == null
+            ? null
+            : pollStart.difference(startedAt);
+        AppLogger.info(
+          'Boost first-seen for $groupId after '
+          '${delta ?? Duration.zero} (instances=${instances.length})',
+          subCategory: 'group_monitor',
+        );
+        _boostFirstSeenLogged = true;
+        state = state.copyWith(boostFirstSeenAfter: delta);
+      }
+
+      if (_hasBaseline &&
+          state.autoInviteEnabled &&
+          previousInstances.isEmpty &&
+          instances.isNotEmpty) {
+        final target = _selectInviteTarget(instances, groupId);
+        if (target != null) {
+          await inviteService.inviteSelfToInstance(target.instance);
+        }
+      }
+
+      final newInstances = <GroupInstanceWithGroup>[];
+      for (final instance in instances) {
+        final instanceWithGroup = GroupInstanceWithGroup(
+          instance: instance,
+          groupId: groupId,
+          firstDetectedAt: previousInstanceIds.contains(instance.instanceId)
+              ? previousInstancesMap[instance.instanceId]?.firstDetectedAt
+              : DateTime.now(),
+        );
+        if (!previousInstanceIds.contains(instance.instanceId)) {
+          newInstances.add(instanceWithGroup);
+        }
+      }
+
+      final newInstancesMap = {
+        for (var inst in newInstances) inst.instance.instanceId: inst,
+      };
+
+      final updatedGroupInstances =
+          Map<String, List<GroupInstanceWithGroup>>.from(state.groupInstances);
+      updatedGroupInstances[groupId] = instances
+          .map(
+            (i) => GroupInstanceWithGroup(
+              instance: i,
+              groupId: groupId,
+              firstDetectedAt: newInstancesMap[i.instanceId]?.firstDetectedAt,
+            ),
+          )
+          .toList();
+
+      final updatedGroupErrors = Map<String, String>.from(state.groupErrors);
+      updatedGroupErrors.remove(groupId);
+
+      String? newestInstanceId;
+      final allInstances =
+          updatedGroupInstances.values.expand((instances) => instances).toList()
+            ..sort((a, b) {
+              final aTime = a.firstDetectedAt ?? DateTime.now();
+              final bTime = b.firstDetectedAt ?? DateTime.now();
+              return bTime.compareTo(aTime);
+            });
+      if (allInstances.isNotEmpty) {
+        newestInstanceId = allInstances.first.instance.instanceId;
+      }
+
+      state = state.copyWith(
+        groupInstances: updatedGroupInstances,
+        newestInstanceId: newestInstanceId,
+        groupErrors: updatedGroupErrors,
+        boostPollCount: _boostPollCount,
+        lastBoostLatencyMs: latencyMs,
+        lastBoostFetchedAt: fetchedAt,
+      );
+
+      _hasBaseline = true;
+
+      if (newInstances.isNotEmpty) {
+        AppLogger.info(
+          'Found ${newInstances.length} new instances for boosted group',
+          subCategory: 'group_monitor',
+        );
+      }
+    } catch (e, s) {
+      AppLogger.error(
+        'Failed to fetch boosted group instances',
+        subCategory: 'group_monitor',
+        error: e,
+        stackTrace: s,
+      );
+      final updatedGroupErrors = Map<String, String>.from(state.groupErrors);
+      updatedGroupErrors[groupId] = 'Failed to fetch instances';
+      state = state.copyWith(groupErrors: updatedGroupErrors);
+    } finally {
+      _isFetching = false;
     }
   }
 
@@ -351,23 +832,17 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     }
   }
 
-  void acknowledgeNewInstances() {
-    state = state.copyWith(newInstances: []);
-    AppLogger.debug(
-      'Acknowledged all new instances',
-      subCategory: 'group_monitor',
-    );
-  }
-
   Future<void> clearSelectedGroups() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('selectedGroupIds');
+      await GroupMonitorStorage.clearSelectedGroups();
+      await _clearBoost(persist: true, logExpired: false);
 
       state = state.copyWith(
         selectedGroupIds: {},
         groupInstances: {},
-        newInstances: [],
+        newestInstanceId: null,
+        boostedGroupId: null,
+        boostExpiresAt: null,
         groupErrors: {},
       );
 
@@ -384,6 +859,11 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     }
   }
 }
+
+final inviteServiceProvider = Provider<InviteService>((ref) {
+  final api = ref.read(vrchatApiProvider);
+  return InviteService(api);
+});
 
 final groupMonitorProvider =
     NotifierProvider.family<GroupMonitorNotifier, GroupMonitorState, String>(

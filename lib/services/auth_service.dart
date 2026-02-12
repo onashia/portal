@@ -1,5 +1,7 @@
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../utils/app_logger.dart';
+import '../utils/dio_error_logger.dart';
+import '../utils/error_utils.dart';
 
 enum AuthResultStatus {
   success,
@@ -59,12 +61,16 @@ class AuthService {
           }
         } else {
           AppLogger.error('Login response failed', subCategory: 'auth');
+          AppLogger.error(
+            'Login failure details: ${failure.toString()}',
+            subCategory: 'auth',
+          );
           final failureMessage = failure.toString().split('\n').first.trim();
           final requiresEmailVerification =
               failureMessage.contains('Check your email') ||
               failureMessage.contains('logging in from somewhere new');
 
-          final errorMessage = 'Login failed: $failureMessage';
+          final errorMessage = formatApiError('Login failed', failure);
 
           if (requiresEmailVerification) {
             return AuthResult(
@@ -105,6 +111,7 @@ class AuthService {
         );
       }
     } catch (e, s) {
+      logDioException('Login', e, subCategory: 'auth');
       AppLogger.error(
         'Login failed with exception',
         subCategory: 'auth',
@@ -113,7 +120,7 @@ class AuthService {
       );
       return AuthResult(
         status: AuthResultStatus.failure,
-        errorMessage: 'Login failed: ${e.toString()}',
+        errorMessage: formatApiError('Login failed', e),
       );
     }
   }
@@ -133,6 +140,7 @@ class AuthService {
 
       return AuthResult(status: AuthResultStatus.success);
     } catch (e, s) {
+      logDioException('Logout', e, subCategory: 'auth');
       AppLogger.error(
         'Logout failed with exception',
         subCategory: 'auth',
@@ -141,7 +149,7 @@ class AuthService {
       );
       return AuthResult(
         status: AuthResultStatus.failure,
-        errorMessage: 'Logout failed: ${e.toString()}',
+        errorMessage: formatApiError('Logout failed', e),
       );
     }
   }
@@ -150,19 +158,23 @@ class AuthService {
     AppLogger.info('Checking for existing session', subCategory: 'auth');
 
     try {
-      final currentUser = api.auth.currentUser;
+      final (success, failure) = await api.rawApi
+          .getAuthenticationApi()
+          .getCurrentUser()
+          .validateVrc();
 
-      if (currentUser != null) {
-        AppLogger.info('Existing session found', subCategory: 'auth');
+      if (success != null && success.response.statusCode == 200) {
+        AppLogger.info('Existing session is valid', subCategory: 'auth');
         return AuthResult(
           status: AuthResultStatus.success,
-          currentUser: currentUser,
+          currentUser: success.data,
         );
       } else {
-        AppLogger.info('No existing session found', subCategory: 'auth');
+        AppLogger.info('No valid existing session found', subCategory: 'auth');
         return AuthResult(status: AuthResultStatus.failure);
       }
     } catch (e, s) {
+      logDioException('Check session', e, subCategory: 'auth');
       AppLogger.error(
         'Failed to check existing session',
         subCategory: 'auth',
@@ -171,7 +183,7 @@ class AuthService {
       );
       return AuthResult(
         status: AuthResultStatus.failure,
-        errorMessage: e.toString(),
+        errorMessage: formatApiError('Session check failed', e),
       );
     }
   }

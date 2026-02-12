@@ -21,7 +21,10 @@ class GroupUtils {
     return 'GRP';
   }
 
-  static Color getAvatarColor(LimitedUserGroups group) {
+  static Color getAvatarColor(
+    LimitedUserGroups group, {
+    BuildContext? context,
+  }) {
     // Use hash to generate consistent, deterministic colors for each group
     // This ensures the same group always gets the same color across sessions
     final name = group.name ?? '';
@@ -37,7 +40,10 @@ class GroupUtils {
     }
 
     if (inputString == null) {
-      return Colors.grey;
+      if (context != null) {
+        return Theme.of(context).colorScheme.surfaceContainerHighest;
+      }
+      return const Color(0xFF757575);
     }
 
     // Hash the string to get a consistent hue value (0-360)
@@ -46,5 +52,12 @@ class GroupUtils {
 
     // Fixed saturation and lightness for consistent appearance across all colors
     return HSLColor.fromAHSL(1.0, hue, 0.7, 0.6).toColor();
+  }
+
+  static String getShortGroupId(String groupId) {
+    if (groupId.length <= 8) {
+      return groupId;
+    }
+    return groupId.substring(0, 8);
   }
 }

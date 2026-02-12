@@ -1,18 +1,26 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:m3e_collection/m3e_collection.dart';
+import 'package:motor/motor.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:vrchat_dart/vrchat_dart.dart';
+
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
 import '../providers/group_monitor_provider.dart';
+import '../providers/theme_provider.dart';
 import '../services/notification_service.dart';
-import '../utils/vrchat_image_utils.dart';
-import '../widgets/custom_title_bar.dart';
-import '../widgets/debug_info_card.dart';
-import '../widgets/group_avatar_stack.dart';
-import '../widgets/group_instance_list.dart';
+import '../utils/animation_constants.dart';
 import '../utils/app_logger.dart';
-import 'group_selection_page.dart';
+import '../widgets/common/empty_state.dart';
+import '../constants/icon_sizes.dart';
+import '../widgets/custom_title_bar.dart';
+import '../constants/ui_constants.dart';
+import '../widgets/dashboard/dashboard_action_area.dart';
+import '../widgets/dashboard/dashboard_cards.dart';
+import '../widgets/dashboard/dashboard_side_sheet_layout.dart';
+import '../widgets/dashboard/dashboard_user_card.dart';
+import '../widgets/group_selection_side_sheet.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -22,8 +30,36 @@ class DashboardPage extends ConsumerStatefulWidget {
 }
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
-  final OverlayPortalController _groupSelectionController =
-      OverlayPortalController();
+  bool _isSideSheetOpen = false;
+
+  void _openSideSheet() {
+    if (!_isSideSheetOpen) {
+      setState(() {
+        _isSideSheetOpen = true;
+      });
+    }
+  }
+
+  void _openSideSheetForUser(String userId) {
+    _openSideSheet();
+    ref.read(groupMonitorProvider(userId).notifier).fetchUserGroupsIfNeeded();
+  }
+
+  void _closeSideSheet() {
+    if (_isSideSheetOpen) {
+      setState(() {
+        _isSideSheetOpen = false;
+      });
+    }
+  }
+
+  void _toggleSideSheetForUser(String userId) {
+    if (_isSideSheetOpen) {
+      _closeSideSheet();
+    } else {
+      _openSideSheetForUser(userId);
+    }
+  }
 
   @override
   void initState() {
@@ -37,341 +73,212 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final authValue = ref.watch(authProvider);
     final themeMode = ref.watch(themeProvider);
 
-    return authValue.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (error, stack) => Scaffold(
+    if (authValue.isLoading) {
+      return Scaffold(
         body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                const SizedBox(height: 16),
-                Text(
-                  'An error occurred',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  error.toString(),
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
+          child: Transform.scale(
+            scale: UiConstants.dashboardLoadingScale,
+            child: const LoadingIndicatorM3E(
+              variant: LoadingIndicatorM3EVariant.defaultStyle,
+              semanticLabel: 'Loading portal',
             ),
           ),
         ),
-      ),
-      data: (authState) {
-        final currentUser = authState.currentUser;
-
-        if (currentUser == null) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        final userId = currentUser.id;
-        final monitorState = ref.watch(groupMonitorProvider(userId));
-        final selectedGroups = monitorState.allGroups
-            .where((g) => monitorState.selectedGroupIds.contains(g.groupId))
-            .toList();
-
-        return OverlayPortal(
-          controller: _groupSelectionController,
-          overlayChildBuilder: (context) => GroupSelectionPage(
-            userId: userId,
-            controller: _groupSelectionController,
-          ),
-          child: Scaffold(
-            appBar: CustomTitleBar(
-              title: 'portal.',
-              icon: Icons.tonality,
-              actions: [
-                if (monitorState.newInstances.isNotEmpty)
-                  Stack(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.notifications),
-                        tooltip:
-                            'New instances (${monitorState.newInstances.length})',
-                        onPressed: () {
-                          ref
-                              .read(groupMonitorProvider(userId).notifier)
-                              .acknowledgeNewInstances();
-                        },
-                      ),
-                      if (monitorState.newInstances.isNotEmpty)
-                        Positioned(
-                          right: 8,
-                          top: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 18,
-                              minHeight: 18,
-                            ),
-                            child: Text(
-                              monitorState.newInstances.length > 9
-                                  ? '9+'
-                                  : monitorState.newInstances.length.toString(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                IconButton(
-                  icon: Icon(
-                    themeMode == ThemeMode.dark
-                        ? Icons.light_mode
-                        : Icons.dark_mode,
-                  ),
-                  tooltip: themeMode == ThemeMode.dark
-                      ? 'Light Mode'
-                      : 'Dark Mode',
-                  onPressed: () {
-                    ref.read(themeProvider.notifier).toggleTheme();
-                  },
-                ),
-                if (selectedGroups.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(Icons.refresh),
-                    tooltip: 'Clear Groups',
-                    onPressed: () async {
-                      await ref
-                          .read(groupMonitorProvider(userId).notifier)
-                          .clearSelectedGroups();
-                    },
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.logout),
-                  tooltip: 'Logout',
-                  onPressed: () async {
-                    ref
-                        .read(groupMonitorProvider(userId).notifier)
-                        .stopMonitoring();
-                    await ref.read(authProvider.notifier).logout();
-                  },
-                ),
-              ],
-            ),
-            body: DragToResizeArea(
-              child: SafeArea(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 800),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildUserCard(context, currentUser),
-                          const SizedBox(height: 24),
-                          _buildGroupMonitoringSection(
-                            context,
-                            userId,
-                            monitorState,
-                            selectedGroups,
-                          ),
-                          const SizedBox(height: 24),
-                          DebugInfoCard(monitorState: monitorState),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildUserCard(BuildContext context, CurrentUser currentUser) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            CachedImage(
-              imageUrl: _getUserProfileImageUrl(currentUser),
-              width: 56,
-              height: 56,
-              shape: BoxShape.circle,
-              fallbackIcon: Icons.person,
-              boxShadow: [
-                BoxShadow(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.shadow.withValues(alpha: 0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    currentUser.displayName,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        _getStatusIcon(currentUser.state),
-                        size: 16,
-                        color: _getStatusColor(context, currentUser.state),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _getStatusText(currentUser.state),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: _getStatusColor(context, currentUser.state),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _getUserProfileImageUrl(CurrentUser currentUser) {
-    if (currentUser.profilePicOverrideThumbnail.isNotEmpty) {
-      return currentUser.profilePicOverrideThumbnail;
+      );
     }
-    return currentUser.currentAvatarThumbnailImageUrl;
-  }
 
-  Widget _buildGroupMonitoringSection(
-    BuildContext context,
-    String userId,
-    GroupMonitorState monitorState,
-    List<LimitedUserGroups> selectedGroups,
-  ) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  'Group Monitoring',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const Spacer(),
-                Switch(
-                  value: monitorState.isMonitoring,
-                  onChanged: (value) {
-                    final notifier = ref.read(
-                      groupMonitorProvider(userId).notifier,
-                    );
-                    if (value) {
-                      notifier.startMonitoring();
-                    } else {
-                      notifier.stopMonitoring();
-                    }
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                if (selectedGroups.isNotEmpty)
-                  GroupAvatarStack(
-                    groups: selectedGroups,
-                    onTap: () {
-                      _groupSelectionController.show();
-                    },
-                  ),
-                const Spacer(),
-                IconButton.filled(
-                  tooltip: selectedGroups.isEmpty
-                      ? 'Add Groups'
-                      : 'Manage Groups',
-                  onPressed: () {
-                    _groupSelectionController.show();
-                  },
-                  icon: Icon(
-                    selectedGroups.isEmpty ? Icons.add : Icons.manage_accounts,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 16),
-            GroupInstanceList(
-              userId: userId,
-              onRefresh: () {
-                ref
-                    .read(groupMonitorProvider(userId).notifier)
-                    .fetchGroupInstances();
+    if (authValue.hasError) {
+      final scheme = Theme.of(context).colorScheme;
+      return Scaffold(
+        appBar: CustomTitleBar(
+          title: 'portal.',
+          icon: Icons.tonality,
+          actions: [
+            IconButton(
+              icon: Icon(
+                themeMode == ThemeMode.dark
+                    ? Icons.light_mode_outlined
+                    : Icons.dark_mode_outlined,
+                size: IconSizes.xs,
+              ),
+              tooltip: themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
+              onPressed: () {
+                ref.read(themeProvider.notifier).toggleTheme();
               },
             ),
           ],
         ),
+        body: EmptyState(
+          icon: Icons.error_outline,
+          title: 'An error occurred',
+          message: authValue.error.toString(),
+          iconColor: scheme.error,
+        ),
+      );
+    }
+
+    final authState = authValue.value;
+    if (authState == null) {
+      return const SizedBox.shrink();
+    }
+    final currentUser = authState.currentUser;
+    final streamedUser = authState.streamedUser;
+
+    if (currentUser == null) {
+      return Scaffold(
+        body: Center(
+          child: Transform.scale(
+            scale: UiConstants.dashboardLoadingScale,
+            child: const LoadingIndicatorM3E(
+              variant: LoadingIndicatorM3EVariant.defaultStyle,
+              semanticLabel: 'Loading portal',
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Null-safe: currentUser is guaranteed non-null after the check above
+    final userId = currentUser.id;
+    final monitorState = ref.watch(groupMonitorProvider(userId));
+    final selectedGroups = monitorState.allGroups
+        .where((g) => monitorState.selectedGroupIds.contains(g.groupId))
+        .toList();
+
+    return Scaffold(
+      appBar: CustomTitleBar(
+        title: 'portal.',
+        icon: Icons.tonality,
+        actions: [
+          IconButton(
+            icon: Icon(
+              themeMode == ThemeMode.dark
+                  ? Icons.light_mode_outlined
+                  : Icons.dark_mode_outlined,
+              size: IconSizes.xs,
+            ),
+            tooltip: themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
+            onPressed: () {
+              ref.read(themeProvider.notifier).toggleTheme();
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, size: IconSizes.xs),
+            tooltip: 'Logout',
+            onPressed: () async {
+              ref.read(groupMonitorProvider(userId).notifier).stopMonitoring();
+              await ref.read(authProvider.notifier).logout();
+            },
+          ),
+        ],
+      ),
+      body: DragToResizeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final totalWidth = constraints.maxWidth;
+            final effectiveSheetWidth =
+                totalWidth < UiConstants.dashboardSheetTargetWidth
+                ? totalWidth
+                : UiConstants.dashboardSheetTargetWidth;
+            final horizontalPadding = context.m3e.spacing.xxl * 2;
+            final maxWidth = math.max(
+              0.0,
+              math.min(
+                UiConstants.dashboardMaxContentWidth,
+                constraints.maxWidth - (horizontalPadding * 2),
+              ),
+            );
+            final canShowSideBySide =
+                maxWidth >=
+                (UiConstants.dashboardMinGroupCardWidth +
+                    UiConstants.dashboardMinEventsCardWidth +
+                    context.m3e.spacing.lg);
+            final sideBySideBottomPadding = context.m3e.spacing.xxl * 3;
+            final stackedBottomPadding = context.m3e.spacing.xl;
+            final contentBottomPadding = canShowSideBySide
+                ? sideBySideBottomPadding
+                : stackedBottomPadding;
+            final sideSheet = KeyedSubtree(
+              key: const ValueKey('groupSideSheet'),
+              child: GroupSelectionSideSheet(
+                userId: userId,
+                onClose: _closeSideSheet,
+              ),
+            );
+
+            final content = SizedBox.expand(
+              child: Stack(
+                children: [
+                  SafeArea(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: horizontalPadding,
+                        right: horizontalPadding,
+                        top: context.m3e.spacing.xl,
+                        bottom: contentBottomPadding,
+                      ),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: maxWidth),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              DashboardUserCard(
+                                currentUser: currentUser,
+                                streamedUser: streamedUser,
+                              ),
+                              SizedBox(height: context.m3e.spacing.lg),
+                              Expanded(
+                                child: DashboardCards(
+                                  userId: userId,
+                                  monitorState: monitorState,
+                                  selectedGroups: selectedGroups,
+                                  canShowSideBySide: canShowSideBySide,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+
+            return SingleMotionBuilder(
+              motion: AnimationConstants.expressiveSpatialDefault,
+              value: _isSideSheetOpen ? 1.0 : 0.0,
+              from: 0.0,
+              builder: (context, value, _) {
+                final progress = value.clamp(0.0, 1.0);
+                return Stack(
+                  children: [
+                    DashboardSideSheetLayout(
+                      content: content,
+                      sideSheet: sideSheet,
+                      sheetWidth: effectiveSheetWidth,
+                      progress: progress,
+                      onClose: _closeSideSheet,
+                    ),
+                    Positioned(
+                      bottom: context.m3e.spacing.xl,
+                      right: context.m3e.spacing.xl,
+                      child: DashboardActionArea(
+                        userId: userId,
+                        monitorState: monitorState,
+                        onManageGroups: () => _toggleSideSheetForUser(userId),
+                        sheetWidth: effectiveSheetWidth,
+                        progress: progress,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ),
       ),
     );
-  }
-
-  IconData _getStatusIcon(UserState state) {
-    switch (state) {
-      case UserState.online:
-        return Icons.circle;
-      case UserState.offline:
-        return Icons.offline_bolt;
-      case UserState.active:
-        return Icons.play_circle;
-    }
-  }
-
-  Color _getStatusColor(BuildContext context, UserState state) {
-    switch (state) {
-      case UserState.online:
-        return const Color(0xFF4CAF50);
-      case UserState.offline:
-        return const Color(0xFF9E9E9E);
-      case UserState.active:
-        return Theme.of(context).colorScheme.primary;
-    }
-  }
-
-  String _getStatusText(UserState state) {
-    switch (state) {
-      case UserState.online:
-        return 'Online';
-      case UserState.offline:
-        return 'Offline';
-      case UserState.active:
-        return 'Active';
-    }
   }
 }

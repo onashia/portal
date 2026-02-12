@@ -1,3 +1,7 @@
+# Standard Flutter .gitignore (all platforms) + project-specific additions
+# This file ignores generated artifacts/caches for Flutter, Android, iOS/macOS,
+# Linux, Windows, and Web. Keep source/config files tracked.
+
 # Project-specific
 .trae/
 .cookies/
@@ -25,11 +29,6 @@ app.*.symbols
 
 # Obfuscation related
 app.*.map.json
-
-# Code generation
-*.g.dart
-*.freezed.dart
-*.mocks.dart
 
 # IDE specific
 .idea/
@@ -94,10 +93,14 @@ android/app/profile
 android/app/release
 android/.gradle/
 android/captures/
-android/gradlew
-android/gradlew.bat
 android/local.properties
 android/**/GeneratedPluginRegistrant.java
+android/**/GeneratedPluginRegistrant.kt
+android/**/GeneratedPluginRegistrant.cpp
+android/.idea/
+android/*.iml
+android/.cxx/
+android/.gradle/
 
 # iOS
 ios/.symlinks/
@@ -113,6 +116,20 @@ ios/*.mode2v3
 !default.mode2v3
 ios/*.perspectivev3
 !default.perspectivev3
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/App.framework
+ios/Flutter/app.flx
+ios/Flutter/app.zip
+ios/Flutter/flutter_assets/
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/ServiceDefinitions.json
+ios/Pods/
+ios/Runner.xcworkspace/xcuserdata/
+ios/Runner.xcodeproj/xcuserdata/
+ios/Runner.xcodeproj/project.xcworkspace/xcuserdata/
 
 # Windows
 flutter/ephemeral/
@@ -146,3 +163,19 @@ x86/
 **/macos/Flutter/flutter_assets/
 **/macos/Flutter/flutter_export_environment.sh
 **/macos/ServiceDefinitions.json
+
+# Linux
+linux/flutter/ephemeral/
+linux/flutter/generated_plugin_registrant.cc
+linux/flutter/generated_plugin_registrant.h
+linux/flutter/generated_plugins.cmake
+
+# Web
+web/.dart_tool/
+web/.packages
+web/build/
+web/.flutter-plugins
+
+# AI Assistant Files
+.opencode/
+AGENTS.md

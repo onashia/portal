@@ -1,0 +1,47 @@
+PODS:
+  - dynamic_color (0.0.2):
+    - FlutterMacOS
+  - flutter_local_notifications (0.0.1):
+    - FlutterMacOS
+  - FlutterMacOS (1.0.0)
+  - screen_retriever_macos (0.0.1):
+    - FlutterMacOS
+  - shared_preferences_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - window_manager (0.5.0):
+    - FlutterMacOS
+
+DEPENDENCIES:
+  - dynamic_color (from `Flutter/ephemeral/.symlinks/plugins/dynamic_color/macos`)
+  - flutter_local_notifications (from `Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos`)
+  - FlutterMacOS (from `Flutter/ephemeral`)
+  - screen_retriever_macos (from `Flutter/ephemeral/.symlinks/plugins/screen_retriever_macos/macos`)
+  - shared_preferences_foundation (from `Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin`)
+  - window_manager (from `Flutter/ephemeral/.symlinks/plugins/window_manager/macos`)
+
+EXTERNAL SOURCES:
+  dynamic_color:
+    :path: Flutter/ephemeral/.symlinks/plugins/dynamic_color/macos
+  flutter_local_notifications:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+  screen_retriever_macos:
+    :path: Flutter/ephemeral/.symlinks/plugins/screen_retriever_macos/macos
+  shared_preferences_foundation:
+    :path: Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin
+  window_manager:
+    :path: Flutter/ephemeral/.symlinks/plugins/window_manager/macos
+
+SPEC CHECKSUMS:
+  dynamic_color: cb7c2a300ee67ed3bd96c3e852df3af0300bf610
+  flutter_local_notifications: 4bf37a31afde695b56091b4ae3e4d9c7a7e6cda0
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  screen_retriever_macos: 452e51764a9e1cdb74b3c541238795849f21557f
+  shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
+  window_manager: b729e31d38fb04905235df9ea896128991cad99e
+
+PODFILE CHECKSUM: 561fd0563568131ed3f09843fee96c105133644a
+
+COCOAPODS: 1.16.2

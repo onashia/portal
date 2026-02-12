@@ -48,16 +48,23 @@ dependencies:
   # HTTP Client
   dio: ^5.9.0
   
-  # Cookie Management
-  cookie_jar: ^4.0.8
-  dio_cookie_manager: ^3.3.0
-  
   # Shared Preferences
   shared_preferences: ^2.5.4
-  
+
+  # Cryptography
+  crypto: ^3.0.7
+
   # Local Notifications
   flutter_local_notifications: ^19.5.0
   window_manager: ^0.5.1
+
+  # Motion & Animations (MD3 Spring Physics)
+  motor: ^1.1.0
+
+  # Material 3 Expressive Design Tokens
+  m3e_collection: ^0.3.7
+  intl: ^0.20.2
+  pinput: ^6.0.2
 
 dev_dependencies:
   flutter_test:

@@ -13,6 +13,12 @@ class AppLogger {
   }) {
     if (kDebugMode) {
       final name = subCategory != null ? '$_name.$subCategory' : _name;
+      // Mirror logs to stdout so they appear in flutter run output.
+      final details = <String>[
+        if (error != null) 'error=$error',
+        if (stackTrace != null) 'stack=$stackTrace',
+      ].join(' ');
+      debugPrint('[$name] $message${details.isNotEmpty ? ' ($details)' : ''}');
       developer.log(
         message,
         name: name,
