@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io' as io;
-import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:portal/utils/app_logger.dart';
 import 'package:portal/utils/lru_cache.dart';
@@ -35,9 +37,12 @@ class ImageCacheService {
     }
   }
 
-  String _getCacheKey(String url) {
+  @visibleForTesting
+  String getCacheKeyForTesting(String url) {
     final fileIdInfo = extractFileIdFromUrl(url);
-    return '${fileIdInfo.fileId}_${fileIdInfo.version}';
+    final bytes = utf8.encode('${fileIdInfo.fileId}_${fileIdInfo.version}');
+    final hash = sha256.convert(bytes);
+    return hash.toString();
   }
 
   Future<Uint8List?> getCachedImage(String url) async {
@@ -45,7 +50,7 @@ class ImageCacheService {
 
     final String cacheKey;
     try {
-      cacheKey = _getCacheKey(url);
+      cacheKey = getCacheKeyForTesting(url);
     } catch (e) {
       AppLogger.error(
         'Could not get cache key for URL: $url',
@@ -87,7 +92,7 @@ class ImageCacheService {
         }
       } catch (e) {
         AppLogger.error(
-          'Failed to read from disk cache: $e',
+          'Failed to read from disk cache for $url: $e',
           subCategory: 'image_cache',
           error: e,
         );
@@ -106,7 +111,7 @@ class ImageCacheService {
 
     final String cacheKey;
     try {
-      cacheKey = _getCacheKey(url);
+      cacheKey = getCacheKeyForTesting(url);
     } catch (e) {
       AppLogger.error(
         'Could not get cache key for URL: $url',
@@ -126,7 +131,7 @@ class ImageCacheService {
         await file.writeAsBytes(bytes);
       } catch (e) {
         AppLogger.error(
-          'Failed to write to disk cache: $e',
+          'Failed to write to disk cache for $url: $e',
           subCategory: 'image_cache',
           error: e,
         );
@@ -151,5 +156,12 @@ class ImageCacheService {
         );
       }
     }
+  }
+
+  @visibleForTesting
+  static void reset() {
+    _instance._memoryCache.clear();
+    _instance._cacheDirectory = null;
+    _instance._isInitialized = false;
   }
 }

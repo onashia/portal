@@ -50,7 +50,10 @@ dependencies:
   
   # Shared Preferences
   shared_preferences: ^2.5.4
-  
+
+  # Cryptography
+  crypto: ^3.0.7
+
   # Local Notifications
   flutter_local_notifications: ^19.5.0
   window_manager: ^0.5.1
