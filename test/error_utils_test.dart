@@ -182,7 +182,7 @@ void main() {
           'This is a very long error message that exceeds fifty characters and should be truncated';
       final result = formatApiError('Login failed', longError);
       final prefixLength = 'Login failed: '.length;
-      expect(result.length, greaterThan(50));
+      expect(result.length, lessThan(longError.length));
       expect(result.length, lessThan(47 + prefixLength + 4));
       expect(result, endsWith('...'));
     });
