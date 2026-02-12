@@ -30,11 +30,6 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Code generation
-*.g.dart
-*.freezed.dart
-*.mocks.dart
-
 # IDE specific
 .idea/
 .vscode/
