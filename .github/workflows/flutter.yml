@@ -1,0 +1,112 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test-linux:
+    name: Test on Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze project
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+  test-and-build-macos:
+    name: Test & Build macOS
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze project
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build macOS
+        run: flutter build macos --release
+
+      - name: Sanitize ref name
+        id: sanitize
+        run: echo "sanitized_ref=$(echo '${{ github.ref_name }}' | sed 's/[\/\\:]/-/g')" >> $GITHUB_OUTPUT
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: portal-macos-${{ steps.sanitize.outputs.sanitized_ref }}-${{ github.sha }}
+          path: build/macos/Build/Products/Release/*.app
+          retention-days: 90
+
+  test-and-build-windows:
+    name: Test & Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze project
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build Windows
+        run: flutter build windows --release
+
+      - name: Sanitize ref name
+        id: sanitize
+        run: echo "sanitized_ref=$(echo '${{ github.ref_name }}' | sed 's/[\/\\:]/-/g')" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: portal-windows-${{ steps.sanitize.outputs.sanitized_ref }}-${{ github.sha }}
+          path: build/windows/x64/runner/Release/*
+          retention-days: 90

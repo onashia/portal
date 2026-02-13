@@ -9,13 +9,66 @@ class VrchatStatusService {
 
   static const String baseUrl = 'https://status.vrchat.com/api/v2';
 
+  Map<String, dynamic> _validateResponseData(dynamic data) {
+    if (data is! Map<String, dynamic>) {
+      throw FormatException('Response data is not a valid JSON object');
+    }
+
+    if (!data.containsKey('status')) {
+      throw FormatException('Response missing required field: status');
+    }
+
+    final statusData = data['status'];
+    if (statusData is! Map<String, dynamic>) {
+      throw FormatException('Response field "status" is not a valid object');
+    }
+
+    if (!statusData.containsKey('indicator')) {
+      throw FormatException('Response field "status.indicator" is missing');
+    }
+
+    if (statusData['indicator'] is! String) {
+      throw FormatException(
+        'Response field "status.indicator" is not a string',
+      );
+    }
+
+    if (!statusData.containsKey('description')) {
+      throw FormatException('Response field "status.description" is missing');
+    }
+
+    if (statusData['description'] is! String) {
+      throw FormatException(
+        'Response field "status.description" is not a string',
+      );
+    }
+
+    if (!data.containsKey('components')) {
+      throw FormatException('Response missing required field: components');
+    }
+
+    if (data['components'] is! List) {
+      throw FormatException('Response field "components" is not a valid array');
+    }
+
+    if (!data.containsKey('incidents')) {
+      throw FormatException('Response missing required field: incidents');
+    }
+
+    if (data['incidents'] is! List) {
+      throw FormatException('Response field "incidents" is not a valid array');
+    }
+
+    return data;
+  }
+
   Future<VrchatStatus> fetchStatus() async {
     try {
       AppLogger.info('Fetching VRChat status', subCategory: 'vrchat_status');
 
       final response = await _dio.get('$baseUrl/summary.json');
 
-      final summaryData = response.data as Map<String, dynamic>;
+      final summaryData = _validateResponseData(response.data);
 
       final indicator = _parseIndicator(summaryData['status']['indicator']);
       final description = summaryData['status']['description'] as String;
