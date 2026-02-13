@@ -121,26 +121,19 @@ class _CachedImageState extends ConsumerState<CachedImage> {
       subCategory: 'cached_image',
     );
 
-    final cachedBytes = await cacheService.getCachedImage(widget.imageUrl);
-    if (cachedBytes != null) {
+    final bytes = await cacheService.getOrFetchImage(widget.imageUrl, () async {
+      AppLogger.debug(
+        'Cache miss, fetching from API for: ${widget.imageUrl}',
+        subCategory: 'cached_image',
+      );
+      return fetchImageBytesWithAuth(ref, widget.imageUrl);
+    });
+
+    if (bytes != null) {
       AppLogger.debug(
         'Returning cached image for: ${widget.imageUrl}',
         subCategory: 'cached_image',
       );
-      return cachedBytes;
-    }
-
-    AppLogger.debug(
-      'Cache miss, fetching from API for: ${widget.imageUrl}',
-      subCategory: 'cached_image',
-    );
-    final fetchedBytes = await fetchImageBytesWithAuth(ref, widget.imageUrl);
-    if (fetchedBytes != null) {
-      AppLogger.debug(
-        'Successfully fetched, caching image for: ${widget.imageUrl}',
-        subCategory: 'cached_image',
-      );
-      await cacheService.cacheImage(widget.imageUrl, fetchedBytes);
     } else {
       AppLogger.debug(
         'Failed to fetch image: ${widget.imageUrl}',
@@ -148,7 +141,7 @@ class _CachedImageState extends ConsumerState<CachedImage> {
       );
     }
 
-    return fetchedBytes;
+    return bytes;
   }
 
   Widget _buildImage(

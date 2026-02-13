@@ -228,6 +228,60 @@ bool _areStringMapsEquivalent(
 }
 
 @visibleForTesting
+Future<List<({String groupId, T? response})>> fetchGroupInstancesChunked<T>({
+  required List<String> orderedGroupIds,
+  required Future<T?> Function(String groupId) fetchGroupInstances,
+  int maxConcurrentRequests = AppConstants.groupInstancesMaxConcurrentRequests,
+}) async {
+  if (maxConcurrentRequests < 1) {
+    throw ArgumentError.value(
+      maxConcurrentRequests,
+      'maxConcurrentRequests',
+      'must be at least 1',
+    );
+  }
+
+  final results = <({String groupId, T? response})>[];
+
+  for (
+    int start = 0;
+    start < orderedGroupIds.length;
+    start += maxConcurrentRequests
+  ) {
+    final end = math.min(start + maxConcurrentRequests, orderedGroupIds.length);
+    final chunk = orderedGroupIds.sublist(start, end);
+    final chunkResults = await Future.wait(
+      chunk.map((groupId) async {
+        final response = await fetchGroupInstances(groupId);
+        return (groupId: groupId, response: response);
+      }),
+    );
+    results.addAll(chunkResults);
+  }
+
+  return results;
+}
+
+@visibleForTesting
+bool shouldQueuePendingBoostPoll({
+  required bool isFetching,
+  required bool isMonitoring,
+  required bool isBoostActive,
+}) {
+  return isFetching && isMonitoring && isBoostActive;
+}
+
+@visibleForTesting
+bool shouldDrainPendingBoostPoll({
+  required bool pendingBoostPoll,
+  required bool isMonitoring,
+  required bool isBoostActive,
+  required bool isFetching,
+}) {
+  return pendingBoostPoll && isMonitoring && isBoostActive && !isFetching;
+}
+
+@visibleForTesting
 List<GroupInstanceWithGroup> sortGroupInstances(
   Iterable<GroupInstanceWithGroup> instances,
 ) {
@@ -424,6 +478,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   }) async {
     _boostPollingTimer?.cancel();
     _boostPollingTimer = null;
+    _pendingBoostPoll = false;
     _boostStartedAt = null;
     _boostPollCount = 0;
     _boostFirstSeenLogged = false;
@@ -594,6 +649,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   int _backoffDelay = 1;
   bool _isFetching = false;
   bool _isFetchingGroups = false;
+  bool _pendingBoostPoll = false;
   bool _hasBaseline = false;
   DateTime? _boostStartedAt;
   int _boostPollCount = 0;
@@ -643,6 +699,23 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       await _clearBoost(persist: true, logExpired: true);
     }
     return false;
+  }
+
+  void _drainPendingBoostPollIfNeeded() {
+    if (!shouldDrainPendingBoostPoll(
+      pendingBoostPoll: _pendingBoostPoll,
+      isMonitoring: state.isMonitoring,
+      isBoostActive: state.isBoostActive,
+      isFetching: _isFetching,
+    )) {
+      if (!state.isMonitoring || !state.isBoostActive) {
+        _pendingBoostPoll = false;
+      }
+      return;
+    }
+
+    _pendingBoostPoll = false;
+    unawaited(fetchBoostedGroupInstances());
   }
 
   GroupInstanceWithGroup? _selectInviteTarget(
@@ -729,6 +802,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     _pollingTimer = null;
     _boostPollingTimer?.cancel();
     _boostPollingTimer = null;
+    _pendingBoostPoll = false;
     unawaited(_clearBoost(persist: true, logExpired: false));
     state = state.copyWith(isMonitoring: false);
     _backoffDelay = 1;
@@ -750,7 +824,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    final selectedGroupIds = state.selectedGroupIds.toList(growable: false);
+    final selectedGroupIds = state.selectedGroupIds.toList(growable: false)
+      ..sort();
     if (selectedGroupIds.isEmpty) {
       AppLogger.warning(
         'No groups selected, skipping instance fetch',
@@ -776,29 +851,31 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       final newGroupErrors = <String, String>{};
       GroupInstanceWithGroup? newestInstance;
 
-      final futures = selectedGroupIds.map((groupId) async {
-        ref.read(apiCallCounterProvider.notifier).incrementApiCall();
-        try {
-          return await api.rawApi.getUsersApi().getUserGroupInstancesForGroup(
-            userId: arg,
-            groupId: groupId,
-          );
-        } catch (e, s) {
-          AppLogger.error(
-            'Failed to fetch instances for group $groupId',
-            subCategory: 'group_monitor',
-            error: e,
-            stackTrace: s,
-          );
-          return null;
-        }
-      }).toList();
+      final responses = await fetchGroupInstancesChunked(
+        orderedGroupIds: selectedGroupIds,
+        maxConcurrentRequests: AppConstants.groupInstancesMaxConcurrentRequests,
+        fetchGroupInstances: (groupId) async {
+          ref.read(apiCallCounterProvider.notifier).incrementApiCall();
+          try {
+            return await api.rawApi.getUsersApi().getUserGroupInstancesForGroup(
+              userId: arg,
+              groupId: groupId,
+            );
+          } catch (e, s) {
+            AppLogger.error(
+              'Failed to fetch instances for group $groupId',
+              subCategory: 'group_monitor',
+              error: e,
+              stackTrace: s,
+            );
+            return null;
+          }
+        },
+      );
 
-      final responses = await Future.wait(futures);
-
-      for (int i = 0; i < responses.length; i++) {
-        final groupId = selectedGroupIds[i];
-        final response = responses[i];
+      for (final groupResponse in responses) {
+        final groupId = groupResponse.groupId;
+        final response = groupResponse.response;
         final previousInstances = previousGroupInstances[groupId] ?? [];
 
         if (response == null) {
@@ -905,6 +982,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       );
     } finally {
       _isFetching = false;
+      _drainPendingBoostPollIfNeeded();
     }
   }
 
@@ -933,6 +1011,13 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         'Fetch already in progress, skipping boosted poll',
         subCategory: 'group_monitor',
       );
+      if (shouldQueuePendingBoostPoll(
+        isFetching: _isFetching,
+        isMonitoring: state.isMonitoring,
+        isBoostActive: state.isBoostActive,
+      )) {
+        _pendingBoostPoll = true;
+      }
       if (state.boostedGroupId != null) {
         AppLogger.debug(
           'Boost poll skipped due to in-flight fetch for ${state.boostedGroupId}',
@@ -1080,6 +1165,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       }
     } finally {
       _isFetching = false;
+      _drainPendingBoostPollIfNeeded();
     }
   }
 

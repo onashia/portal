@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/models/group_instance_with_group.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
@@ -354,5 +356,149 @@ void main() {
         expect(newestInstanceIdFromGroupInstances(next), 'inst_beta_new');
       },
     );
+  });
+
+  group('fetchGroupInstancesChunked', () {
+    test('limits concurrency and preserves ordered results', () async {
+      const orderedGroupIds = [
+        'grp_alpha',
+        'grp_beta',
+        'grp_gamma',
+        'grp_delta',
+      ];
+      final releaseByGroup = {
+        for (final groupId in orderedGroupIds) groupId: Completer<void>(),
+      };
+      final started = <String>[];
+      var activeRequests = 0;
+      var peakConcurrentRequests = 0;
+
+      final resultFuture = fetchGroupInstancesChunked(
+        orderedGroupIds: orderedGroupIds,
+        maxConcurrentRequests: 2,
+        fetchGroupInstances: (groupId) async {
+          started.add(groupId);
+          activeRequests += 1;
+          if (activeRequests > peakConcurrentRequests) {
+            peakConcurrentRequests = activeRequests;
+          }
+
+          await releaseByGroup[groupId]!.future;
+          activeRequests -= 1;
+          return null;
+        },
+      );
+
+      await pumpEventQueue();
+      expect(started, equals(['grp_alpha', 'grp_beta']));
+
+      releaseByGroup['grp_alpha']!.complete();
+      releaseByGroup['grp_beta']!.complete();
+      await pumpEventQueue();
+      expect(
+        started,
+        equals(['grp_alpha', 'grp_beta', 'grp_gamma', 'grp_delta']),
+      );
+
+      releaseByGroup['grp_gamma']!.complete();
+      releaseByGroup['grp_delta']!.complete();
+      final results = await resultFuture;
+
+      expect(peakConcurrentRequests, lessThanOrEqualTo(2));
+      expect(
+        results.map((entry) => entry.groupId).toList(growable: false),
+        equals(orderedGroupIds),
+      );
+    });
+
+    test('throws when maxConcurrentRequests is less than 1', () async {
+      expect(
+        () => fetchGroupInstancesChunked(
+          orderedGroupIds: const ['grp_alpha'],
+          maxConcurrentRequests: 0,
+          fetchGroupInstances: (_) async => null,
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('pending boost poll decisions', () {
+    test(
+      'queues pending boost poll only when boost is active and fetching',
+      () {
+        expect(
+          shouldQueuePendingBoostPoll(
+            isFetching: true,
+            isMonitoring: true,
+            isBoostActive: true,
+          ),
+          isTrue,
+        );
+        expect(
+          shouldQueuePendingBoostPoll(
+            isFetching: false,
+            isMonitoring: true,
+            isBoostActive: true,
+          ),
+          isFalse,
+        );
+        expect(
+          shouldQueuePendingBoostPoll(
+            isFetching: true,
+            isMonitoring: false,
+            isBoostActive: true,
+          ),
+          isFalse,
+        );
+        expect(
+          shouldQueuePendingBoostPoll(
+            isFetching: true,
+            isMonitoring: true,
+            isBoostActive: false,
+          ),
+          isFalse,
+        );
+      },
+    );
+
+    test('drains only when pending and not currently fetching', () {
+      expect(
+        shouldDrainPendingBoostPoll(
+          pendingBoostPoll: true,
+          isMonitoring: true,
+          isBoostActive: true,
+          isFetching: false,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldDrainPendingBoostPoll(
+          pendingBoostPoll: true,
+          isMonitoring: true,
+          isBoostActive: true,
+          isFetching: true,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldDrainPendingBoostPoll(
+          pendingBoostPoll: true,
+          isMonitoring: true,
+          isBoostActive: false,
+          isFetching: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldDrainPendingBoostPoll(
+          pendingBoostPoll: false,
+          isMonitoring: true,
+          isBoostActive: true,
+          isFetching: false,
+        ),
+        isFalse,
+      );
+    });
   });
 }

@@ -3,6 +3,27 @@ import 'package:flutter/foundation.dart';
 
 class AppLogger {
   static const _name = 'portal';
+  static const bool _debugLogsEnabled = bool.fromEnvironment(
+    'PORTAL_DEBUG_LOGS',
+    defaultValue: false,
+  );
+
+  @visibleForTesting
+  static bool shouldEmitForTesting({
+    required int level,
+    required bool isDebugMode,
+    required bool debugLogsEnabled,
+  }) {
+    if (!isDebugMode) {
+      return false;
+    }
+
+    if (level == 700 && !debugLogsEnabled) {
+      return false;
+    }
+
+    return true;
+  }
 
   static void log(
     String message, {
@@ -11,22 +32,29 @@ class AppLogger {
     Object? error,
     StackTrace? stackTrace,
   }) {
-    if (kDebugMode) {
-      final name = subCategory != null ? '$_name.$subCategory' : _name;
-      // Mirror logs to stdout so they appear in flutter run output.
-      final details = <String>[
-        if (error != null) 'error=$error',
-        if (stackTrace != null) 'stack=$stackTrace',
-      ].join(' ');
-      debugPrint('[$name] $message${details.isNotEmpty ? ' ($details)' : ''}');
-      developer.log(
-        message,
-        name: name,
-        level: level,
-        error: error,
-        stackTrace: stackTrace,
-      );
+    final shouldEmit = shouldEmitForTesting(
+      level: level,
+      isDebugMode: kDebugMode,
+      debugLogsEnabled: _debugLogsEnabled,
+    );
+    if (!shouldEmit) {
+      return;
     }
+
+    final name = subCategory != null ? '$_name.$subCategory' : _name;
+    // Mirror logs to stdout so they appear in flutter run output.
+    final details = <String>[
+      if (error != null) 'error=$error',
+      if (stackTrace != null) 'stack=$stackTrace',
+    ].join(' ');
+    debugPrint('[$name] $message${details.isNotEmpty ? ' ($details)' : ''}');
+    developer.log(
+      message,
+      name: name,
+      level: level,
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   static void info(String message, {String? subCategory}) {
