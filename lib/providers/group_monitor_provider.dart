@@ -139,6 +139,95 @@ mergeFetchedGroupInstances({
 }
 
 @visibleForTesting
+bool areGroupInstanceEntriesEquivalent(
+  GroupInstanceWithGroup previous,
+  GroupInstanceWithGroup next,
+) {
+  return previous.instance.instanceId == next.instance.instanceId &&
+      previous.instance.worldId == next.instance.worldId &&
+      previous.instance.world.name == next.instance.world.name &&
+      previous.instance.nUsers == next.instance.nUsers &&
+      previous.firstDetectedAt == next.firstDetectedAt;
+}
+
+@visibleForTesting
+bool areGroupInstanceListsEquivalent(
+  List<GroupInstanceWithGroup> previous,
+  List<GroupInstanceWithGroup> next,
+) {
+  if (identical(previous, next)) {
+    return true;
+  }
+
+  if (previous.length != next.length) {
+    return false;
+  }
+
+  final previousByInstanceId = <String, GroupInstanceWithGroup>{
+    for (final entry in previous) entry.instance.instanceId: entry,
+  };
+
+  if (previousByInstanceId.length != previous.length) {
+    return false;
+  }
+
+  for (final nextEntry in next) {
+    final previousEntry = previousByInstanceId[nextEntry.instance.instanceId];
+    if (previousEntry == null ||
+        !areGroupInstanceEntriesEquivalent(previousEntry, nextEntry)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+@visibleForTesting
+bool areGroupInstancesByGroupEquivalent(
+  Map<String, List<GroupInstanceWithGroup>> previous,
+  Map<String, List<GroupInstanceWithGroup>> next,
+) {
+  if (identical(previous, next)) {
+    return true;
+  }
+
+  if (previous.length != next.length) {
+    return false;
+  }
+
+  for (final entry in previous.entries) {
+    final nextGroupInstances = next[entry.key];
+    if (nextGroupInstances == null ||
+        !areGroupInstanceListsEquivalent(entry.value, nextGroupInstances)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool _areStringMapsEquivalent(
+  Map<String, String> previous,
+  Map<String, String> next,
+) {
+  if (identical(previous, next)) {
+    return true;
+  }
+
+  if (previous.length != next.length) {
+    return false;
+  }
+
+  for (final entry in previous.entries) {
+    if (next[entry.key] != entry.value) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+@visibleForTesting
 List<GroupInstanceWithGroup> sortGroupInstances(
   Iterable<GroupInstanceWithGroup> instances,
 ) {
@@ -390,6 +479,15 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   }
 
   Future<void> fetchUserGroups() async {
+    if (_isFetchingGroups) {
+      AppLogger.debug(
+        'Group fetch already in progress, skipping duplicate call',
+        subCategory: 'group_monitor',
+      );
+      return;
+    }
+
+    _isFetchingGroups = true;
     state = state.copyWith(isLoading: true, errorMessage: null);
 
     try {
@@ -424,10 +522,20 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         isLoading: false,
         errorMessage: 'Failed to fetch groups: ${e.toString()}',
       );
+    } finally {
+      _isFetchingGroups = false;
     }
   }
 
   Future<void> fetchUserGroupsIfNeeded({int minIntervalSeconds = 5}) async {
+    if (_isFetchingGroups) {
+      AppLogger.debug(
+        'Skipping fetch: group fetch already in progress',
+        subCategory: 'group_monitor',
+      );
+      return;
+    }
+
     if (state.lastGroupsFetchTime != null) {
       final timeSinceLastFetch = DateTime.now().difference(
         state.lastGroupsFetchTime!,
@@ -485,6 +593,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   Timer? _boostPollingTimer;
   int _backoffDelay = 1;
   bool _isFetching = false;
+  bool _isFetchingGroups = false;
   bool _hasBaseline = false;
   DateTime? _boostStartedAt;
   int _boostPollCount = 0;
@@ -660,6 +769,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       final api = ref.read(vrchatApiProvider);
       final inviteService = ref.read(inviteServiceProvider);
       final previousGroupInstances = state.groupInstances;
+      final previousGroupErrors = state.groupErrors;
       final newInstances = <GroupInstanceWithGroup>[];
       final inviteTargets = <GroupInstanceWithGroup>[];
       final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
@@ -729,8 +839,15 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
           detectedAt: DateTime.now(),
         );
         newInstances.addAll(merged.newInstances);
-        newGroupInstances[groupId] = merged.mergedInstances;
-        for (final mergedInstance in merged.mergedInstances) {
+        final mergedInstances =
+            areGroupInstanceListsEquivalent(
+              previousInstances,
+              merged.mergedInstances,
+            )
+            ? previousInstances
+            : merged.mergedInstances;
+        newGroupInstances[groupId] = mergedInstances;
+        for (final mergedInstance in mergedInstances) {
           newestInstance = _pickNewestInstance(newestInstance, mergedInstance);
         }
       }
@@ -741,11 +858,26 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         }
       }
 
-      state = state.copyWith(
-        groupInstances: newGroupInstances,
-        newestInstanceId: newestInstance?.instance.instanceId,
-        groupErrors: newGroupErrors,
+      final nextNewestInstanceId = newestInstance?.instance.instanceId;
+      final didInstancesChange = !areGroupInstancesByGroupEquivalent(
+        previousGroupInstances,
+        newGroupInstances,
       );
+      final didErrorsChange = !_areStringMapsEquivalent(
+        previousGroupErrors,
+        newGroupErrors,
+      );
+      final didNewestChange = state.newestInstanceId != nextNewestInstanceId;
+
+      if (didInstancesChange || didErrorsChange || didNewestChange) {
+        state = state.copyWith(
+          groupInstances: didInstancesChange
+              ? newGroupInstances
+              : previousGroupInstances,
+          newestInstanceId: nextNewestInstanceId,
+          groupErrors: didErrorsChange ? newGroupErrors : previousGroupErrors,
+        );
+      }
 
       _hasBaseline = true;
       // Reset backoff on successful fetch
@@ -836,6 +968,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         subCategory: 'group_monitor',
       );
       final previousInstances = state.groupInstances[groupId] ?? [];
+      final previousGroupInstances = state.groupInstances;
+      final previousGroupErrors = state.groupErrors;
+      Duration? nextBoostFirstSeenAfter = state.boostFirstSeenAfter;
+      var didBoostFirstSeenChange = false;
 
       if (!_boostFirstSeenLogged && instances.isNotEmpty) {
         final startedAt = _boostStartedAt;
@@ -848,7 +984,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
           subCategory: 'group_monitor',
         );
         _boostFirstSeenLogged = true;
-        state = state.copyWith(boostFirstSeenAfter: delta);
+        nextBoostFirstSeenAfter = delta;
+        didBoostFirstSeenChange = state.boostFirstSeenAfter != delta;
       }
 
       if (_hasBaseline &&
@@ -868,24 +1005,57 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         detectedAt: DateTime.now(),
       );
       final newInstances = merged.newInstances;
+      final mergedInstances =
+          areGroupInstanceListsEquivalent(
+            previousInstances,
+            merged.mergedInstances,
+          )
+          ? previousInstances
+          : merged.mergedInstances;
 
-      final updatedGroupInstances =
-          Map<String, List<GroupInstanceWithGroup>>.from(state.groupInstances);
-      updatedGroupInstances[groupId] = merged.mergedInstances;
+      var didGroupInstancesChange = false;
+      Map<String, List<GroupInstanceWithGroup>> nextGroupInstances =
+          previousGroupInstances;
+      if (!identical(mergedInstances, previousInstances)) {
+        didGroupInstancesChange = true;
+        nextGroupInstances = Map<String, List<GroupInstanceWithGroup>>.from(
+          previousGroupInstances,
+        );
+        nextGroupInstances[groupId] = mergedInstances;
+      }
 
-      final updatedGroupErrors = Map<String, String>.from(state.groupErrors);
-      updatedGroupErrors.remove(groupId);
+      var didGroupErrorsChange = false;
+      Map<String, String> nextGroupErrors = previousGroupErrors;
+      if (previousGroupErrors.containsKey(groupId)) {
+        didGroupErrorsChange = true;
+        nextGroupErrors = Map<String, String>.from(previousGroupErrors);
+        nextGroupErrors.remove(groupId);
+      }
 
-      state = state.copyWith(
-        groupInstances: updatedGroupInstances,
-        newestInstanceId: newestInstanceIdFromGroupInstances(
-          updatedGroupInstances,
-        ),
-        groupErrors: updatedGroupErrors,
-        boostPollCount: _boostPollCount,
-        lastBoostLatencyMs: latencyMs,
-        lastBoostFetchedAt: fetchedAt,
-      );
+      final nextNewestInstanceId = didGroupInstancesChange
+          ? newestInstanceIdFromGroupInstances(nextGroupInstances)
+          : state.newestInstanceId;
+      final didNewestChange = nextNewestInstanceId != state.newestInstanceId;
+      final didBoostDiagnosticsChange =
+          state.boostPollCount != _boostPollCount ||
+          state.lastBoostLatencyMs != latencyMs ||
+          state.lastBoostFetchedAt != fetchedAt;
+
+      if (didGroupInstancesChange ||
+          didNewestChange ||
+          didGroupErrorsChange ||
+          didBoostDiagnosticsChange ||
+          didBoostFirstSeenChange) {
+        state = state.copyWith(
+          groupInstances: nextGroupInstances,
+          newestInstanceId: nextNewestInstanceId,
+          groupErrors: nextGroupErrors,
+          boostPollCount: _boostPollCount,
+          lastBoostLatencyMs: latencyMs,
+          lastBoostFetchedAt: fetchedAt,
+          boostFirstSeenAfter: nextBoostFirstSeenAfter,
+        );
+      }
 
       _hasBaseline = true;
 
@@ -902,9 +1072,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         error: e,
         stackTrace: s,
       );
-      final updatedGroupErrors = Map<String, String>.from(state.groupErrors);
-      updatedGroupErrors[groupId] = 'Failed to fetch instances';
-      state = state.copyWith(groupErrors: updatedGroupErrors);
+      const errorMessage = 'Failed to fetch instances';
+      if (state.groupErrors[groupId] != errorMessage) {
+        final updatedGroupErrors = Map<String, String>.from(state.groupErrors);
+        updatedGroupErrors[groupId] = errorMessage;
+        state = state.copyWith(groupErrors: updatedGroupErrors);
+      }
     } finally {
       _isFetching = false;
     }

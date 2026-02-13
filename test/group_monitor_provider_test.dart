@@ -110,6 +110,146 @@ void main() {
     );
   });
 
+  group('areGroupInstanceListsEquivalent', () {
+    test('returns true for equivalent lists even if order differs', () {
+      final worldA = buildTestWorld(id: 'wrld_a', name: 'World A');
+      final worldB = buildTestWorld(id: 'wrld_b', name: 'World B');
+      final detectedAt = DateTime.utc(2026, 2, 13, 9, 0);
+
+      final previous = [
+        GroupInstanceWithGroup(
+          instance: buildTestInstance(
+            instanceId: 'inst_a',
+            world: worldA,
+            userCount: 3,
+          ),
+          groupId: 'grp_alpha',
+          firstDetectedAt: detectedAt,
+        ),
+        GroupInstanceWithGroup(
+          instance: buildTestInstance(
+            instanceId: 'inst_b',
+            world: worldB,
+            userCount: 4,
+          ),
+          groupId: 'grp_alpha',
+          firstDetectedAt: detectedAt,
+        ),
+      ];
+      final next = [previous[1], previous[0]];
+
+      expect(areGroupInstanceListsEquivalent(previous, next), isTrue);
+    });
+
+    test('returns false when nUsers changes', () {
+      final world = buildTestWorld(id: 'wrld_a', name: 'World A');
+      final detectedAt = DateTime.utc(2026, 2, 13, 9, 0);
+
+      final previous = [
+        GroupInstanceWithGroup(
+          instance: buildTestInstance(
+            instanceId: 'inst_a',
+            world: world,
+            userCount: 3,
+          ),
+          groupId: 'grp_alpha',
+          firstDetectedAt: detectedAt,
+        ),
+      ];
+      final next = [
+        GroupInstanceWithGroup(
+          instance: buildTestInstance(
+            instanceId: 'inst_a',
+            world: world,
+            userCount: 5,
+          ),
+          groupId: 'grp_alpha',
+          firstDetectedAt: detectedAt,
+        ),
+      ];
+
+      expect(areGroupInstanceListsEquivalent(previous, next), isFalse);
+    });
+
+    test('returns false when world name changes', () {
+      final worldBefore = buildTestWorld(id: 'wrld_a', name: 'World A');
+      final worldAfter = buildTestWorld(id: 'wrld_a', name: 'World A Prime');
+      final detectedAt = DateTime.utc(2026, 2, 13, 9, 0);
+
+      final previous = [
+        GroupInstanceWithGroup(
+          instance: buildTestInstance(
+            instanceId: 'inst_a',
+            world: worldBefore,
+            userCount: 3,
+          ),
+          groupId: 'grp_alpha',
+          firstDetectedAt: detectedAt,
+        ),
+      ];
+      final next = [
+        GroupInstanceWithGroup(
+          instance: buildTestInstance(
+            instanceId: 'inst_a',
+            world: worldAfter,
+            userCount: 3,
+          ),
+          groupId: 'grp_alpha',
+          firstDetectedAt: detectedAt,
+        ),
+      ];
+
+      expect(areGroupInstanceListsEquivalent(previous, next), isFalse);
+    });
+  });
+
+  group('areGroupInstancesByGroupEquivalent', () {
+    test('returns false when one group payload changes', () {
+      final world = buildTestWorld(id: 'wrld_1', name: 'World One');
+
+      final previous = {
+        'grp_alpha': [
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_alpha',
+              world: world,
+              userCount: 3,
+            ),
+            groupId: 'grp_alpha',
+            firstDetectedAt: DateTime.utc(2026, 2, 13, 8, 0),
+          ),
+        ],
+        'grp_beta': [
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_beta',
+              world: world,
+              userCount: 4,
+            ),
+            groupId: 'grp_beta',
+            firstDetectedAt: DateTime.utc(2026, 2, 13, 9, 0),
+          ),
+        ],
+      };
+      final next = {
+        'grp_alpha': previous['grp_alpha']!,
+        'grp_beta': [
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_beta',
+              world: world,
+              userCount: 8,
+            ),
+            groupId: 'grp_beta',
+            firstDetectedAt: DateTime.utc(2026, 2, 13, 9, 0),
+          ),
+        ],
+      };
+
+      expect(areGroupInstancesByGroupEquivalent(previous, next), isFalse);
+    });
+  });
+
   group('newestInstanceIdFromGroupInstances', () {
     test(
       'returns newest across groups and remains correct after group replacement',
@@ -162,6 +302,56 @@ void main() {
           newestInstanceIdFromGroupInstances(boostedUpdate),
           'inst_alpha_boosted',
         );
+      },
+    );
+
+    test(
+      'remains correct with unchanged groups and one changed group payload',
+      () {
+        final world = buildTestWorld(id: 'wrld_1', name: 'World One');
+
+        final previous = {
+          'grp_alpha': [
+            GroupInstanceWithGroup(
+              instance: buildTestInstance(
+                instanceId: 'inst_alpha',
+                world: world,
+                userCount: 4,
+              ),
+              groupId: 'grp_alpha',
+              firstDetectedAt: DateTime.utc(2026, 2, 13, 8, 0),
+            ),
+          ],
+          'grp_beta': [
+            GroupInstanceWithGroup(
+              instance: buildTestInstance(
+                instanceId: 'inst_beta',
+                world: world,
+                userCount: 6,
+              ),
+              groupId: 'grp_beta',
+              firstDetectedAt: DateTime.utc(2026, 2, 13, 9, 0),
+            ),
+          ],
+        };
+
+        final next = {
+          'grp_alpha': previous['grp_alpha']!,
+          'grp_beta': [
+            GroupInstanceWithGroup(
+              instance: buildTestInstance(
+                instanceId: 'inst_beta_new',
+                world: world,
+                userCount: 7,
+              ),
+              groupId: 'grp_beta',
+              firstDetectedAt: DateTime.utc(2026, 2, 13, 10, 0),
+            ),
+          ],
+        };
+
+        expect(newestInstanceIdFromGroupInstances(previous), 'inst_beta');
+        expect(newestInstanceIdFromGroupInstances(next), 'inst_beta_new');
       },
     );
   });

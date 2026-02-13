@@ -134,13 +134,22 @@ class _GroupSelectionSideSheetState
   }
 
   Widget _buildAvailableGroupsSection(BuildContext context) {
-    final monitorState = ref.watch(groupMonitorProvider(widget.userId));
-    final filteredGroups = _filterGroups(monitorState.allGroups);
-    final selectedIds = monitorState.selectedGroupIds;
-    final hasAnyGroups = monitorState.allGroups.isNotEmpty;
+    final allGroups = ref.watch(
+      groupMonitorProvider(widget.userId).select((state) => state.allGroups),
+    );
+    final selectedIds = ref.watch(
+      groupMonitorProvider(
+        widget.userId,
+      ).select((state) => state.selectedGroupIds),
+    );
+    final isLoading = ref.watch(
+      groupMonitorProvider(widget.userId).select((state) => state.isLoading),
+    );
+    final filteredGroups = _filterGroups(allGroups);
+    final hasAnyGroups = allGroups.isNotEmpty;
     final isSearching = _searchQuery.isNotEmpty;
 
-    final content = monitorState.isLoading
+    final content = isLoading
         ? const GroupsLoadingState()
         : filteredGroups.isEmpty
         ? GroupsEmptyState(

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -48,9 +49,70 @@ class GroupCalendarState {
   }
 }
 
+@visibleForTesting
+Future<
+  ({
+    Map<String, List<CalendarEvent>> eventsByGroup,
+    Map<String, String> groupErrors,
+  })
+>
+fetchGroupCalendarEventsChunked({
+  required List<String> orderedGroupIds,
+  required Map<String, List<CalendarEvent>> previousEventsByGroup,
+  required Future<List<CalendarEvent>> Function(String groupId) fetchEvents,
+  int maxConcurrentRequests = 4,
+  void Function(String groupId, Object error, StackTrace stackTrace)?
+  onFetchError,
+}) async {
+  if (maxConcurrentRequests < 1) {
+    throw ArgumentError.value(
+      maxConcurrentRequests,
+      'maxConcurrentRequests',
+      'must be at least 1',
+    );
+  }
+
+  final eventsByGroup = <String, List<CalendarEvent>>{};
+  final groupErrors = <String, String>{};
+
+  for (
+    int start = 0;
+    start < orderedGroupIds.length;
+    start += maxConcurrentRequests
+  ) {
+    final end = math.min(start + maxConcurrentRequests, orderedGroupIds.length);
+    final chunk = orderedGroupIds.sublist(start, end);
+
+    final chunkResults = await Future.wait(
+      chunk.map((groupId) async {
+        try {
+          final events = await fetchEvents(groupId);
+          return (groupId: groupId, events: events, failed: false);
+        } catch (e, s) {
+          onFetchError?.call(groupId, e, s);
+          final previousEvents = previousEventsByGroup[groupId];
+          return (groupId: groupId, events: previousEvents, failed: true);
+        }
+      }),
+    );
+
+    for (final result in chunkResults) {
+      if (result.events != null) {
+        eventsByGroup[result.groupId] = result.events!;
+      }
+      if (result.failed) {
+        groupErrors[result.groupId] = 'Failed to fetch events';
+      }
+    }
+  }
+
+  return (eventsByGroup: eventsByGroup, groupErrors: groupErrors);
+}
+
 class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   static const _refreshMinutes = 30;
   static const _eventsPerGroup = 60;
+  static const _maxConcurrentRequests = 4;
 
   final String userId;
 
@@ -128,31 +190,29 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       final refreshedMonitor = ref.read(groupMonitorProvider(userId));
       final groupLookup = _buildGroupLookup(refreshedMonitor.allGroups);
       final api = ref.read(vrchatApiProvider);
-
-      final updatedEventsByGroup = <String, List<CalendarEvent>>{};
-      final updatedErrors = <String, String>{};
-
-      for (final groupId in selectedGroupIds) {
-        ref.read(apiCallCounterProvider.notifier).incrementApiCall();
-        try {
+      final orderedGroupIds = selectedGroupIds.toList(growable: false)..sort();
+      final fetched = await fetchGroupCalendarEventsChunked(
+        orderedGroupIds: orderedGroupIds,
+        previousEventsByGroup: state.eventsByGroup,
+        maxConcurrentRequests: _maxConcurrentRequests,
+        fetchEvents: (groupId) async {
+          ref.read(apiCallCounterProvider.notifier).incrementApiCall();
           final response = await api.rawApi
               .getCalendarApi()
               .getGroupCalendarEvents(groupId: groupId, n: _eventsPerGroup);
-          updatedEventsByGroup[groupId] = response.data?.results ?? [];
-        } catch (e, s) {
+          return response.data?.results ?? [];
+        },
+        onFetchError: (groupId, error, stackTrace) {
           AppLogger.error(
             'Failed to fetch calendar events for group $groupId',
             subCategory: 'calendar',
-            error: e,
-            stackTrace: s,
+            error: error,
+            stackTrace: stackTrace,
           );
-          updatedErrors[groupId] = 'Failed to fetch events';
-          final previous = state.eventsByGroup[groupId];
-          if (previous != null) {
-            updatedEventsByGroup[groupId] = previous;
-          }
-        }
-      }
+        },
+      );
+      final updatedEventsByGroup = fetched.eventsByGroup;
+      final updatedErrors = fetched.groupErrors;
 
       final today = DateTime.now();
       final todayEvents = _buildTodayEvents(
