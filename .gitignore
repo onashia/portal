@@ -84,6 +84,7 @@ migrate_working_dir/
 
 # Test coverage
 test/coverage/
+baseline_tests.txt
 
 # Platform-specific build artifacts
 
