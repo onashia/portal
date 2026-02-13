@@ -207,6 +207,33 @@ final authProvider = AsyncNotifierProvider<AuthNotifier, AuthState>(
   AuthNotifier.new,
 );
 
+typedef AuthAsyncMeta = ({bool isLoading, bool hasError, Object? error});
+
+final authStatusProvider = Provider<AuthStatus?>((ref) {
+  return ref.watch(authProvider.select((value) => value.asData?.value.status));
+});
+
+final authCurrentUserProvider = Provider<CurrentUser?>((ref) {
+  return ref.watch(
+    authProvider.select((value) => value.asData?.value.currentUser),
+  );
+});
+
+final authStreamedUserProvider = Provider<StreamedCurrentUser?>((ref) {
+  return ref.watch(
+    authProvider.select((value) => value.asData?.value.streamedUser),
+  );
+});
+
+final authAsyncMetaProvider = Provider<AuthAsyncMeta>((ref) {
+  final authValue = ref.watch(authProvider);
+  return (
+    isLoading: authValue.isLoading,
+    hasError: authValue.hasError,
+    error: authValue.error,
+  );
+});
+
 final authListenableProvider = Provider<ChangeNotifier>((ref) {
   return _AuthChangeNotifier(ref);
 });
@@ -215,9 +242,10 @@ class _AuthChangeNotifier extends ChangeNotifier {
   final Ref _ref;
 
   _AuthChangeNotifier(this._ref) {
-    _ref.listen<AsyncValue<AuthState>>(
-      authProvider,
-      (previous, next) => notifyListeners(),
-    );
+    _ref.listen<AuthStatus?>(authStatusProvider, (previous, next) {
+      if (previous != next) {
+        notifyListeners();
+      }
+    });
   }
 }

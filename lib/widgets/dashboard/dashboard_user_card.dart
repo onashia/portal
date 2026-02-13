@@ -1,22 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
+
+import '../../providers/auth_provider.dart';
 import '../../theme/user_status_extension.dart';
 import '../user/user_profile_image.dart';
 import '../vrchat/vrchat_status_indicator.dart';
 
-class DashboardUserCard extends StatelessWidget {
+class DashboardUserCard extends ConsumerWidget {
   final CurrentUser currentUser;
-  final StreamedCurrentUser? streamedUser;
 
-  const DashboardUserCard({
-    super.key,
-    required this.currentUser,
-    this.streamedUser,
-  });
+  const DashboardUserCard({super.key, required this.currentUser});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final streamedUser = ref.watch(authStreamedUserProvider);
     return Padding(
       padding: EdgeInsets.all(context.m3e.spacing.lg),
       child: LayoutBuilder(
@@ -46,7 +45,7 @@ class DashboardUserCard extends StatelessWidget {
                           ),
                           SizedBox(height: context.m3e.spacing.xs),
                           Text(
-                            _resolveUserInfoText(),
+                            _resolveUserInfoText(streamedUser),
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                         ],
@@ -81,7 +80,7 @@ class DashboardUserCard extends StatelessWidget {
                       ),
                       SizedBox(height: context.m3e.spacing.xs),
                       Text(
-                        _resolveUserInfoText(),
+                        _resolveUserInfoText(streamedUser),
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],
@@ -97,7 +96,7 @@ class DashboardUserCard extends StatelessWidget {
     );
   }
 
-  String _resolveUserInfoText() {
+  String _resolveUserInfoText(StreamedCurrentUser? streamedUser) {
     final pronouns = currentUser.pronouns;
     final statusDescription =
         streamedUser?.statusDescription ?? currentUser.statusDescription;

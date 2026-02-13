@@ -56,13 +56,11 @@ class PipelineController {
 final pipelineControllerProvider = Provider<PipelineController>((ref) {
   final api = ref.read(vrchatApiProvider);
   final controller = PipelineController(api.streaming);
-  final initialAuth = ref.read(authProvider).asData?.value;
+  final initialStatus = ref.read(authStatusProvider);
 
-  ref.listen<AsyncValue<AuthState>>(authProvider, (previous, next) {
-    final wasAuthenticated =
-        previous?.asData?.value.status == AuthStatus.authenticated;
-    final isAuthenticated =
-        next.asData?.value.status == AuthStatus.authenticated;
+  ref.listen<AuthStatus?>(authStatusProvider, (previous, next) {
+    final wasAuthenticated = previous == AuthStatus.authenticated;
+    final isAuthenticated = next == AuthStatus.authenticated;
 
     if (isAuthenticated && !wasAuthenticated) {
       unawaited(controller.start());
@@ -71,7 +69,7 @@ final pipelineControllerProvider = Provider<PipelineController>((ref) {
     }
   });
 
-  if (initialAuth?.status == AuthStatus.authenticated) {
+  if (initialStatus == AuthStatus.authenticated) {
     unawaited(controller.start());
   }
 
@@ -80,8 +78,8 @@ final pipelineControllerProvider = Provider<PipelineController>((ref) {
 });
 
 final pipelineEventsProvider = StreamProvider<VrcStreamingEvent>((ref) {
-  final authState = ref.watch(authProvider).asData?.value;
-  if (authState?.status != AuthStatus.authenticated) {
+  final authStatus = ref.watch(authStatusProvider);
+  if (authStatus != AuthStatus.authenticated) {
     return const Stream.empty();
   }
 

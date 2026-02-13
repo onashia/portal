@@ -70,10 +70,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    final authValue = ref.watch(authProvider);
+    final authMeta = ref.watch(authAsyncMetaProvider);
+    final currentUser = ref.watch(authCurrentUserProvider);
     final themeMode = ref.watch(themeProvider);
 
-    if (authValue.isLoading) {
+    if (authMeta.isLoading) {
       return Scaffold(
         body: Center(
           child: Transform.scale(
@@ -87,7 +88,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       );
     }
 
-    if (authValue.hasError) {
+    if (authMeta.hasError) {
       final scheme = Theme.of(context).colorScheme;
       return Scaffold(
         appBar: CustomTitleBar(
@@ -111,18 +112,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         body: EmptyState(
           icon: Icons.error_outline,
           title: 'An error occurred',
-          message: authValue.error.toString(),
+          message: authMeta.error.toString(),
           iconColor: scheme.error,
         ),
       );
     }
-
-    final authState = authValue.value;
-    if (authState == null) {
-      return const SizedBox.shrink();
-    }
-    final currentUser = authState.currentUser;
-    final streamedUser = authState.streamedUser;
 
     if (currentUser == null) {
       return Scaffold(
@@ -219,10 +213,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              DashboardUserCard(
-                                currentUser: currentUser,
-                                streamedUser: streamedUser,
-                              ),
+                              DashboardUserCard(currentUser: currentUser),
                               SizedBox(height: context.m3e.spacing.lg),
                               Expanded(
                                 child: DashboardCards(
