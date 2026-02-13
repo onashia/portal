@@ -138,6 +138,75 @@ mergeFetchedGroupInstances({
   return (mergedInstances: mergedInstances, newInstances: newInstances);
 }
 
+({
+  List<GroupInstanceWithGroup> effectiveInstances,
+  List<GroupInstanceWithGroup> newInstances,
+  bool didChange,
+})
+_mergeFetchedGroupInstancesWithDiff({
+  required String groupId,
+  required List<Instance> fetchedInstances,
+  required List<GroupInstanceWithGroup> previousInstances,
+  required DateTime detectedAt,
+}) {
+  final previousByInstanceId = <String, GroupInstanceWithGroup>{
+    for (final previous in previousInstances)
+      previous.instance.instanceId: previous,
+  };
+
+  var didChange =
+      fetchedInstances.length != previousInstances.length ||
+      previousByInstanceId.length != previousInstances.length;
+  final mergedInstances = <GroupInstanceWithGroup>[];
+  final newInstances = <GroupInstanceWithGroup>[];
+
+  for (final fetched in fetchedInstances) {
+    final previous = previousByInstanceId[fetched.instanceId];
+    final merged = GroupInstanceWithGroup(
+      instance: fetched,
+      groupId: groupId,
+      firstDetectedAt: previous?.firstDetectedAt ?? detectedAt,
+    );
+    mergedInstances.add(merged);
+
+    if (previous == null) {
+      newInstances.add(merged);
+      didChange = true;
+      continue;
+    }
+
+    if (!areGroupInstanceEntriesEquivalent(previous, merged)) {
+      didChange = true;
+    }
+  }
+
+  return (
+    effectiveInstances: didChange ? mergedInstances : previousInstances,
+    newInstances: newInstances,
+    didChange: didChange,
+  );
+}
+
+@visibleForTesting
+({
+  List<GroupInstanceWithGroup> effectiveInstances,
+  List<GroupInstanceWithGroup> newInstances,
+  bool didChange,
+})
+mergeFetchedGroupInstancesWithDiffForTesting({
+  required String groupId,
+  required List<Instance> fetchedInstances,
+  required List<GroupInstanceWithGroup> previousInstances,
+  required DateTime detectedAt,
+}) {
+  return _mergeFetchedGroupInstancesWithDiff(
+    groupId: groupId,
+    fetchedInstances: fetchedInstances,
+    previousInstances: previousInstances,
+    detectedAt: detectedAt,
+  );
+}
+
 @visibleForTesting
 bool areGroupInstanceEntriesEquivalent(
   GroupInstanceWithGroup previous,
@@ -957,21 +1026,17 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
           }
         }
 
-        final merged = mergeFetchedGroupInstances(
+        final merged = _mergeFetchedGroupInstancesWithDiff(
           groupId: groupId,
           fetchedInstances: instances,
           previousInstances: previousInstances,
           detectedAt: DateTime.now(),
         );
         newInstances.addAll(merged.newInstances);
-        final resolvedGroupInstances = resolveGroupInstancesForGroup(
-          previousInstances: previousInstances,
-          mergedInstances: merged.mergedInstances,
-        );
-        if (resolvedGroupInstances.didChange) {
+        if (merged.didChange) {
           didInstancesChange = true;
         }
-        final effectiveInstances = resolvedGroupInstances.effectiveInstances;
+        final effectiveInstances = merged.effectiveInstances;
         newGroupInstances[groupId] = effectiveInstances;
         for (final mergedInstance in effectiveInstances) {
           newestInstance = _pickNewestInstance(newestInstance, mergedInstance);
@@ -1131,20 +1196,14 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         }
       }
 
-      final merged = mergeFetchedGroupInstances(
+      final merged = _mergeFetchedGroupInstancesWithDiff(
         groupId: groupId,
         fetchedInstances: instances,
         previousInstances: previousInstances,
         detectedAt: DateTime.now(),
       );
       final newInstances = merged.newInstances;
-      final mergedInstances =
-          areGroupInstanceListsEquivalent(
-            previousInstances,
-            merged.mergedInstances,
-          )
-          ? previousInstances
-          : merged.mergedInstances;
+      final mergedInstances = merged.effectiveInstances;
 
       var didGroupInstancesChange = false;
       Map<String, List<GroupInstanceWithGroup>> nextGroupInstances =

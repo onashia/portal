@@ -6,6 +6,7 @@ import 'package:portal/models/group_instance_with_group.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/providers/group_monitor_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vrchat_dart/vrchat_dart.dart';
 
 import 'test_helpers/fake_vrchat_models.dart';
 
@@ -118,6 +119,145 @@ void main() {
         expect(newMerged.firstDetectedAt, detectedAt);
       },
     );
+  });
+
+  group('mergeFetchedGroupInstancesWithDiffForTesting', () {
+    test(
+      'reuses previous reference when payload is unchanged but reordered',
+      () {
+        final worldA = buildTestWorld(id: 'wrld_a', name: 'World A');
+        final worldB = buildTestWorld(id: 'wrld_b', name: 'World B');
+        final detectedAt = DateTime.utc(2026, 2, 13, 10, 0);
+
+        final previousInstances = <GroupInstanceWithGroup>[
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_a',
+              world: worldA,
+              userCount: 3,
+            ),
+            groupId: 'grp_alpha',
+            firstDetectedAt: DateTime.utc(2026, 2, 13, 8, 0),
+          ),
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_b',
+              world: worldB,
+              userCount: 5,
+            ),
+            groupId: 'grp_alpha',
+            firstDetectedAt: DateTime.utc(2026, 2, 13, 9, 0),
+          ),
+        ];
+
+        final fetchedInstances = <Instance>[
+          previousInstances[1].instance,
+          previousInstances[0].instance,
+        ];
+
+        final merged = mergeFetchedGroupInstancesWithDiffForTesting(
+          groupId: 'grp_alpha',
+          fetchedInstances: fetchedInstances,
+          previousInstances: previousInstances,
+          detectedAt: detectedAt,
+        );
+
+        expect(merged.didChange, isFalse);
+        expect(merged.newInstances, isEmpty);
+        expect(identical(merged.effectiveInstances, previousInstances), isTrue);
+      },
+    );
+
+    test(
+      'marks add/remove changes and keeps only new entries in newInstances',
+      () {
+        final worldA = buildTestWorld(id: 'wrld_a', name: 'World A');
+        final worldB = buildTestWorld(id: 'wrld_b', name: 'World B');
+        final worldC = buildTestWorld(id: 'wrld_c', name: 'World C');
+        final detectedAt = DateTime.utc(2026, 2, 13, 10, 0);
+        final previousDetectedAt = DateTime.utc(2026, 2, 13, 9, 30);
+
+        final previousInstances = <GroupInstanceWithGroup>[
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_a',
+              world: worldA,
+              userCount: 3,
+            ),
+            groupId: 'grp_alpha',
+            firstDetectedAt: previousDetectedAt,
+          ),
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_b',
+              world: worldB,
+              userCount: 4,
+            ),
+            groupId: 'grp_alpha',
+            firstDetectedAt: previousDetectedAt,
+          ),
+        ];
+
+        final fetchedInstances = <Instance>[
+          buildTestInstance(instanceId: 'inst_a', world: worldA, userCount: 3),
+          buildTestInstance(instanceId: 'inst_c', world: worldC, userCount: 8),
+        ];
+
+        final merged = mergeFetchedGroupInstancesWithDiffForTesting(
+          groupId: 'grp_alpha',
+          fetchedInstances: fetchedInstances,
+          previousInstances: previousInstances,
+          detectedAt: detectedAt,
+        );
+
+        expect(merged.didChange, isTrue);
+        expect(
+          identical(merged.effectiveInstances, previousInstances),
+          isFalse,
+        );
+        expect(merged.newInstances, hasLength(1));
+        expect(merged.newInstances.single.instance.instanceId, 'inst_c');
+        expect(merged.newInstances.single.firstDetectedAt, detectedAt);
+
+        final preserved = merged.effectiveInstances.firstWhere(
+          (entry) => entry.instance.instanceId == 'inst_a',
+        );
+        expect(preserved.firstDetectedAt, previousDetectedAt);
+      },
+    );
+
+    test('marks payload changes when existing instance fields differ', () {
+      final world = buildTestWorld(id: 'wrld_a', name: 'World A');
+      final detectedAt = DateTime.utc(2026, 2, 13, 10, 0);
+      final previousDetectedAt = DateTime.utc(2026, 2, 13, 9, 0);
+
+      final previousInstances = <GroupInstanceWithGroup>[
+        GroupInstanceWithGroup(
+          instance: buildTestInstance(
+            instanceId: 'inst_a',
+            world: world,
+            userCount: 3,
+          ),
+          groupId: 'grp_alpha',
+          firstDetectedAt: previousDetectedAt,
+        ),
+      ];
+
+      final fetchedInstances = <Instance>[
+        buildTestInstance(instanceId: 'inst_a', world: world, userCount: 9),
+      ];
+
+      final merged = mergeFetchedGroupInstancesWithDiffForTesting(
+        groupId: 'grp_alpha',
+        fetchedInstances: fetchedInstances,
+        previousInstances: previousInstances,
+        detectedAt: detectedAt,
+      );
+
+      expect(merged.didChange, isTrue);
+      expect(merged.newInstances, isEmpty);
+      expect(identical(merged.effectiveInstances, previousInstances), isFalse);
+    });
   });
 
   group('areGroupInstanceListsEquivalent', () {
