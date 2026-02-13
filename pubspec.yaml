@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.10.7
+  sdk: ^3.11.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to latest versions,
@@ -55,7 +55,7 @@ dependencies:
   crypto: ^3.0.7
 
   # Local Notifications
-  flutter_local_notifications: ^19.5.0
+  flutter_local_notifications: ^20.1.0
   window_manager: ^0.5.1
 
   # Motion & Animations (MD3 Spring Physics)
