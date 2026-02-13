@@ -139,48 +139,24 @@ void main() {
       expect(status.activeIncidents[1].id, equals('inc-3'));
     });
 
-    test('1.2: Indicator "none"', () async {
-      mockSuccessResponse({
-        'status': {'indicator': 'none', 'description': 'Normal'},
-        'components': [],
-        'incidents': [],
+    final indicatorTests = {
+      'none': VrchatStatusIndicator.none,
+      'minor': VrchatStatusIndicator.minor,
+      'major': VrchatStatusIndicator.major,
+      'critical': VrchatStatusIndicator.critical,
+    };
+
+    indicatorTests.forEach((indicatorString, expectedIndicator) {
+      test('Indicator "$indicatorString"', () async {
+        mockSuccessResponse({
+          'status': {'indicator': indicatorString, 'description': 'Test'},
+          'components': [],
+          'incidents': [],
+        });
+
+        final status = await service.fetchStatus();
+        expect(status.indicator, equals(expectedIndicator));
       });
-
-      final status = await service.fetchStatus();
-      expect(status.indicator, equals(VrchatStatusIndicator.none));
-    });
-
-    test('1.3: Indicator "minor"', () async {
-      mockSuccessResponse({
-        'status': {'indicator': 'minor', 'description': 'Minor issues'},
-        'components': [],
-        'incidents': [],
-      });
-
-      final status = await service.fetchStatus();
-      expect(status.indicator, equals(VrchatStatusIndicator.minor));
-    });
-
-    test('1.4: Indicator "major"', () async {
-      mockSuccessResponse({
-        'status': {'indicator': 'major', 'description': 'Major issues'},
-        'components': [],
-        'incidents': [],
-      });
-
-      final status = await service.fetchStatus();
-      expect(status.indicator, equals(VrchatStatusIndicator.major));
-    });
-
-    test('1.5: Indicator "critical"', () async {
-      mockSuccessResponse({
-        'status': {'indicator': 'critical', 'description': 'Critical'},
-        'components': [],
-        'incidents': [],
-      });
-
-      final status = await service.fetchStatus();
-      expect(status.indicator, equals(VrchatStatusIndicator.critical));
     });
   });
 
