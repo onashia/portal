@@ -713,7 +713,7 @@ void main() {
       );
       when(() => mockDio.get(any())).thenAnswer((_) async => response);
 
-      expect(() => service.fetchStatus(), throwsA(isA<Error>()));
+      expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
     });
 
     test('7.2: Response data is not a Map (list instead)', () async {
@@ -724,13 +724,13 @@ void main() {
       );
       when(() => mockDio.get(any())).thenAnswer((_) async => response);
 
-      expect(() => service.fetchStatus(), throwsA(isA<Error>()));
+      expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
     });
 
     test('7.3: Missing status field', () async {
       mockSuccessResponse({'components': [], 'incidents': []});
 
-      expect(() => service.fetchStatus(), throwsA(isA<Error>()));
+      expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
     });
 
     test('7.4: Components is not a List (object instead)', () async {
@@ -740,7 +740,7 @@ void main() {
         'incidents': [],
       });
 
-      expect(() => service.fetchStatus(), throwsA(isA<Error>()));
+      expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
     });
 
     test('7.5: Incidents is not a List (object instead)', () async {
@@ -750,7 +750,71 @@ void main() {
         'incidents': {},
       });
 
-      expect(() => service.fetchStatus(), throwsA(isA<Error>()));
+      expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
     });
+
+    test('7.6: Missing status.indicator field', () async {
+      mockSuccessResponse({
+        'status': {'description': 'OK'},
+        'components': [],
+        'incidents': [],
+      });
+
+      expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
+    });
+
+    test('7.7: Missing status.description field', () async {
+      mockSuccessResponse({
+        'status': {'indicator': 'none'},
+        'components': [],
+        'incidents': [],
+      });
+
+      expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
+    });
+
+    test('7.8: Missing components field', () async {
+      mockSuccessResponse({
+        'status': {'indicator': 'none', 'description': 'OK'},
+        'incidents': [],
+      });
+
+      expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
+    });
+
+    test('7.9: Missing incidents field', () async {
+      mockSuccessResponse({
+        'status': {'indicator': 'none', 'description': 'OK'},
+        'components': [],
+      });
+
+      expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
+    });
+
+    test(
+      '7.10: Invalid status.indicator type (number instead of string)',
+      () async {
+        mockSuccessResponse({
+          'status': {'indicator': 123, 'description': 'OK'},
+          'components': [],
+          'incidents': [],
+        });
+
+        expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
+      },
+    );
+
+    test(
+      '7.11: Invalid status.description type (number instead of string)',
+      () async {
+        mockSuccessResponse({
+          'status': {'indicator': 'none', 'description': 456},
+          'components': [],
+          'incidents': [],
+        });
+
+        expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
+      },
+    );
   });
 }
