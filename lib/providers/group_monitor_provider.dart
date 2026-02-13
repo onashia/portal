@@ -228,6 +228,49 @@ bool _areStringMapsEquivalent(
 }
 
 @visibleForTesting
+bool hasGroupInstanceKeyMismatch({
+  required Set<String> selectedGroupIds,
+  required Map<String, List<GroupInstanceWithGroup>> groupInstances,
+}) {
+  if (groupInstances.length != selectedGroupIds.length) {
+    return true;
+  }
+
+  for (final groupId in groupInstances.keys) {
+    if (!selectedGroupIds.contains(groupId)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+@visibleForTesting
+({List<GroupInstanceWithGroup> effectiveInstances, bool didChange})
+resolveGroupInstancesForGroup({
+  required List<GroupInstanceWithGroup> previousInstances,
+  required List<GroupInstanceWithGroup> mergedInstances,
+}) {
+  final didChange = !areGroupInstanceListsEquivalent(
+    previousInstances,
+    mergedInstances,
+  );
+  return (
+    effectiveInstances: didChange ? mergedInstances : previousInstances,
+    didChange: didChange,
+  );
+}
+
+@visibleForTesting
+Map<String, List<GroupInstanceWithGroup>> selectGroupInstancesForState({
+  required bool didInstancesChange,
+  required Map<String, List<GroupInstanceWithGroup>> previousGroupInstances,
+  required Map<String, List<GroupInstanceWithGroup>> nextGroupInstances,
+}) {
+  return didInstancesChange ? nextGroupInstances : previousGroupInstances;
+}
+
+@visibleForTesting
 Future<List<({String groupId, T? response})>> fetchGroupInstancesChunked<T>({
   required List<String> orderedGroupIds,
   required Future<T?> Function(String groupId) fetchGroupInstances,
@@ -442,8 +485,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     _boostStartedAt = DateTime.now();
     _boostPollCount = 0;
     _boostFirstSeenLogged = false;
-    state = state.copyWith(boostedGroupId: groupId, boostExpiresAt: expiresAt);
     state = state.copyWith(
+      boostedGroupId: groupId,
+      boostExpiresAt: expiresAt,
       boostPollCount: 0,
       lastBoostLatencyMs: null,
       lastBoostFetchedAt: null,
@@ -824,8 +868,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    final selectedGroupIds = state.selectedGroupIds.toList(growable: false)
-      ..sort();
+    final selectedGroupIdSet = state.selectedGroupIds;
+    final selectedGroupIds = selectedGroupIdSet.toList(growable: false)..sort();
     if (selectedGroupIds.isEmpty) {
       AppLogger.warning(
         'No groups selected, skipping instance fetch',
@@ -849,6 +893,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       final inviteTargets = <GroupInstanceWithGroup>[];
       final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
       final newGroupErrors = <String, String>{};
+      var didInstancesChange = hasGroupInstanceKeyMismatch(
+        selectedGroupIds: selectedGroupIdSet,
+        groupInstances: previousGroupInstances,
+      );
       GroupInstanceWithGroup? newestInstance;
 
       final responses = await fetchGroupInstancesChunked(
@@ -916,15 +964,16 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
           detectedAt: DateTime.now(),
         );
         newInstances.addAll(merged.newInstances);
-        final mergedInstances =
-            areGroupInstanceListsEquivalent(
-              previousInstances,
-              merged.mergedInstances,
-            )
-            ? previousInstances
-            : merged.mergedInstances;
-        newGroupInstances[groupId] = mergedInstances;
-        for (final mergedInstance in mergedInstances) {
+        final resolvedGroupInstances = resolveGroupInstancesForGroup(
+          previousInstances: previousInstances,
+          mergedInstances: merged.mergedInstances,
+        );
+        if (resolvedGroupInstances.didChange) {
+          didInstancesChange = true;
+        }
+        final effectiveInstances = resolvedGroupInstances.effectiveInstances;
+        newGroupInstances[groupId] = effectiveInstances;
+        for (final mergedInstance in effectiveInstances) {
           newestInstance = _pickNewestInstance(newestInstance, mergedInstance);
         }
       }
@@ -936,9 +985,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       }
 
       final nextNewestInstanceId = newestInstance?.instance.instanceId;
-      final didInstancesChange = !areGroupInstancesByGroupEquivalent(
-        previousGroupInstances,
-        newGroupInstances,
+      final nextGroupInstances = selectGroupInstancesForState(
+        didInstancesChange: didInstancesChange,
+        previousGroupInstances: previousGroupInstances,
+        nextGroupInstances: newGroupInstances,
       );
       final didErrorsChange = !_areStringMapsEquivalent(
         previousGroupErrors,
@@ -948,9 +998,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
       if (didInstancesChange || didErrorsChange || didNewestChange) {
         state = state.copyWith(
-          groupInstances: didInstancesChange
-              ? newGroupInstances
-              : previousGroupInstances,
+          groupInstances: nextGroupInstances,
           newestInstanceId: nextNewestInstanceId,
           groupErrors: didErrorsChange ? newGroupErrors : previousGroupErrors,
         );

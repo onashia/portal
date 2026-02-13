@@ -1,13 +1,21 @@
 import 'dart:async';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/models/group_instance_with_group.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/providers/group_monitor_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'test_helpers/fake_vrchat_models.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   group('resolveLoadedBoostSettings', () {
     test('keeps valid future boost settings', () {
       final now = DateTime.utc(2026, 2, 13, 10);
@@ -250,6 +258,201 @@ void main() {
 
       expect(areGroupInstancesByGroupEquivalent(previous, next), isFalse);
     });
+  });
+
+  group('group instance change tracking', () {
+    test('treats key-set mismatch as changed', () {
+      final world = buildTestWorld(id: 'wrld_1', name: 'World One');
+      final detectedAt = DateTime.utc(2026, 2, 13, 9, 0);
+      final groupInstances = <String, List<GroupInstanceWithGroup>>{
+        'grp_alpha': [
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_alpha',
+              world: world,
+              userCount: 3,
+            ),
+            groupId: 'grp_alpha',
+            firstDetectedAt: detectedAt,
+          ),
+        ],
+      };
+
+      expect(
+        hasGroupInstanceKeyMismatch(
+          selectedGroupIds: {'grp_alpha', 'grp_beta'},
+          groupInstances: groupInstances,
+        ),
+        isTrue,
+      );
+      expect(
+        hasGroupInstanceKeyMismatch(
+          selectedGroupIds: {'grp_alpha'},
+          groupInstances: {...groupInstances, 'grp_beta': []},
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+      'reuses previous map reference when keys and payloads are unchanged',
+      () {
+        final world = buildTestWorld(id: 'wrld_1', name: 'World One');
+        final detectedAt = DateTime.utc(2026, 2, 13, 9, 0);
+        final previousAlpha = <GroupInstanceWithGroup>[
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_alpha',
+              world: world,
+              userCount: 3,
+            ),
+            groupId: 'grp_alpha',
+            firstDetectedAt: detectedAt,
+          ),
+        ];
+        final previousBeta = <GroupInstanceWithGroup>[
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_beta',
+              world: world,
+              userCount: 4,
+            ),
+            groupId: 'grp_beta',
+            firstDetectedAt: detectedAt,
+          ),
+        ];
+        final previousGroupInstances = <String, List<GroupInstanceWithGroup>>{
+          'grp_alpha': previousAlpha,
+          'grp_beta': previousBeta,
+        };
+
+        var didInstancesChange = hasGroupInstanceKeyMismatch(
+          selectedGroupIds: {'grp_alpha', 'grp_beta'},
+          groupInstances: previousGroupInstances,
+        );
+        final resolvedAlpha = resolveGroupInstancesForGroup(
+          previousInstances: previousAlpha,
+          mergedInstances: [previousAlpha.first],
+        );
+        final resolvedBeta = resolveGroupInstancesForGroup(
+          previousInstances: previousBeta,
+          mergedInstances: [previousBeta.first],
+        );
+        didInstancesChange =
+            didInstancesChange ||
+            resolvedAlpha.didChange ||
+            resolvedBeta.didChange;
+
+        final nextGroupInstances = <String, List<GroupInstanceWithGroup>>{
+          'grp_alpha': resolvedAlpha.effectiveInstances,
+          'grp_beta': resolvedBeta.effectiveInstances,
+        };
+        final selectedGroupInstances = selectGroupInstancesForState(
+          didInstancesChange: didInstancesChange,
+          previousGroupInstances: previousGroupInstances,
+          nextGroupInstances: nextGroupInstances,
+        );
+
+        expect(didInstancesChange, isFalse);
+        expect(
+          identical(resolvedAlpha.effectiveInstances, previousAlpha),
+          isTrue,
+        );
+        expect(
+          identical(resolvedBeta.effectiveInstances, previousBeta),
+          isTrue,
+        );
+        expect(
+          identical(selectedGroupInstances, previousGroupInstances),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'updates changed group while preserving unchanged group list references',
+      () {
+        final world = buildTestWorld(id: 'wrld_1', name: 'World One');
+        final detectedAt = DateTime.utc(2026, 2, 13, 9, 0);
+        final previousAlpha = <GroupInstanceWithGroup>[
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_alpha',
+              world: world,
+              userCount: 3,
+            ),
+            groupId: 'grp_alpha',
+            firstDetectedAt: detectedAt,
+          ),
+        ];
+        final previousBeta = <GroupInstanceWithGroup>[
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_beta',
+              world: world,
+              userCount: 4,
+            ),
+            groupId: 'grp_beta',
+            firstDetectedAt: detectedAt,
+          ),
+        ];
+        final previousGroupInstances = <String, List<GroupInstanceWithGroup>>{
+          'grp_alpha': previousAlpha,
+          'grp_beta': previousBeta,
+        };
+
+        var didInstancesChange = hasGroupInstanceKeyMismatch(
+          selectedGroupIds: {'grp_alpha', 'grp_beta'},
+          groupInstances: previousGroupInstances,
+        );
+        final resolvedAlpha = resolveGroupInstancesForGroup(
+          previousInstances: previousAlpha,
+          mergedInstances: [
+            GroupInstanceWithGroup(
+              instance: buildTestInstance(
+                instanceId: 'inst_alpha',
+                world: world,
+                userCount: 8,
+              ),
+              groupId: 'grp_alpha',
+              firstDetectedAt: detectedAt,
+            ),
+          ],
+        );
+        final resolvedBeta = resolveGroupInstancesForGroup(
+          previousInstances: previousBeta,
+          mergedInstances: [previousBeta.first],
+        );
+        didInstancesChange =
+            didInstancesChange ||
+            resolvedAlpha.didChange ||
+            resolvedBeta.didChange;
+
+        final nextGroupInstances = <String, List<GroupInstanceWithGroup>>{
+          'grp_alpha': resolvedAlpha.effectiveInstances,
+          'grp_beta': resolvedBeta.effectiveInstances,
+        };
+        final selectedGroupInstances = selectGroupInstancesForState(
+          didInstancesChange: didInstancesChange,
+          previousGroupInstances: previousGroupInstances,
+          nextGroupInstances: nextGroupInstances,
+        );
+
+        expect(didInstancesChange, isTrue);
+        expect(
+          identical(selectedGroupInstances, previousGroupInstances),
+          isFalse,
+        );
+        expect(
+          identical(selectedGroupInstances['grp_alpha'], previousAlpha),
+          isFalse,
+        );
+        expect(
+          identical(selectedGroupInstances['grp_beta'], previousBeta),
+          isTrue,
+        );
+      },
+    );
   });
 
   group('newestInstanceIdFromGroupInstances', () {
@@ -500,5 +703,49 @@ void main() {
         isFalse,
       );
     });
+  });
+
+  group('setBoostedGroup', () {
+    test(
+      'emits one state update and resets boost diagnostics fields',
+      () async {
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: {'grp_alpha'},
+          isMonitoring: true,
+          boostPollCount: 7,
+          lastBoostLatencyMs: 150,
+          lastBoostFetchedAt: DateTime.utc(2026, 2, 13, 10, 0),
+          boostFirstSeenAfter: const Duration(seconds: 12),
+        );
+
+        final emittedStates = <GroupMonitorState>[];
+        final subscription = container.listen<GroupMonitorState>(
+          provider,
+          (_, next) => emittedStates.add(next),
+          fireImmediately: false,
+        );
+
+        await notifier.setBoostedGroup('grp_alpha');
+        subscription.close();
+        notifier.stopMonitoring();
+
+        expect(emittedStates, hasLength(1));
+        final updated = emittedStates.single;
+        expect(updated.boostedGroupId, 'grp_alpha');
+        expect(updated.boostExpiresAt, isNotNull);
+        expect(updated.boostPollCount, 0);
+        expect(updated.lastBoostLatencyMs, isNull);
+        expect(updated.lastBoostFetchedAt, isNull);
+        expect(updated.boostFirstSeenAfter, isNull);
+      },
+    );
   });
 }
