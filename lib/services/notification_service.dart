@@ -21,6 +21,8 @@ class NotificationService {
       'Notifications for new group instances';
   static const _notificationPayloadNewInstances = 'new_instances';
 
+  int _notificationCounter = 0;
+
   bool _isInitialized = false;
 
   Future<void> initialize() async {
@@ -50,7 +52,7 @@ class NotificationService {
     );
 
     await _notifications.initialize(
-      initializationSettings,
+      settings: initializationSettings,
       onDidReceiveNotificationResponse: _onNotificationTap,
     );
 
@@ -97,10 +99,12 @@ class NotificationService {
     );
 
     await _notifications.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      title,
-      body,
-      notificationDetails,
+      id:
+          DateTime.now().millisecondsSinceEpoch ~/ 1000 +
+          (_notificationCounter++),
+      title: title,
+      body: body,
+      notificationDetails: notificationDetails,
       payload: _notificationPayloadNewInstances,
     );
 
