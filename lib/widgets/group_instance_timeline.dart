@@ -17,11 +17,27 @@ class GroupInstanceTimeline extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final monitorState = ref.watch(groupMonitorProvider(userId));
-    final allInstances = monitorState.allInstancesSorted;
+    final allInstances = ref.watch(groupMonitorSortedInstancesProvider(userId));
+    final allGroupsById = ref.watch(groupMonitorAllGroupsByIdProvider(userId));
+    final newestInstanceId = ref.watch(
+      groupMonitorProvider(userId).select((state) => state.newestInstanceId),
+    );
+    final hasSelectedGroups = ref.watch(
+      groupMonitorProvider(
+        userId,
+      ).select((state) => state.selectedGroupIds.isNotEmpty),
+    );
+    final hasErrors = ref.watch(
+      groupMonitorProvider(
+        userId,
+      ).select((state) => state.groupErrors.isNotEmpty),
+    );
 
     if (allInstances.isEmpty) {
-      return GroupInstancesEmptyState(state: monitorState);
+      return GroupInstancesEmptyState(
+        hasSelectedGroups: hasSelectedGroups,
+        hasErrors: hasErrors,
+      );
     }
 
     return ListView.builder(
@@ -29,14 +45,11 @@ class GroupInstanceTimeline extends ConsumerWidget {
       itemCount: allInstances.length,
       itemBuilder: (context, index) {
         final instanceWithGroup = allInstances[index];
-        final group = monitorState.allGroups.firstWhere(
-          (g) => g.groupId == instanceWithGroup.groupId,
-          orElse: () => LimitedUserGroups(),
-        );
+        final group =
+            allGroupsById[instanceWithGroup.groupId] ?? LimitedUserGroups();
         final isLast = index == allInstances.length - 1;
         final isNewest =
-            instanceWithGroup.instance.instanceId ==
-            monitorState.newestInstanceId;
+            instanceWithGroup.instance.instanceId == newestInstanceId;
 
         return InstanceTimelineItem(
           instanceWithGroup: instanceWithGroup,

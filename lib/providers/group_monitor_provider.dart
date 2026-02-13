@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
@@ -13,6 +14,153 @@ import 'group_monitor_state.dart';
 import 'group_monitor_storage.dart';
 
 export 'group_monitor_state.dart';
+
+final DateTime _stableTimestampFallback = DateTime.fromMillisecondsSinceEpoch(
+  0,
+);
+
+DateTime _normalizedDetectedAt(DateTime? dateTime) =>
+    dateTime ?? _stableTimestampFallback;
+
+int _compareInstancesByDetectedDesc(
+  GroupInstanceWithGroup a,
+  GroupInstanceWithGroup b,
+) {
+  final byTime = _normalizedDetectedAt(
+    b.firstDetectedAt,
+  ).compareTo(_normalizedDetectedAt(a.firstDetectedAt));
+  if (byTime != 0) {
+    return byTime;
+  }
+
+  final byGroup = a.groupId.compareTo(b.groupId);
+  if (byGroup != 0) {
+    return byGroup;
+  }
+
+  return a.instance.instanceId.compareTo(b.instance.instanceId);
+}
+
+GroupInstanceWithGroup? _pickNewestInstance(
+  GroupInstanceWithGroup? current,
+  GroupInstanceWithGroup candidate,
+) {
+  if (current == null) {
+    return candidate;
+  }
+
+  return _compareInstancesByDetectedDesc(candidate, current) < 0
+      ? candidate
+      : current;
+}
+
+@visibleForTesting
+({
+  String? boostedGroupId,
+  DateTime? boostExpiresAt,
+  bool shouldClear,
+  bool logExpired,
+})
+resolveLoadedBoostSettings({
+  required GroupMonitorBoostSettings settings,
+  required DateTime now,
+}) {
+  final boostedGroupId = settings.groupId;
+  final boostExpiresAt = settings.expiresAt;
+
+  if (boostedGroupId != null && boostExpiresAt != null) {
+    if (boostExpiresAt.isAfter(now)) {
+      return (
+        boostedGroupId: boostedGroupId,
+        boostExpiresAt: boostExpiresAt,
+        shouldClear: false,
+        logExpired: false,
+      );
+    }
+
+    return (
+      boostedGroupId: null,
+      boostExpiresAt: null,
+      shouldClear: true,
+      logExpired: true,
+    );
+  }
+
+  if (boostedGroupId != null || boostExpiresAt != null) {
+    return (
+      boostedGroupId: null,
+      boostExpiresAt: null,
+      shouldClear: true,
+      logExpired: false,
+    );
+  }
+
+  return (
+    boostedGroupId: null,
+    boostExpiresAt: null,
+    shouldClear: false,
+    logExpired: false,
+  );
+}
+
+@visibleForTesting
+({
+  List<GroupInstanceWithGroup> mergedInstances,
+  List<GroupInstanceWithGroup> newInstances,
+})
+mergeFetchedGroupInstances({
+  required String groupId,
+  required List<Instance> fetchedInstances,
+  required List<GroupInstanceWithGroup> previousInstances,
+  required DateTime detectedAt,
+}) {
+  final previousInstancesById = {
+    for (final previous in previousInstances)
+      previous.instance.instanceId: previous,
+  };
+
+  final mergedInstances = <GroupInstanceWithGroup>[];
+  final newInstances = <GroupInstanceWithGroup>[];
+
+  for (final fetched in fetchedInstances) {
+    final previous = previousInstancesById[fetched.instanceId];
+    final merged = GroupInstanceWithGroup(
+      instance: fetched,
+      groupId: groupId,
+      firstDetectedAt: previous?.firstDetectedAt ?? detectedAt,
+    );
+    mergedInstances.add(merged);
+    if (previous == null) {
+      newInstances.add(merged);
+    }
+  }
+
+  return (mergedInstances: mergedInstances, newInstances: newInstances);
+}
+
+@visibleForTesting
+List<GroupInstanceWithGroup> sortGroupInstances(
+  Iterable<GroupInstanceWithGroup> instances,
+) {
+  final sorted = instances.toList(growable: false);
+  sorted.sort(_compareInstancesByDetectedDesc);
+  return sorted;
+}
+
+@visibleForTesting
+String? newestInstanceIdFromGroupInstances(
+  Map<String, List<GroupInstanceWithGroup>> groupInstances,
+) {
+  GroupInstanceWithGroup? newest;
+
+  for (final groupEntries in groupInstances.values) {
+    for (final instance in groupEntries) {
+      newest = _pickNewestInstance(newest, instance);
+    }
+  }
+
+  return newest?.instance.instanceId;
+}
 
 class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   final String arg;
@@ -30,16 +178,29 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   Future<void> _loadBoostSettings() async {
     try {
       final settings = await GroupMonitorStorage.loadBoostSettings();
-      final boostedGroupId = settings.groupId;
-      final boostExpiresAt = settings.expiresAt;
+      final resolved = resolveLoadedBoostSettings(
+        settings: settings,
+        now: DateTime.now(),
+      );
 
-      if (boostedGroupId != null &&
-          boostExpiresAt != null &&
-          boostExpiresAt.isAfter(DateTime.now())) {
-        await _clearBoost(persist: true, logExpired: false);
+      if (resolved.shouldClear) {
+        await _clearBoost(persist: true, logExpired: resolved.logExpired);
         return;
-      } else if (boostedGroupId != null || boostExpiresAt != null) {
-        await _clearBoost(persist: true, logExpired: true);
+      }
+
+      if (resolved.boostedGroupId != null && resolved.boostExpiresAt != null) {
+        state = state.copyWith(
+          boostedGroupId: resolved.boostedGroupId,
+          boostExpiresAt: resolved.boostExpiresAt,
+        );
+        AppLogger.debug(
+          'Loaded active boost settings for ${resolved.boostedGroupId}',
+          subCategory: 'group_monitor',
+        );
+
+        if (state.isMonitoring) {
+          _scheduleNextBoostPoll(immediate: true);
+        }
       }
     } catch (e) {
       AppLogger.error(
@@ -480,7 +641,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    if (state.selectedGroupIds.isEmpty) {
+    final selectedGroupIds = state.selectedGroupIds.toList(growable: false);
+    if (selectedGroupIds.isEmpty) {
       AppLogger.warning(
         'No groups selected, skipping instance fetch',
         subCategory: 'group_monitor',
@@ -491,18 +653,20 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     _isFetching = true;
     try {
       AppLogger.debug(
-        'Fetching instances for ${state.selectedGroupIds.length} groups',
+        'Fetching instances for ${selectedGroupIds.length} groups',
         subCategory: 'group_monitor',
       );
 
       final api = ref.read(vrchatApiProvider);
       final inviteService = ref.read(inviteServiceProvider);
+      final previousGroupInstances = state.groupInstances;
       final newInstances = <GroupInstanceWithGroup>[];
       final inviteTargets = <GroupInstanceWithGroup>[];
       final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
       final newGroupErrors = <String, String>{};
+      GroupInstanceWithGroup? newestInstance;
 
-      final futures = state.selectedGroupIds.map((groupId) async {
+      final futures = selectedGroupIds.map((groupId) async {
         ref.read(apiCallCounterProvider.notifier).incrementApiCall();
         try {
           return await api.rawApi.getUsersApi().getUserGroupInstancesForGroup(
@@ -523,8 +687,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       final responses = await Future.wait(futures);
 
       for (int i = 0; i < responses.length; i++) {
-        final groupId = state.selectedGroupIds.elementAt(i);
+        final groupId = selectedGroupIds[i];
         final response = responses[i];
+        final previousInstances = previousGroupInstances[groupId] ?? [];
 
         if (response == null) {
           AppLogger.error(
@@ -532,7 +697,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
             subCategory: 'group_monitor',
           );
           newGroupErrors[groupId] = 'Failed to fetch instances';
-          newGroupInstances[groupId] = state.groupInstances[groupId] ?? [];
+          newGroupInstances[groupId] = previousInstances;
+          for (final previous in previousInstances) {
+            newestInstance = _pickNewestInstance(newestInstance, previous);
+          }
           continue;
         }
 
@@ -542,15 +710,6 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
           'Group returned ${instances.length} instances',
           subCategory: 'group_monitor',
         );
-
-        // Compare with previous fetch to identify new instances
-        final previousInstances = state.groupInstances[groupId] ?? [];
-        final previousInstanceIds = previousInstances
-            .map((i) => i.instance.instanceId)
-            .toSet();
-        final previousInstancesMap = {
-          for (var inst in previousInstances) inst.instance.instanceId: inst,
-        };
 
         if (_hasBaseline &&
             state.isMonitoring &&
@@ -563,46 +722,17 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
           }
         }
 
-        for (final instance in instances) {
-          final instanceWithGroup = GroupInstanceWithGroup(
-            instance: instance,
-            groupId: groupId,
-            firstDetectedAt: previousInstanceIds.contains(instance.instanceId)
-                ? previousInstancesMap[instance.instanceId]?.firstDetectedAt
-                : DateTime.now(),
-          );
-          if (!previousInstanceIds.contains(instance.instanceId)) {
-            newInstances.add(instanceWithGroup);
-          }
+        final merged = mergeFetchedGroupInstances(
+          groupId: groupId,
+          fetchedInstances: instances,
+          previousInstances: previousInstances,
+          detectedAt: DateTime.now(),
+        );
+        newInstances.addAll(merged.newInstances);
+        newGroupInstances[groupId] = merged.mergedInstances;
+        for (final mergedInstance in merged.mergedInstances) {
+          newestInstance = _pickNewestInstance(newestInstance, mergedInstance);
         }
-
-        final newInstancesMap = {
-          for (var inst in newInstances) inst.instance.instanceId: inst,
-        };
-
-        newGroupInstances[groupId] = instances
-            .map(
-              (i) => GroupInstanceWithGroup(
-                instance: i,
-                groupId: groupId,
-                firstDetectedAt:
-                    newInstancesMap[i.instanceId]?.firstDetectedAt ??
-                    previousInstancesMap[i.instanceId]?.firstDetectedAt,
-              ),
-            )
-            .toList();
-      }
-
-      String? newestInstanceId;
-      final allInstances =
-          newGroupInstances.values.expand((instances) => instances).toList()
-            ..sort((a, b) {
-              final aTime = a.firstDetectedAt ?? DateTime.now();
-              final bTime = b.firstDetectedAt ?? DateTime.now();
-              return bTime.compareTo(aTime);
-            });
-      if (allInstances.isNotEmpty) {
-        newestInstanceId = allInstances.first.instance.instanceId;
       }
 
       if (inviteTargets.isNotEmpty) {
@@ -613,7 +743,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
       state = state.copyWith(
         groupInstances: newGroupInstances,
-        newestInstanceId: newestInstanceId,
+        newestInstanceId: newestInstance?.instance.instanceId,
         groupErrors: newGroupErrors,
       );
 
@@ -706,12 +836,6 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         subCategory: 'group_monitor',
       );
       final previousInstances = state.groupInstances[groupId] ?? [];
-      final previousInstanceIds = previousInstances
-          .map((i) => i.instance.instanceId)
-          .toSet();
-      final previousInstancesMap = {
-        for (var inst in previousInstances) inst.instance.instanceId: inst,
-      };
 
       if (!_boostFirstSeenLogged && instances.isNotEmpty) {
         final startedAt = _boostStartedAt;
@@ -737,54 +861,26 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         }
       }
 
-      final newInstances = <GroupInstanceWithGroup>[];
-      for (final instance in instances) {
-        final instanceWithGroup = GroupInstanceWithGroup(
-          instance: instance,
-          groupId: groupId,
-          firstDetectedAt: previousInstanceIds.contains(instance.instanceId)
-              ? previousInstancesMap[instance.instanceId]?.firstDetectedAt
-              : DateTime.now(),
-        );
-        if (!previousInstanceIds.contains(instance.instanceId)) {
-          newInstances.add(instanceWithGroup);
-        }
-      }
-
-      final newInstancesMap = {
-        for (var inst in newInstances) inst.instance.instanceId: inst,
-      };
+      final merged = mergeFetchedGroupInstances(
+        groupId: groupId,
+        fetchedInstances: instances,
+        previousInstances: previousInstances,
+        detectedAt: DateTime.now(),
+      );
+      final newInstances = merged.newInstances;
 
       final updatedGroupInstances =
           Map<String, List<GroupInstanceWithGroup>>.from(state.groupInstances);
-      updatedGroupInstances[groupId] = instances
-          .map(
-            (i) => GroupInstanceWithGroup(
-              instance: i,
-              groupId: groupId,
-              firstDetectedAt: newInstancesMap[i.instanceId]?.firstDetectedAt,
-            ),
-          )
-          .toList();
+      updatedGroupInstances[groupId] = merged.mergedInstances;
 
       final updatedGroupErrors = Map<String, String>.from(state.groupErrors);
       updatedGroupErrors.remove(groupId);
 
-      String? newestInstanceId;
-      final allInstances =
-          updatedGroupInstances.values.expand((instances) => instances).toList()
-            ..sort((a, b) {
-              final aTime = a.firstDetectedAt ?? DateTime.now();
-              final bTime = b.firstDetectedAt ?? DateTime.now();
-              return bTime.compareTo(aTime);
-            });
-      if (allInstances.isNotEmpty) {
-        newestInstanceId = allInstances.first.instance.instanceId;
-      }
-
       state = state.copyWith(
         groupInstances: updatedGroupInstances,
-        newestInstanceId: newestInstanceId,
+        newestInstanceId: newestInstanceIdFromGroupInstances(
+          updatedGroupInstances,
+        ),
         groupErrors: updatedGroupErrors,
         boostPollCount: _boostPollCount,
         lastBoostLatencyMs: latencyMs,
@@ -869,3 +965,65 @@ final groupMonitorProvider =
     NotifierProvider.family<GroupMonitorNotifier, GroupMonitorState, String>(
       (arg) => GroupMonitorNotifier(arg),
     );
+
+final groupMonitorSelectedGroupIdsProvider =
+    Provider.family<Set<String>, String>((ref, userId) {
+      return ref.watch(
+        groupMonitorProvider(userId).select((state) => state.selectedGroupIds),
+      );
+    });
+
+final groupMonitorAllGroupsByIdProvider =
+    Provider.family<Map<String, LimitedUserGroups>, String>((ref, userId) {
+      final groups = ref.watch(
+        groupMonitorProvider(userId).select((state) => state.allGroups),
+      );
+      final lookup = <String, LimitedUserGroups>{};
+      for (final group in groups) {
+        final groupId = group.groupId;
+        if (groupId != null && groupId.isNotEmpty) {
+          lookup[groupId] = group;
+        }
+      }
+      return lookup;
+    });
+
+final groupMonitorSelectedGroupsProvider =
+    Provider.family<List<LimitedUserGroups>, String>((ref, userId) {
+      final selectedGroupIds = ref.watch(
+        groupMonitorSelectedGroupIdsProvider(userId),
+      );
+      final groups = ref.watch(
+        groupMonitorProvider(userId).select((state) => state.allGroups),
+      );
+
+      return groups
+          .where((group) {
+            final groupId = group.groupId;
+            return groupId != null && selectedGroupIds.contains(groupId);
+          })
+          .toList(growable: false);
+    });
+
+final groupMonitorSortedInstancesProvider =
+    Provider.family<List<GroupInstanceWithGroup>, String>((ref, userId) {
+      final groupInstances = ref.watch(
+        groupMonitorProvider(userId).select((state) => state.groupInstances),
+      );
+      return sortGroupInstances(
+        groupInstances.values.expand((instances) => instances),
+      );
+    });
+
+final groupMonitorInstanceCountProvider = Provider.family<int, String>((
+  ref,
+  userId,
+) {
+  final groupInstances = ref.watch(
+    groupMonitorProvider(userId).select((state) => state.groupInstances),
+  );
+  return groupInstances.values.fold<int>(
+    0,
+    (sum, instances) => sum + instances.length,
+  );
+});

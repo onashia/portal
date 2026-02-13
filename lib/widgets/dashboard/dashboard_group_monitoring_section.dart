@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
-import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../../providers/group_monitor_provider.dart';
 import '../group_instance_list.dart';
@@ -9,15 +8,8 @@ import 'selected_group_chip.dart';
 
 class DashboardGroupMonitoringSection extends ConsumerWidget {
   final String userId;
-  final GroupMonitorState monitorState;
-  final List<LimitedUserGroups> selectedGroups;
 
-  const DashboardGroupMonitoringSection({
-    super.key,
-    required this.userId,
-    required this.monitorState,
-    required this.selectedGroups,
-  });
+  const DashboardGroupMonitoringSection({super.key, required this.userId});
 
   void _toggleBoostForGroup(WidgetRef ref, String? groupId) {
     if (groupId != null) {
@@ -29,16 +21,26 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final monitorMeta = ref.watch(
+      groupMonitorProvider(userId).select(
+        (state) => (
+          boostedGroupId: state.boostedGroupId,
+          isBoostActive: state.isBoostActive,
+          isMonitoring: state.isMonitoring,
+        ),
+      ),
+    );
+    final selectedGroups = ref.watch(
+      groupMonitorSelectedGroupsProvider(userId),
+    );
+    final instanceCount = ref.watch(groupMonitorInstanceCountProvider(userId));
+
     final scheme = Theme.of(context).colorScheme;
     final cardTheme = Theme.of(context).cardTheme;
     final baseShape =
         cardTheme.shape as RoundedRectangleBorder? ??
         RoundedRectangleBorder(borderRadius: context.m3e.shapes.round.md);
     final outlineColor = scheme.outlineVariant.withValues(alpha: 0.4);
-    final instanceCount = monitorState.groupInstances.values.fold<int>(
-      0,
-      (sum, instances) => sum + instances.length,
-    );
 
     return Card(
       color: scheme.surfaceContainerLow,
@@ -118,9 +120,9 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
                       SelectedGroupChip(
                         group: group,
                         isBoosted:
-                            monitorState.boostedGroupId == group.groupId &&
-                            monitorState.isBoostActive,
-                        isMonitoring: monitorState.isMonitoring,
+                            monitorMeta.boostedGroupId == group.groupId &&
+                            monitorMeta.isBoostActive,
+                        isMonitoring: monitorMeta.isMonitoring,
                         onToggleBoost: () =>
                             _toggleBoostForGroup(ref, group.groupId),
                       ),

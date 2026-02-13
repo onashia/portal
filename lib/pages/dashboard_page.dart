@@ -140,10 +140,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
     // Null-safe: currentUser is guaranteed non-null after the check above
     final userId = currentUser.id;
-    final monitorState = ref.watch(groupMonitorProvider(userId));
-    final selectedGroups = monitorState.allGroups
-        .where((g) => monitorState.selectedGroupIds.contains(g.groupId))
-        .toList();
 
     return Scaffold(
       appBar: CustomTitleBar(
@@ -231,8 +227,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                               Expanded(
                                 child: DashboardCards(
                                   userId: userId,
-                                  monitorState: monitorState,
-                                  selectedGroups: selectedGroups,
                                   canShowSideBySide: canShowSideBySide,
                                 ),
                               ),
@@ -266,7 +260,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       right: context.m3e.spacing.xl,
                       child: DashboardActionArea(
                         userId: userId,
-                        monitorState: monitorState,
                         onManageGroups: () => _toggleSideSheetForUser(userId),
                         sheetWidth: effectiveSheetWidth,
                         progress: progress,

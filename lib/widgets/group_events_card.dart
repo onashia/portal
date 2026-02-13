@@ -17,7 +17,11 @@ class GroupEventsCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final calendarState = ref.watch(groupCalendarProvider(userId));
-    final monitorState = ref.watch(groupMonitorProvider(userId));
+    final hasSelectedGroups = ref.watch(
+      groupMonitorProvider(
+        userId,
+      ).select((state) => state.selectedGroupIds.isNotEmpty),
+    );
     final scheme = Theme.of(context).colorScheme;
     final cardTheme = Theme.of(context).cardTheme;
     final baseShape =
@@ -39,7 +43,7 @@ class GroupEventsCard extends ConsumerWidget {
             EventsCardHeader(todayLabel: todayLabel),
             SizedBox(height: context.m3e.spacing.lg),
             Expanded(
-              child: _buildContent(context, calendarState, monitorState),
+              child: _buildContent(context, calendarState, hasSelectedGroups),
             ),
             if (calendarState.groupErrors.isNotEmpty) ...[
               SizedBox(height: context.m3e.spacing.sm),
@@ -59,9 +63,9 @@ class GroupEventsCard extends ConsumerWidget {
   Widget _buildContent(
     BuildContext context,
     GroupCalendarState calendarState,
-    GroupMonitorState monitorState,
+    bool hasSelectedGroups,
   ) {
-    if (monitorState.selectedGroupIds.isEmpty) {
+    if (!hasSelectedGroups) {
       return const EmptyState(
         icon: Icons.event_busy,
         title: 'No Groups Selected',

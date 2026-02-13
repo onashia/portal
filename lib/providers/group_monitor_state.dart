@@ -95,14 +95,6 @@ class GroupMonitorState {
     );
   }
 
-  List<GroupInstanceWithGroup> get allInstancesSorted =>
-      groupInstances.values.expand((instances) => instances).toList()
-        ..sort((a, b) {
-          final aTime = a.firstDetectedAt ?? DateTime.now();
-          final bTime = b.firstDetectedAt ?? DateTime.now();
-          return bTime.compareTo(aTime);
-        });
-
   bool get isBoostActive =>
       boostedGroupId != null &&
       boostExpiresAt != null &&

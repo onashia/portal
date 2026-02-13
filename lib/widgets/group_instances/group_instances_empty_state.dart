@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
-
-import '../../providers/group_monitor_state.dart';
 import '../common/empty_state.dart';
 
 class GroupInstancesEmptyState extends StatelessWidget {
-  final GroupMonitorState state;
+  final bool hasSelectedGroups;
+  final bool hasErrors;
 
-  const GroupInstancesEmptyState({super.key, required this.state});
+  const GroupInstancesEmptyState({
+    super.key,
+    required this.hasSelectedGroups,
+    required this.hasErrors,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (state.selectedGroupIds.isEmpty) {
+    if (!hasSelectedGroups) {
       return const EmptyState(
         icon: Icons.group_off,
         title: 'No Groups Selected',
@@ -18,7 +21,6 @@ class GroupInstancesEmptyState extends StatelessWidget {
       );
     }
 
-    final hasErrors = state.groupErrors.isNotEmpty;
     final scheme = Theme.of(context).colorScheme;
 
     return EmptyState(
