@@ -170,4 +170,29 @@ More details''';
       expect(result, contains('Custom exception message'));
     });
   });
+
+  group('formatUiErrorMessage', () {
+    test('returns fallback for null', () {
+      final result = formatUiErrorMessage(null);
+      expect(result, 'Something went wrong. Please try again.');
+    });
+
+    test('returns fallback for instance-of style messages', () {
+      final result = formatUiErrorMessage(Exception());
+      expect(result, 'Something went wrong. Please try again.');
+    });
+
+    test('uses first line from multiline errors', () {
+      final result = formatUiErrorMessage('Primary message\nMore details');
+      expect(result, 'Primary message');
+    });
+
+    test('returns custom fallback when provided', () {
+      final result = formatUiErrorMessage(
+        null,
+        fallbackMessage: 'Temporary issue',
+      );
+      expect(result, 'Temporary issue');
+    });
+  });
 }

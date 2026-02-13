@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:motor/motor.dart';
+import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../providers/auth_provider.dart';
@@ -12,6 +13,7 @@ import '../providers/theme_provider.dart';
 import '../services/notification_service.dart';
 import '../utils/animation_constants.dart';
 import '../utils/app_logger.dart';
+import '../utils/error_utils.dart';
 import '../widgets/common/empty_state.dart';
 import '../constants/icon_sizes.dart';
 import '../widgets/custom_title_bar.dart';
@@ -21,6 +23,37 @@ import '../widgets/dashboard/dashboard_cards.dart';
 import '../widgets/dashboard/dashboard_side_sheet_layout.dart';
 import '../widgets/dashboard/dashboard_user_card.dart';
 import '../widgets/group_selection_side_sheet.dart';
+
+enum DashboardAuthViewState { loading, error, handoff, ready }
+
+@visibleForTesting
+DashboardAuthViewState resolveDashboardAuthViewState({
+  required AuthAsyncMeta authMeta,
+  required AuthStatus? authStatus,
+  required CurrentUser? currentUser,
+}) {
+  if (authMeta.isLoading) {
+    return DashboardAuthViewState.loading;
+  }
+
+  if (authMeta.hasError) {
+    return DashboardAuthViewState.error;
+  }
+
+  final isRedirectingUnauthenticated =
+      currentUser == null &&
+      (authStatus == AuthStatus.initial ||
+          authStatus == AuthStatus.unauthenticated);
+  if (isRedirectingUnauthenticated) {
+    return DashboardAuthViewState.handoff;
+  }
+
+  if (currentUser == null) {
+    return DashboardAuthViewState.loading;
+  }
+
+  return DashboardAuthViewState.ready;
+}
 
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -71,10 +104,16 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     final authMeta = ref.watch(authAsyncMetaProvider);
+    final authStatus = ref.watch(authStatusProvider);
     final currentUser = ref.watch(authCurrentUserProvider);
     final themeMode = ref.watch(themeProvider);
+    final authViewState = resolveDashboardAuthViewState(
+      authMeta: authMeta,
+      authStatus: authStatus,
+      currentUser: currentUser,
+    );
 
-    if (authMeta.isLoading) {
+    if (authViewState == DashboardAuthViewState.loading) {
       return Scaffold(
         body: Center(
           child: Transform.scale(
@@ -88,7 +127,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       );
     }
 
-    if (authMeta.hasError) {
+    if (authViewState == DashboardAuthViewState.error) {
       final scheme = Theme.of(context).colorScheme;
       return Scaffold(
         appBar: CustomTitleBar(
@@ -112,28 +151,17 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         body: EmptyState(
           icon: Icons.error_outline,
           title: 'An error occurred',
-          message: authMeta.error.toString(),
+          message: formatUiErrorMessage(authMeta.error),
           iconColor: scheme.error,
         ),
       );
     }
 
-    if (currentUser == null) {
-      return Scaffold(
-        body: Center(
-          child: Transform.scale(
-            scale: UiConstants.dashboardLoadingScale,
-            child: const LoadingIndicatorM3E(
-              variant: LoadingIndicatorM3EVariant.defaultStyle,
-              semanticLabel: 'Loading portal',
-            ),
-          ),
-        ),
-      );
+    if (authViewState == DashboardAuthViewState.handoff) {
+      return const SizedBox.shrink();
     }
 
-    // Null-safe: currentUser is guaranteed non-null after the check above
-    final userId = currentUser.id;
+    final userId = currentUser!.id;
 
     return Scaffold(
       appBar: CustomTitleBar(

@@ -15,7 +15,7 @@ class LoginSubmitButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = authState.isLoading;
+    final isLoading = authState.status == AuthStatus.loading;
     final buttonText = authState.status == AuthStatus.requiresEmailVerification
         ? 'Retry Login'
         : authState.requiresTwoFactorAuth

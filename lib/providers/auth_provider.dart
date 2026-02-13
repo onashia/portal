@@ -23,7 +23,6 @@ class AuthState {
   final CurrentUser? currentUser;
   final StreamedCurrentUser? streamedUser;
   final bool requiresTwoFactorAuth;
-  final bool isLoading;
 
   const AuthState({
     required this.status,
@@ -31,7 +30,6 @@ class AuthState {
     this.currentUser,
     this.streamedUser,
     this.requiresTwoFactorAuth = false,
-    this.isLoading = false,
   });
 
   AuthState copyWith({
@@ -40,7 +38,6 @@ class AuthState {
     CurrentUser? currentUser,
     StreamedCurrentUser? streamedUser,
     bool? requiresTwoFactorAuth,
-    bool? isLoading,
   }) {
     return AuthState(
       status: status ?? this.status,
@@ -49,7 +46,6 @@ class AuthState {
       streamedUser: streamedUser ?? this.streamedUser,
       requiresTwoFactorAuth:
           requiresTwoFactorAuth ?? this.requiresTwoFactorAuth,
-      isLoading: isLoading ?? this.isLoading,
     );
   }
 }
@@ -75,7 +71,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   }
 
   Future<void> login(String username, String password) async {
-    state = AsyncData(AuthState(status: AuthStatus.initial, isLoading: true));
+    state = const AsyncData(AuthState(status: AuthStatus.loading));
 
     ref.read(apiCallCounterProvider.notifier).incrementApiCall();
 
@@ -89,7 +85,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           AuthState(
             status: AuthStatus.authenticated,
             currentUser: result.currentUser,
-            isLoading: false,
           ),
         );
         break;
@@ -98,7 +93,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           AuthState(
             status: AuthStatus.requires2FA,
             requiresTwoFactorAuth: true,
-            isLoading: false,
           ),
         );
         break;
@@ -107,7 +101,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           AuthState(
             status: AuthStatus.requiresEmailVerification,
             errorMessage: result.errorMessage,
-            isLoading: false,
           ),
         );
         break;
@@ -116,7 +109,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           AuthState(
             status: AuthStatus.error,
             errorMessage: result.errorMessage,
-            isLoading: false,
           ),
         );
         break;
@@ -124,12 +116,8 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   }
 
   Future<void> verify2FA(String code) async {
-    state = AsyncData(
-      AuthState(
-        status: AuthStatus.requires2FA,
-        requiresTwoFactorAuth: true,
-        isLoading: true,
-      ),
+    state = const AsyncData(
+      AuthState(status: AuthStatus.loading, requiresTwoFactorAuth: true),
     );
 
     ref.read(apiCallCounterProvider.notifier).incrementApiCall();
@@ -141,7 +129,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         AuthState(
           status: AuthStatus.authenticated,
           currentUser: result.currentUser,
-          isLoading: false,
         ),
       );
     } else {
@@ -150,7 +137,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           status: AuthStatus.requires2FA,
           requiresTwoFactorAuth: true,
           errorMessage: result.errorMessage,
-          isLoading: false,
         ),
       );
     }
