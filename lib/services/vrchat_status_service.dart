@@ -18,25 +18,26 @@ class VrchatStatusService {
       throw FormatException('Response missing required field: status');
     }
 
-    if (data['status'] is! Map<String, dynamic>) {
+    final statusData = data['status'];
+    if (statusData is! Map<String, dynamic>) {
       throw FormatException('Response field "status" is not a valid object');
     }
 
-    if (!data['status'].containsKey('indicator')) {
+    if (!statusData.containsKey('indicator')) {
       throw FormatException('Response field "status.indicator" is missing');
     }
 
-    if (data['status']['indicator'] is! String) {
+    if (statusData['indicator'] is! String) {
       throw FormatException(
         'Response field "status.indicator" is not a string',
       );
     }
 
-    if (!data['status'].containsKey('description')) {
+    if (!statusData.containsKey('description')) {
       throw FormatException('Response field "status.description" is missing');
     }
 
-    if (data['status']['description'] is! String) {
+    if (statusData['description'] is! String) {
       throw FormatException(
         'Response field "status.description" is not a string',
       );
