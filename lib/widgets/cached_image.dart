@@ -9,6 +9,7 @@ class CachedImage extends ConsumerStatefulWidget {
   final String imageUrl;
   final double? width;
   final double? height;
+  final bool enableDecodeSizing;
   final BoxShape shape;
   final BoxFit fit;
   final IconData? fallbackIcon;
@@ -25,6 +26,7 @@ class CachedImage extends ConsumerStatefulWidget {
     required this.imageUrl,
     this.width,
     this.height,
+    this.enableDecodeSizing = true,
     this.shape = BoxShape.rectangle,
     this.fit = BoxFit.cover,
     this.fallbackIcon,
@@ -149,11 +151,14 @@ class _CachedImageState extends ConsumerState<CachedImage> {
     BuildContext context,
     bool applyBackgroundColor,
   ) {
+    final decodeDimensions = _resolveDecodeDimensions(context);
     final imageWidget = Image.memory(
       bytes,
       width: widget.width,
       height: widget.height,
       fit: widget.fit,
+      cacheWidth: decodeDimensions.cacheWidth,
+      cacheHeight: decodeDimensions.cacheHeight,
       gaplessPlayback: true,
     );
 
@@ -191,6 +196,40 @@ class _CachedImageState extends ConsumerState<CachedImage> {
     }
 
     return container;
+  }
+
+  ({int? cacheWidth, int? cacheHeight}) _resolveDecodeDimensions(
+    BuildContext context,
+  ) {
+    if (!widget.enableDecodeSizing) {
+      return (cacheWidth: null, cacheHeight: null);
+    }
+
+    final effectiveDpr = MediaQuery.devicePixelRatioOf(
+      context,
+    ).clamp(1.0, 2.0).toDouble();
+    final cacheWidth = _resolveDecodeDimension(widget.width, effectiveDpr);
+    final cacheHeight = _resolveDecodeDimension(widget.height, effectiveDpr);
+
+    // Require explicit valid width+height so decode hints stay predictable.
+    if (cacheWidth == null || cacheHeight == null) {
+      return (cacheWidth: null, cacheHeight: null);
+    }
+
+    return (cacheWidth: cacheWidth, cacheHeight: cacheHeight);
+  }
+
+  int? _resolveDecodeDimension(double? logicalSize, double effectiveDpr) {
+    if (logicalSize == null || !logicalSize.isFinite || logicalSize <= 0) {
+      return null;
+    }
+
+    final decodeSize = (logicalSize * effectiveDpr).ceil();
+    if (decodeSize < 1) {
+      return null;
+    }
+
+    return decodeSize;
   }
 
   Widget _buildLoading(BuildContext context) {
