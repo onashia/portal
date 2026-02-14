@@ -1112,6 +1112,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     return GroupInstanceWithGroup(instance: best, groupId: groupId);
   }
 
+  /// Requests a baseline monitoring refresh through the queued single-flight
+  /// lifecycle so manual refreshes and automatic triggers share the same flow.
+  ///
+  /// When [immediate] is true, this starts a refresh now (or marks one as
+  /// pending if another fetch is already in-flight). When false, it schedules
+  /// the next baseline tick using the normal polling cadence.
   void requestRefresh({bool immediate = true}) {
     _requestBaselineRefresh(immediate: immediate);
   }
