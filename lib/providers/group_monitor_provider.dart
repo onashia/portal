@@ -12,6 +12,7 @@ import 'api_call_counter.dart';
 import 'auth_provider.dart';
 import 'group_monitor_state.dart';
 import 'group_monitor_storage.dart';
+import 'polling_lifecycle.dart';
 
 export 'group_monitor_state.dart';
 
@@ -393,6 +394,18 @@ bool shouldDrainPendingBoostPoll({
   return pendingBoostPoll && isMonitoring && isBoostActive && !isFetching;
 }
 
+bool canPollForUserSession({
+  required bool isAuthenticated,
+  required String? authenticatedUserId,
+  required String expectedUserId,
+}) {
+  return isSessionEligible(
+    isAuthenticated: isAuthenticated,
+    authenticatedUserId: authenticatedUserId,
+    expectedUserId: expectedUserId,
+  );
+}
+
 @visibleForTesting
 List<GroupInstanceWithGroup> sortGroupInstances(
   Iterable<GroupInstanceWithGroup> instances,
@@ -422,12 +435,59 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   GroupMonitorNotifier(this.arg);
 
+  bool _canPollForCurrentSession() {
+    final session = ref.read(authSessionSnapshotProvider);
+    return canPollForUserSession(
+      isAuthenticated: session.isAuthenticated,
+      authenticatedUserId: session.userId,
+      expectedUserId: arg,
+    );
+  }
+
   @override
   GroupMonitorState build() {
+    _listenForAuthChanges();
+    ref.onDispose(() {
+      _pollingTimer?.cancel();
+      _pollingTimer = null;
+      _boostPollingTimer?.cancel();
+      _boostPollingTimer = null;
+      _pendingBaselineRefresh = false;
+      _pendingBoostRefresh = false;
+    });
     _loadSelectedGroups();
     _loadAutoInviteSetting();
     _loadBoostSettings();
     return const GroupMonitorState(isLoading: true);
+  }
+
+  void _listenForAuthChanges() {
+    ref.listen<AuthSessionSnapshot>(authSessionSnapshotProvider, (
+      previous,
+      next,
+    ) {
+      final wasEligible =
+          previous?.isAuthenticated == true && previous?.userId == arg;
+      final isEligible = next.isAuthenticated && next.userId == arg;
+
+      if (!isEligible) {
+        if (state.isMonitoring) {
+          stopMonitoring();
+        } else {
+          _reconcileBaselineLoop();
+          _reconcileBoostLoop();
+        }
+        return;
+      }
+
+      if (!wasEligible) {
+        _reconcileMonitoringForSelectionState();
+        return;
+      }
+
+      _reconcileBaselineLoop();
+      _reconcileBoostLoop();
+    });
   }
 
   Future<void> _loadBoostSettings() async {
@@ -454,7 +514,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         );
 
         if (state.isMonitoring) {
-          _scheduleNextBoostPoll(immediate: true);
+          _requestBoostRefresh(immediate: true);
         }
       }
     } catch (e) {
@@ -486,14 +546,21 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   Future<void> _loadSelectedGroups() async {
     try {
       final selectedIds = await GroupMonitorStorage.loadSelectedGroupIds();
-      state = state.copyWith(selectedGroupIds: selectedIds.toSet());
+      final loadedSelection = selectedIds.toSet();
+      final shouldApplyLoadedSelection = state.selectedGroupIds.isEmpty;
+      if (shouldApplyLoadedSelection) {
+        state = state.copyWith(selectedGroupIds: loadedSelection);
+      } else {
+        AppLogger.debug(
+          'Skipping loaded selected groups because selection already changed in memory',
+          subCategory: 'group_monitor',
+        );
+      }
       AppLogger.debug(
         'Loaded ${selectedIds.length} selected groups from storage',
         subCategory: 'group_monitor',
       );
-      if (selectedIds.isNotEmpty && !state.isMonitoring) {
-        startMonitoring();
-      }
+      _reconcileMonitoringForSelectionState();
     } catch (e) {
       AppLogger.error(
         'Failed to load selected groups',
@@ -569,7 +636,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     );
 
     if (state.isMonitoring) {
-      _scheduleNextBoostPoll(immediate: true);
+      _requestBoostRefresh(immediate: true);
     }
   }
 
@@ -591,7 +658,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   }) async {
     _boostPollingTimer?.cancel();
     _boostPollingTimer = null;
-    _pendingBoostPoll = false;
+    _pendingBoostRefresh = false;
     _boostStartedAt = null;
     _boostPollCount = 0;
     _boostFirstSeenLogged = false;
@@ -721,13 +788,15 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   }
 
   void toggleGroupSelection(String groupId) {
+    final wasMonitoring = state.isMonitoring;
     final newSelection = Set<String>.from(state.selectedGroupIds);
+    final wasSelected = newSelection.contains(groupId);
     final newGroupInstances = Map<String, List<GroupInstanceWithGroup>>.from(
       state.groupInstances,
     );
     final newGroupErrors = Map<String, String>.from(state.groupErrors);
 
-    if (newSelection.contains(groupId)) {
+    if (wasSelected) {
       newSelection.remove(groupId);
       // Clear cached data for deselected group to free memory
       newGroupInstances.remove(groupId);
@@ -735,14 +804,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       if (state.boostedGroupId == groupId) {
         unawaited(_clearBoost(persist: true, logExpired: false));
       }
-      if (newSelection.isEmpty && state.isMonitoring) {
-        stopMonitoring();
-      }
     } else {
       newSelection.add(groupId);
-      if (newSelection.length == 1 && !state.isMonitoring) {
-        startMonitoring();
-      }
     }
 
     state = state.copyWith(
@@ -750,6 +813,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       groupInstances: newGroupInstances,
       groupErrors: newGroupErrors,
     );
+    _reconcileMonitoringForSelectionState();
+    if (!wasSelected && wasMonitoring && state.isMonitoring) {
+      _requestBaselineRefresh(immediate: true);
+    }
     _saveSelectedGroups();
     AppLogger.debug(
       'Toggled group, now ${newSelection.length} selected',
@@ -760,14 +827,111 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   Timer? _pollingTimer;
   Timer? _boostPollingTimer;
   int _backoffDelay = 1;
-  bool _isFetching = false;
+  bool _isFetchingBaseline = false;
+  bool _isBoostFetching = false;
   bool _isFetchingGroups = false;
-  bool _pendingBoostPoll = false;
+  bool _pendingBaselineRefresh = false;
+  bool _pendingBoostRefresh = false;
   bool _hasBaseline = false;
   DateTime? _boostStartedAt;
   int _boostPollCount = 0;
   bool _boostFirstSeenLogged = false;
   final _random = math.Random();
+
+  @visibleForTesting
+  bool get hasActivePollingTimer => _pollingTimer != null;
+
+  bool get _isAnyFetchInFlight => _isFetchingBaseline || _isBoostFetching;
+
+  bool _baselineActive() {
+    return isLoopActive(
+      isEnabled: state.isMonitoring,
+      sessionEligible: _canPollForCurrentSession(),
+      selectionActive: isSelectionActive(state.selectedGroupIds),
+    );
+  }
+
+  bool _boostActive() {
+    return state.isMonitoring &&
+        state.isBoostActive &&
+        state.boostedGroupId != null &&
+        _canPollForCurrentSession();
+  }
+
+  void _reconcileMonitoringForSelectionState() {
+    if (state.selectedGroupIds.isEmpty) {
+      if (state.isMonitoring) {
+        stopMonitoring();
+      }
+      _reconcileBaselineLoop();
+      _reconcileBoostLoop();
+      return;
+    }
+
+    if (state.selectedGroupIds.isNotEmpty &&
+        !state.isMonitoring &&
+        _canPollForCurrentSession()) {
+      startMonitoring();
+    } else if (state.selectedGroupIds.isNotEmpty &&
+        !state.isMonitoring &&
+        !_canPollForCurrentSession()) {
+      AppLogger.debug(
+        'Selected groups changed but session is ineligible for monitoring',
+        subCategory: 'group_monitor',
+      );
+    }
+
+    _reconcileBaselineLoop();
+    _reconcileBoostLoop();
+  }
+
+  void _reconcileBaselineLoop() {
+    if (!state.isMonitoring) {
+      _pollingTimer?.cancel();
+      _pollingTimer = null;
+      _pendingBaselineRefresh = false;
+      return;
+    }
+
+    if (state.selectedGroupIds.isEmpty) {
+      stopMonitoring();
+      return;
+    }
+
+    if (!_canPollForCurrentSession()) {
+      AppLogger.debug(
+        'Monitoring active but session is ineligible; stopping monitoring',
+        subCategory: 'group_monitor',
+      );
+      stopMonitoring();
+      return;
+    }
+
+    if (_pollingTimer == null &&
+        !_isAnyFetchInFlight &&
+        !_pendingBaselineRefresh) {
+      AppLogger.debug(
+        'Baseline polling timer missing while monitoring is active; rescheduling',
+        subCategory: 'group_monitor',
+      );
+      _requestBaselineRefresh(immediate: true);
+    }
+  }
+
+  void _reconcileBoostLoop() {
+    if (!_boostActive()) {
+      _boostPollingTimer?.cancel();
+      _boostPollingTimer = null;
+      _pendingBoostRefresh = false;
+      return;
+    }
+
+    if (_boostPollingTimer == null &&
+        !_isAnyFetchInFlight &&
+        !_pendingBoostRefresh) {
+      _requestBoostRefresh(immediate: true);
+    }
+  }
 
   int _nextPollDelaySeconds() {
     final base = AppConstants.pollingIntervalSeconds;
@@ -789,18 +953,124 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     return math.max(1, base + delta);
   }
 
-  void _scheduleNextBoostPoll({bool immediate = false}) {
-    _boostPollingTimer?.cancel();
+  void _scheduleNextBaselineTick() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
 
-    if (!state.isMonitoring || !state.isBoostActive) {
+    if (!_baselineActive()) {
+      _reconcileBaselineLoop();
       return;
     }
 
-    final delaySeconds = immediate ? 0 : _nextBoostPollDelaySeconds();
-    _boostPollingTimer = Timer(Duration(seconds: delaySeconds), () async {
-      await fetchBoostedGroupInstances();
-      _scheduleNextBoostPoll();
+    final delaySeconds = _nextPollDelaySeconds();
+    _pollingTimer = Timer(Duration(seconds: delaySeconds), () {
+      if (!ref.mounted) {
+        return;
+      }
+      _requestBaselineRefresh(immediate: true);
     });
+  }
+
+  void _scheduleNextBoostTick() {
+    _boostPollingTimer?.cancel();
+    _boostPollingTimer = null;
+
+    if (!_boostActive()) {
+      _reconcileBoostLoop();
+      return;
+    }
+
+    final delaySeconds = _nextBoostPollDelaySeconds();
+    _boostPollingTimer = Timer(Duration(seconds: delaySeconds), () {
+      if (!ref.mounted) {
+        return;
+      }
+      _requestBoostRefresh(immediate: true);
+    });
+  }
+
+  void _requestBaselineRefresh({bool immediate = true}) {
+    if (!_baselineActive()) {
+      _reconcileBaselineLoop();
+      return;
+    }
+
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
+
+    final decision = resolveRefreshRequestDecision(
+      isInFlight: _isAnyFetchInFlight,
+    );
+    if (decision.shouldQueuePending) {
+      _pendingBaselineRefresh = true;
+      return;
+    }
+
+    if (immediate) {
+      unawaited(fetchGroupInstances());
+      return;
+    }
+
+    _scheduleNextBaselineTick();
+  }
+
+  void _requestBoostRefresh({bool immediate = true}) {
+    if (!_boostActive()) {
+      _reconcileBoostLoop();
+      return;
+    }
+
+    _boostPollingTimer?.cancel();
+    _boostPollingTimer = null;
+
+    final decision = resolveRefreshRequestDecision(
+      isInFlight: _isAnyFetchInFlight,
+    );
+    if (decision.shouldQueuePending) {
+      _pendingBoostRefresh = true;
+      return;
+    }
+
+    if (immediate) {
+      unawaited(fetchBoostedGroupInstances());
+      return;
+    }
+
+    _scheduleNextBoostTick();
+  }
+
+  void _drainPendingRefreshesOrScheduleTicks() {
+    if (!ref.mounted || _isAnyFetchInFlight) {
+      return;
+    }
+
+    if (_pendingBaselineRefresh && _baselineActive()) {
+      _pendingBaselineRefresh = false;
+      unawaited(fetchGroupInstances());
+      return;
+    }
+
+    if (_pendingBoostRefresh && _boostActive()) {
+      _pendingBoostRefresh = false;
+      unawaited(fetchBoostedGroupInstances());
+      return;
+    }
+
+    if (_baselineActive() && _pollingTimer == null) {
+      _scheduleNextBaselineTick();
+    } else if (!_baselineActive()) {
+      _pollingTimer?.cancel();
+      _pollingTimer = null;
+      _pendingBaselineRefresh = false;
+    }
+
+    if (_boostActive() && _boostPollingTimer == null) {
+      _scheduleNextBoostTick();
+    } else if (!_boostActive()) {
+      _boostPollingTimer?.cancel();
+      _boostPollingTimer = null;
+      _pendingBoostRefresh = false;
+    }
   }
 
   Future<bool> _ensureBoostActive() async {
@@ -812,23 +1082,6 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       await _clearBoost(persist: true, logExpired: true);
     }
     return false;
-  }
-
-  void _drainPendingBoostPollIfNeeded() {
-    if (!shouldDrainPendingBoostPoll(
-      pendingBoostPoll: _pendingBoostPoll,
-      isMonitoring: state.isMonitoring,
-      isBoostActive: state.isBoostActive,
-      isFetching: _isFetching,
-    )) {
-      if (!state.isMonitoring || !state.isBoostActive) {
-        _pendingBoostPoll = false;
-      }
-      return;
-    }
-
-    _pendingBoostPoll = false;
-    unawaited(fetchBoostedGroupInstances());
   }
 
   GroupInstanceWithGroup? _selectInviteTarget(
@@ -859,22 +1112,28 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     return GroupInstanceWithGroup(instance: best, groupId: groupId);
   }
 
-  void _scheduleNextPoll({bool immediate = false}) {
-    _pollingTimer?.cancel();
-
-    if (!state.isMonitoring) {
-      return;
-    }
-
-    final delaySeconds = immediate ? 0 : _nextPollDelaySeconds();
-    _pollingTimer = Timer(Duration(seconds: delaySeconds), () async {
-      await fetchGroupInstances();
-      _scheduleNextPoll();
-    });
+  void requestRefresh({bool immediate = true}) {
+    _requestBaselineRefresh(immediate: immediate);
   }
 
   void startMonitoring() {
     AppLogger.info('Starting monitoring', subCategory: 'group_monitor');
+
+    if (!_canPollForCurrentSession()) {
+      AppLogger.warning(
+        'Cannot start monitoring without an active matching session',
+        subCategory: 'group_monitor',
+      );
+      return;
+    }
+
+    if (state.selectedGroupIds.isEmpty) {
+      AppLogger.warning(
+        'Cannot start monitoring with no selected groups',
+        subCategory: 'group_monitor',
+      );
+      return;
+    }
 
     if (state.isMonitoring) {
       AppLogger.warning(
@@ -891,21 +1150,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       subCategory: 'group_monitor',
     );
 
-    try {
-      // Initial fetch to populate data immediately
-      _scheduleNextPoll(immediate: true);
-      if (state.isBoostActive) {
-        _scheduleNextBoostPoll(immediate: true);
-      }
-    } catch (e, s) {
-      AppLogger.error(
-        'Failed to start monitoring',
-        subCategory: 'group_monitor',
-        error: e,
-        stackTrace: s,
-      );
-      state = state.copyWith(isMonitoring: false);
-    }
+    _requestBaselineRefresh(immediate: true);
+    _reconcileBoostLoop();
+    _reconcileBaselineLoop();
   }
 
   void stopMonitoring() {
@@ -915,7 +1162,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     _pollingTimer = null;
     _boostPollingTimer?.cancel();
     _boostPollingTimer = null;
-    _pendingBoostPoll = false;
+    _pendingBaselineRefresh = false;
+    _pendingBoostRefresh = false;
     unawaited(_clearBoost(persist: true, logExpired: false));
     state = state.copyWith(isMonitoring: false);
     _backoffDelay = 1;
@@ -929,13 +1177,29 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       subCategory: 'group_monitor',
     );
 
-    if (_isFetching) {
+    if (!_baselineActive()) {
       AppLogger.debug(
-        'Fetch already in progress, skipping',
+        'Skipping instance fetch for inactive baseline loop',
+        subCategory: 'group_monitor',
+      );
+      _reconcileBaselineLoop();
+      return;
+    }
+
+    final decision = resolveRefreshRequestDecision(
+      isInFlight: _isAnyFetchInFlight,
+    );
+    if (decision.shouldQueuePending) {
+      _pendingBaselineRefresh = true;
+      AppLogger.debug(
+        'Fetch already in progress, queueing pending baseline refresh',
         subCategory: 'group_monitor',
       );
       return;
     }
+
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
 
     final selectedGroupIdSet = state.selectedGroupIds;
     final selectedGroupIds = selectedGroupIdSet.toList(growable: false)..sort();
@@ -944,10 +1208,11 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         'No groups selected, skipping instance fetch',
         subCategory: 'group_monitor',
       );
+      _reconcileBaselineLoop();
       return;
     }
 
-    _isFetching = true;
+    _isFetchingBaseline = true;
     try {
       AppLogger.debug(
         'Fetching instances for ${selectedGroupIds.length} groups',
@@ -989,6 +1254,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
           }
         },
       );
+      if (!ref.mounted) {
+        return;
+      }
 
       for (final groupResponse in responses) {
         final groupId = groupResponse.groupId;
@@ -1094,18 +1362,22 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         AppConstants.maxBackoffDelay,
       );
     } finally {
-      _isFetching = false;
-      _drainPendingBoostPollIfNeeded();
+      _isFetchingBaseline = false;
+      if (ref.mounted) {
+        _drainPendingRefreshesOrScheduleTicks();
+      }
     }
   }
 
   Future<void> fetchBoostedGroupInstances() async {
-    if (!state.isMonitoring) {
+    if (!_boostActive()) {
+      _reconcileBoostLoop();
       return;
     }
 
     final isActive = await _ensureBoostActive();
     if (!isActive) {
+      _reconcileBoostLoop();
       return;
     }
 
@@ -1119,18 +1391,15 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    if (_isFetching) {
+    final decision = resolveRefreshRequestDecision(
+      isInFlight: _isAnyFetchInFlight,
+    );
+    if (decision.shouldQueuePending) {
+      _pendingBoostRefresh = true;
       AppLogger.debug(
-        'Fetch already in progress, skipping boosted poll',
+        'Fetch already in progress, queueing pending boost refresh',
         subCategory: 'group_monitor',
       );
-      if (shouldQueuePendingBoostPoll(
-        isFetching: _isFetching,
-        isMonitoring: state.isMonitoring,
-        isBoostActive: state.isBoostActive,
-      )) {
-        _pendingBoostPoll = true;
-      }
       if (state.boostedGroupId != null) {
         AppLogger.debug(
           'Boost poll skipped due to in-flight fetch for ${state.boostedGroupId}',
@@ -1140,7 +1409,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    _isFetching = true;
+    _boostPollingTimer?.cancel();
+    _boostPollingTimer = null;
+    _isBoostFetching = true;
     try {
       _boostPollCount += 1;
       final pollStart = DateTime.now();
@@ -1155,6 +1426,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       final response = await api.rawApi
           .getUsersApi()
           .getUserGroupInstancesForGroup(userId: arg, groupId: groupId);
+      if (!ref.mounted) {
+        return;
+      }
 
       final instances = response.data?.instances ?? [];
       final fetchedAt = response.data?.fetchedAt;
@@ -1271,8 +1545,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         state = state.copyWith(groupErrors: updatedGroupErrors);
       }
     } finally {
-      _isFetching = false;
-      _drainPendingBoostPollIfNeeded();
+      _isBoostFetching = false;
+      if (ref.mounted) {
+        _drainPendingRefreshesOrScheduleTicks();
+      }
     }
   }
 
@@ -1307,6 +1583,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         boostExpiresAt: null,
         groupErrors: {},
       );
+      _reconcileMonitoringForSelectionState();
 
       AppLogger.debug(
         'Cleared all selected groups from storage',

@@ -54,8 +54,10 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
         onPressed: () {
           ref
               .read(groupMonitorProvider(widget.userId).notifier)
-              .fetchGroupInstances();
-          ref.read(groupCalendarProvider(widget.userId).notifier).refresh();
+              .requestRefresh(immediate: true);
+          ref
+              .read(groupCalendarProvider(widget.userId).notifier)
+              .requestRefresh(immediate: true);
         },
         tooltip: 'Refresh Dashboard',
       ),

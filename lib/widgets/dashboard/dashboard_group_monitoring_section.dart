@@ -75,7 +75,7 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
                 onRefresh: () {
                   ref
                       .read(groupMonitorProvider(userId).notifier)
-                      .fetchGroupInstances();
+                      .requestRefresh(immediate: true);
                 },
               ),
             ),

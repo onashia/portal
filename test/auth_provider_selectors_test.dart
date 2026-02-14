@@ -32,6 +32,7 @@ class _MockStreamedCurrentUser extends Mock implements StreamedCurrentUser {}
 void main() {
   test('selectors map auth slices and async metadata', () {
     final currentUser = _MockCurrentUser();
+    when(() => currentUser.id).thenReturn('usr_test');
     final streamedUser = _MockStreamedCurrentUser();
     final container = ProviderContainer(
       overrides: [
@@ -52,6 +53,12 @@ void main() {
     expect(container.read(authStatusProvider), AuthStatus.authenticated);
     expect(container.read(authCurrentUserProvider), same(currentUser));
     expect(container.read(authStreamedUserProvider), same(streamedUser));
+    final authenticatedSession = container.read(authSessionSnapshotProvider);
+    expect(authenticatedSession.status, AuthStatus.authenticated);
+    expect(authenticatedSession.isAuthenticated, isTrue);
+    expect(authenticatedSession.userId, 'usr_test');
+    expect(container.read(isAuthenticatedProvider), isTrue);
+    expect(container.read(authenticatedUserIdProvider), 'usr_test');
 
     notifier.setLoading();
     final loadingMeta = container.read(authAsyncMetaProvider);
@@ -65,12 +72,19 @@ void main() {
     expect(errorMeta.isLoading, isFalse);
     expect(errorMeta.hasError, isTrue);
     expect(errorMeta.error, same(error));
+    final errorSession = container.read(authSessionSnapshotProvider);
+    expect(errorSession.status, isNull);
+    expect(errorSession.isAuthenticated, isFalse);
+    expect(errorSession.userId, isNull);
+    expect(container.read(isAuthenticatedProvider), isFalse);
+    expect(container.read(authenticatedUserIdProvider), isNull);
   });
 
   test(
     'authStatusProvider does not emit for non-status auth updates',
     () async {
       final currentUser = _MockCurrentUser();
+      when(() => currentUser.id).thenReturn('usr_test');
       final firstStreamedUser = _MockStreamedCurrentUser();
       final secondStreamedUser = _MockStreamedCurrentUser();
       final container = ProviderContainer(
@@ -94,6 +108,14 @@ void main() {
       }, fireImmediately: true);
       addTearDown(subscription.close);
 
+      final observedSessions = <AuthSessionSnapshot>[];
+      final sessionSubscription = container.listen<AuthSessionSnapshot>(
+        authSessionSnapshotProvider,
+        (_, next) => observedSessions.add(next),
+        fireImmediately: true,
+      );
+      addTearDown(sessionSubscription.close);
+
       notifier.setData(
         AuthState(
           status: AuthStatus.authenticated,
@@ -113,6 +135,8 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(observedStatuses, [AuthStatus.initial, AuthStatus.authenticated]);
+      expect(observedSessions.first.isAuthenticated, isFalse);
+      expect(observedSessions.last.isAuthenticated, isTrue);
     },
   );
 }

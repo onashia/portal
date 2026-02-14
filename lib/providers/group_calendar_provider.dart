@@ -9,6 +9,7 @@ import '../models/group_calendar_event.dart';
 import '../providers/api_call_counter.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
+import '../providers/polling_lifecycle.dart';
 import '../utils/app_logger.dart';
 import '../utils/calendar_event_utils.dart';
 
@@ -120,15 +121,102 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
 
   Timer? _refreshTimer;
   bool _isFetching = false;
+  bool _pendingRefresh = false;
+
+  @visibleForTesting
+  bool get hasActiveRefreshTimer => _refreshTimer != null;
+
+  bool _canRefreshForCurrentSession() {
+    final session = ref.read(authSessionSnapshotProvider);
+    return canPollForUserSession(
+      isAuthenticated: session.isAuthenticated,
+      authenticatedUserId: session.userId,
+      expectedUserId: userId,
+    );
+  }
+
+  bool _calendarActiveForSelection(Set<String> selectedGroupIds) {
+    return isLoopActive(
+      isEnabled: true,
+      sessionEligible: _canRefreshForCurrentSession(),
+      selectionActive: isSelectionActive(selectedGroupIds),
+    );
+  }
+
+  bool _calendarActiveForSnapshot(
+    AuthSessionSnapshot snapshot,
+    Set<String> selectedGroupIds,
+  ) {
+    final sessionEligible = isSessionEligible(
+      isAuthenticated: snapshot.isAuthenticated,
+      authenticatedUserId: snapshot.userId,
+      expectedUserId: userId,
+    );
+    return isLoopActive(
+      isEnabled: true,
+      sessionEligible: sessionEligible,
+      selectionActive: isSelectionActive(selectedGroupIds),
+    );
+  }
+
+  bool _calendarActive() {
+    final monitorState = ref.read(groupMonitorProvider(userId));
+    return _calendarActiveForSelection(monitorState.selectedGroupIds);
+  }
+
+  void requestRefresh({bool immediate = true}) {
+    _requestCalendarRefresh(immediate: immediate);
+  }
 
   @override
   GroupCalendarState build() {
     _listenForSelectionChanges();
-    _scheduleAutoRefresh();
-    ref.onDispose(_disposeTimer);
+    _listenForAuthChanges();
+    ref.onDispose(() {
+      _disposeTimer();
+      _pendingRefresh = false;
+    });
 
-    Future.microtask(refresh);
-    return const GroupCalendarState(isLoading: true);
+    final shouldRefresh = _calendarActive();
+    if (shouldRefresh) {
+      Future.microtask(() => requestRefresh(immediate: true));
+    }
+    return GroupCalendarState(isLoading: shouldRefresh);
+  }
+
+  void _listenForAuthChanges() {
+    ref.listen<AuthSessionSnapshot>(authSessionSnapshotProvider, (
+      previous,
+      next,
+    ) {
+      final selectedGroupIds = ref.read(
+        groupMonitorProvider(userId).select((state) => state.selectedGroupIds),
+      );
+      final previousActive = previous == null
+          ? false
+          : _calendarActiveForSnapshot(previous, selectedGroupIds);
+      final nextActive = _calendarActiveForSnapshot(next, selectedGroupIds);
+
+      if (becameInactive(previousActive, nextActive)) {
+        _handleSessionIneligible();
+        return;
+      }
+
+      if (becameActive(previousActive, nextActive)) {
+        _requestCalendarRefresh(immediate: true);
+        return;
+      }
+
+      _reconcileCalendarLoop();
+    });
+  }
+
+  void _handleSessionIneligible() {
+    _disposeTimer();
+    _pendingRefresh = false;
+    if (state.isLoading) {
+      state = state.copyWith(isLoading: false);
+    }
   }
 
   void _listenForSelectionChanges() {
@@ -141,17 +229,64 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       }
 
       if (!setEquals(previous.selectedGroupIds, next.selectedGroupIds)) {
-        unawaited(refresh());
+        final previousActive = _calendarActiveForSelection(
+          previous.selectedGroupIds,
+        );
+        final nextActive = _calendarActiveForSelection(next.selectedGroupIds);
+
+        if (nextActive) {
+          _requestCalendarRefresh(immediate: true);
+          return;
+        }
+
+        if (becameInactive(previousActive, nextActive)) {
+          _reconcileCalendarLoop();
+          return;
+        }
+
+        _reconcileCalendarLoop();
       }
     });
   }
 
-  void _scheduleAutoRefresh() {
+  void _requestCalendarRefresh({bool immediate = true}) {
+    if (!_calendarActive()) {
+      _reconcileCalendarLoop();
+      return;
+    }
+
     _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(
-      const Duration(minutes: _refreshMinutes),
-      (_) => unawaited(refresh()),
-    );
+    _refreshTimer = null;
+
+    final decision = resolveRefreshRequestDecision(isInFlight: _isFetching);
+    if (decision.shouldQueuePending) {
+      _pendingRefresh = true;
+      return;
+    }
+
+    if (immediate) {
+      unawaited(refresh());
+      return;
+    }
+
+    _scheduleNextCalendarTick();
+  }
+
+  void _scheduleNextCalendarTick() {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+
+    if (!_calendarActive()) {
+      _reconcileCalendarLoop();
+      return;
+    }
+
+    _refreshTimer = Timer(const Duration(minutes: _refreshMinutes), () {
+      if (!ref.mounted) {
+        return;
+      }
+      _requestCalendarRefresh(immediate: true);
+    });
   }
 
   void _disposeTimer() {
@@ -159,8 +294,74 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     _refreshTimer = null;
   }
 
+  void _clearForEmptySelectionIfNeeded() {
+    final isNoopState =
+        state.eventsByGroup.isEmpty &&
+        state.todayEvents.isEmpty &&
+        state.groupErrors.isEmpty &&
+        !state.isLoading &&
+        state.lastFetchedAt == null;
+    if (isNoopState) {
+      return;
+    }
+
+    state = state.copyWith(
+      eventsByGroup: const {},
+      todayEvents: const [],
+      groupErrors: const {},
+      isLoading: false,
+      lastFetchedAt: null,
+    );
+  }
+
+  void _reconcileCalendarLoop() {
+    if (!_canRefreshForCurrentSession()) {
+      _handleSessionIneligible();
+      return;
+    }
+
+    final selectedGroupIds = ref.read(
+      groupMonitorProvider(userId).select((state) => state.selectedGroupIds),
+    );
+    if (!isSelectionActive(selectedGroupIds)) {
+      _disposeTimer();
+      _pendingRefresh = false;
+      _clearForEmptySelectionIfNeeded();
+      return;
+    }
+
+    if (_refreshTimer == null && !_isFetching && !_pendingRefresh) {
+      _requestCalendarRefresh(immediate: true);
+    }
+  }
+
+  void _drainPendingRefreshesOrScheduleTick() {
+    if (!ref.mounted || _isFetching) {
+      return;
+    }
+
+    if (_pendingRefresh && _calendarActive()) {
+      _pendingRefresh = false;
+      unawaited(refresh());
+      return;
+    }
+
+    if (_calendarActive() && _refreshTimer == null) {
+      _scheduleNextCalendarTick();
+      return;
+    }
+
+    _reconcileCalendarLoop();
+  }
+
   Future<void> refresh() async {
+    if (!_calendarActive()) {
+      _reconcileCalendarLoop();
+      return;
+    }
+
     if (_isFetching) {
+      _pendingRefresh = true;
       AppLogger.debug(
         'Calendar refresh already in progress',
         subCategory: 'calendar',
@@ -168,29 +369,34 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       return;
     }
 
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+
     final monitorState = ref.read(groupMonitorProvider(userId));
     final selectedGroupIds = monitorState.selectedGroupIds;
 
     if (selectedGroupIds.isEmpty) {
-      state = state.copyWith(
-        eventsByGroup: const {},
-        todayEvents: const [],
-        groupErrors: const {},
-        isLoading: false,
-        lastFetchedAt: DateTime.now(),
-      );
+      _clearForEmptySelectionIfNeeded();
       return;
     }
 
     _isFetching = true;
-    state = state.copyWith(isLoading: true);
+    if (!state.isLoading) {
+      state = state.copyWith(isLoading: true);
+    }
 
     try {
       await _ensureGroupDetails(monitorState);
       final refreshedMonitor = ref.read(groupMonitorProvider(userId));
       final groupLookup = _buildGroupLookup(refreshedMonitor.allGroups);
       final api = ref.read(vrchatApiProvider);
-      final orderedGroupIds = selectedGroupIds.toList(growable: false)..sort();
+      final orderedGroupIds = refreshedMonitor.selectedGroupIds.toList(
+        growable: false,
+      )..sort();
+      if (orderedGroupIds.isEmpty) {
+        _clearForEmptySelectionIfNeeded();
+        return;
+      }
       final fetched = await fetchGroupCalendarEventsChunked(
         orderedGroupIds: orderedGroupIds,
         previousEventsByGroup: state.eventsByGroup,
@@ -235,9 +441,12 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
         error: e,
         stackTrace: s,
       );
-      state = state.copyWith(isLoading: false);
+      if (state.isLoading) {
+        state = state.copyWith(isLoading: false);
+      }
     } finally {
       _isFetching = false;
+      _drainPendingRefreshesOrScheduleTick();
     }
   }
 

@@ -1,6 +1,41 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:portal/providers/api_call_counter.dart';
+import 'package:portal/providers/auth_provider.dart';
 import 'package:portal/providers/group_calendar_provider.dart';
+import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
+
+class _TestAuthNotifier extends AuthNotifier {
+  _TestAuthNotifier(this._initialState);
+
+  final AuthState _initialState;
+
+  @override
+  AuthState build() => _initialState;
+
+  void setData(AuthState next) {
+    state = AsyncData(next);
+  }
+}
+
+class _TestGroupMonitorNotifier extends GroupMonitorNotifier {
+  _TestGroupMonitorNotifier(this._initialState) : super('usr_test');
+
+  final GroupMonitorState _initialState;
+
+  @override
+  GroupMonitorState build() => _initialState;
+}
+
+class _MockCurrentUser extends Mock implements CurrentUser {}
+
+CurrentUser _mockCurrentUser(String id) {
+  final user = _MockCurrentUser();
+  when(() => user.id).thenReturn(id);
+  return user;
+}
 
 void main() {
   group('fetchGroupCalendarEventsChunked', () {
@@ -68,6 +103,176 @@ void main() {
         expect(result.eventsByGroup['grp_b']?.first.id, 'previous_grp_b');
         expect(result.eventsByGroup.containsKey('grp_c'), isFalse);
         expect(result.eventsByGroup['grp_d']?.first.id, 'fresh_grp_d');
+      },
+    );
+  });
+
+  group('session guards', () {
+    test(
+      'does not keep a timer when session is eligible but no groups selected',
+      () {
+        final container = ProviderContainer(
+          overrides: [
+            authProvider.overrideWith(
+              () => _TestAuthNotifier(
+                AuthState(
+                  status: AuthStatus.authenticated,
+                  currentUser: _mockCurrentUser('usr_test'),
+                ),
+              ),
+            ),
+            groupMonitorProvider('usr_test').overrideWith(
+              () => _TestGroupMonitorNotifier(
+                const GroupMonitorState(selectedGroupIds: <String>{}),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final notifier = container.read(
+          groupCalendarProvider('usr_test').notifier,
+        );
+
+        expect(notifier.hasActiveRefreshTimer, isFalse);
+      },
+    );
+
+    test('refresh does not issue API calls when unauthenticated', () async {
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            () => _TestAuthNotifier(
+              const AuthState(status: AuthStatus.unauthenticated),
+            ),
+          ),
+          groupMonitorProvider('usr_test').overrideWith(
+            () => _TestGroupMonitorNotifier(
+              const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(
+        groupCalendarProvider('usr_test').notifier,
+      );
+      await notifier.refresh();
+
+      expect(container.read(apiCallCounterProvider).totalCalls, 0);
+    });
+
+    test(
+      'refresh does not issue API calls when authenticated user id mismatches',
+      () async {
+        final container = ProviderContainer(
+          overrides: [
+            authProvider.overrideWith(
+              () => _TestAuthNotifier(
+                AuthState(
+                  status: AuthStatus.authenticated,
+                  currentUser: _mockCurrentUser('usr_other'),
+                ),
+              ),
+            ),
+            groupMonitorProvider('usr_test').overrideWith(
+              () => _TestGroupMonitorNotifier(
+                const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        final subscription = container.listen<GroupCalendarState>(
+          groupCalendarProvider('usr_test'),
+          (_, next) {},
+          fireImmediately: true,
+        );
+        addTearDown(subscription.close);
+
+        final notifier = container.read(
+          groupCalendarProvider('usr_test').notifier,
+        );
+        await notifier.refresh();
+
+        expect(container.read(apiCallCounterProvider).totalCalls, 0);
+      },
+    );
+
+    test(
+      'refresh timer is cancelled when auth becomes unauthenticated',
+      () async {
+        final container = ProviderContainer(
+          overrides: [
+            authProvider.overrideWith(
+              () => _TestAuthNotifier(
+                AuthState(
+                  status: AuthStatus.authenticated,
+                  currentUser: _mockCurrentUser('usr_test'),
+                ),
+              ),
+            ),
+            groupMonitorProvider('usr_test').overrideWith(
+              () => _TestGroupMonitorNotifier(
+                const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final notifier = container.read(
+          groupCalendarProvider('usr_test').notifier,
+        );
+        final authNotifier =
+            container.read(authProvider.notifier) as _TestAuthNotifier;
+        await Future<void>.delayed(Duration.zero);
+        notifier.requestRefresh(immediate: false);
+
+        authNotifier.setData(
+          const AuthState(status: AuthStatus.unauthenticated),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        final latestNotifier = container.read(
+          groupCalendarProvider('usr_test').notifier,
+        );
+        expect(latestNotifier.hasActiveRefreshTimer, isFalse);
+      },
+    );
+
+    test(
+      'repeated empty-selection refreshes are a no-op after first clear',
+      () async {
+        final container = ProviderContainer(
+          overrides: [
+            authProvider.overrideWith(
+              () => _TestAuthNotifier(
+                AuthState(
+                  status: AuthStatus.authenticated,
+                  currentUser: _mockCurrentUser('usr_test'),
+                ),
+              ),
+            ),
+            groupMonitorProvider('usr_test').overrideWith(
+              () => _TestGroupMonitorNotifier(
+                const GroupMonitorState(selectedGroupIds: <String>{}),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupCalendarProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        await notifier.refresh();
+        final afterFirst = container.read(provider);
+
+        await notifier.refresh();
+        final afterSecond = container.read(provider);
+
+        expect(identical(afterFirst, afterSecond), isTrue);
+        expect(afterSecond.lastFetchedAt, isNull);
       },
     );
   });

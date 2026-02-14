@@ -194,6 +194,11 @@ final authProvider = AsyncNotifierProvider<AuthNotifier, AuthState>(
 );
 
 typedef AuthAsyncMeta = ({bool isLoading, bool hasError, Object? error});
+typedef AuthSessionSnapshot = ({
+  AuthStatus? status,
+  bool isAuthenticated,
+  String? userId,
+});
 
 final authStatusProvider = Provider<AuthStatus?>((ref) {
   return ref.watch(authProvider.select((value) => value.asData?.value.status));
@@ -203,6 +208,32 @@ final authCurrentUserProvider = Provider<CurrentUser?>((ref) {
   return ref.watch(
     authProvider.select((value) => value.asData?.value.currentUser),
   );
+});
+
+final authSessionSnapshotProvider = Provider<AuthSessionSnapshot>((ref) {
+  final rawSession = ref.watch(
+    authProvider.select(
+      (value) => (
+        status: value.asData?.value.status,
+        userId: value.asData?.value.currentUser?.id,
+      ),
+    ),
+  );
+
+  final isAuthenticated = rawSession.status == AuthStatus.authenticated;
+  return (
+    status: rawSession.status,
+    isAuthenticated: isAuthenticated,
+    userId: isAuthenticated ? rawSession.userId : null,
+  );
+});
+
+final isAuthenticatedProvider = Provider<bool>((ref) {
+  return ref.watch(authSessionSnapshotProvider).isAuthenticated;
+});
+
+final authenticatedUserIdProvider = Provider<String?>((ref) {
+  return ref.watch(authSessionSnapshotProvider).userId;
 });
 
 final authStreamedUserProvider = Provider<StreamedCurrentUser?>((ref) {

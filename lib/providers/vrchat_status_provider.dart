@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/vrchat_status.dart';
+import 'auth_provider.dart';
 import '../services/vrchat_status_service.dart';
 import '../utils/timing_utils.dart';
 import '../constants/app_constants.dart';
@@ -41,15 +43,46 @@ class VrchatStatusState {
 class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
   Timer? _refreshTimer;
   late final VrchatStatusService _service;
+  bool _isRefreshing = false;
+
+  @visibleForTesting
+  bool get hasActiveRefreshTimer => _refreshTimer != null;
+
+  bool _isAuthenticated() =>
+      ref.read(authSessionSnapshotProvider).isAuthenticated;
+
+  bool _canCommitRefreshResult() => ref.mounted && _isAuthenticated();
 
   @override
   VrchatStatusState build() {
     _service = VrchatStatusService(ref.read(dioProvider));
 
-    // Initial fetch happens immediately
-    refresh();
+    ref.listen<AuthSessionSnapshot>(authSessionSnapshotProvider, (
+      previous,
+      next,
+    ) {
+      final wasAuthenticated = previous?.isAuthenticated == true;
+      final isAuthenticated = next.isAuthenticated;
 
-    // Register timer cleanup on dispose
+      if (!isAuthenticated) {
+        _disposeTimer();
+        final current = state.asData?.value;
+        state = AsyncData(
+          current?.copyWith(isLoading: true, errorMessage: null) ??
+              const VrchatStatusState(isLoading: true),
+        );
+        return;
+      }
+
+      if (!wasAuthenticated && !_isRefreshing) {
+        unawaited(refresh());
+      }
+    });
+
+    if (_isAuthenticated()) {
+      unawaited(refresh());
+    }
+
     ref.onDispose(_disposeTimer);
 
     return const VrchatStatusState(isLoading: true);
@@ -64,19 +97,32 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
     );
 
     _refreshTimer = Timer(delay, () async {
+      if (!_isAuthenticated()) {
+        _disposeTimer();
+        return;
+      }
       await refresh();
-      _scheduleNextRefresh();
     });
   }
 
   Future<void> refresh() async {
+    if (!_isAuthenticated()) {
+      _disposeTimer();
+      return;
+    }
+
+    if (_isRefreshing) {
+      return;
+    }
+
+    _isRefreshing = true;
     try {
       AppLogger.info('Refreshing VRChat status', subCategory: 'vrchat_status');
       final status = await _service.fetchStatus();
+      if (!_canCommitRefreshResult()) {
+        return;
+      }
       state = AsyncData(VrchatStatusState(status: status, isLoading: false));
-
-      // Schedule next refresh after successful fetch
-      _scheduleNextRefresh();
     } catch (e, s) {
       AppLogger.error(
         'VRChat status refresh failed',
@@ -84,12 +130,17 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
         error: e,
         stackTrace: s,
       );
+      if (!_canCommitRefreshResult()) {
+        return;
+      }
       state = AsyncData(
         VrchatStatusState(isLoading: false, errorMessage: e.toString()),
       );
-
-      // Still schedule next refresh even on error
-      _scheduleNextRefresh();
+    } finally {
+      _isRefreshing = false;
+      if (_canCommitRefreshResult()) {
+        _scheduleNextRefresh();
+      }
     }
   }
 

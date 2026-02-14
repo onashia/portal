@@ -2,13 +2,37 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:portal/models/group_instance_with_group.dart';
+import 'package:portal/providers/api_call_counter.dart';
+import 'package:portal/providers/auth_provider.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/providers/group_monitor_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import 'test_helpers/fake_vrchat_models.dart';
+
+class _TestAuthNotifier extends AuthNotifier {
+  _TestAuthNotifier(this._initialState);
+
+  final AuthState _initialState;
+
+  @override
+  AuthState build() => _initialState;
+
+  void setData(AuthState next) {
+    state = AsyncData(next);
+  }
+}
+
+class _MockCurrentUser extends Mock implements CurrentUser {}
+
+CurrentUser _mockCurrentUser(String id) {
+  final user = _MockCurrentUser();
+  when(() => user.id).thenReturn(id);
+  return user;
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -842,6 +866,390 @@ void main() {
         ),
         isFalse,
       );
+    });
+  });
+
+  group('auth session polling guards', () {
+    test('canPollForUserSession requires auth and matching user id', () {
+      expect(
+        canPollForUserSession(
+          isAuthenticated: true,
+          authenticatedUserId: 'usr_test',
+          expectedUserId: 'usr_test',
+        ),
+        isTrue,
+      );
+      expect(
+        canPollForUserSession(
+          isAuthenticated: false,
+          authenticatedUserId: 'usr_test',
+          expectedUserId: 'usr_test',
+        ),
+        isFalse,
+      );
+      expect(
+        canPollForUserSession(
+          isAuthenticated: true,
+          authenticatedUserId: 'usr_other',
+          expectedUserId: 'usr_test',
+        ),
+        isFalse,
+      );
+    });
+
+    test(
+      'stops monitoring when auth transitions away from authenticated',
+      () async {
+        final authNotifier = _TestAuthNotifier(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_test'),
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        notifier.state = const GroupMonitorState(
+          selectedGroupIds: {'grp_alpha'},
+          isMonitoring: true,
+        );
+
+        authNotifier.setData(
+          const AuthState(status: AuthStatus.unauthenticated),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(container.read(provider).isMonitoring, isFalse);
+      },
+    );
+
+    test(
+      'fetchGroupInstances is skipped when authenticated user id mismatches',
+      () async {
+        final authNotifier = _TestAuthNotifier(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_other'),
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        notifier.state = const GroupMonitorState(
+          selectedGroupIds: {'grp_alpha'},
+          isMonitoring: true,
+        );
+
+        await notifier.fetchGroupInstances();
+
+        expect(container.read(apiCallCounterProvider).totalCalls, 0);
+      },
+    );
+
+    test(
+      'timer-driven fetch remains guarded when auth user changes after scheduling',
+      () async {
+        final authNotifier = _TestAuthNotifier(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_test'),
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        notifier.state = const GroupMonitorState(
+          selectedGroupIds: {'grp_alpha'},
+        );
+        notifier.startMonitoring();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        final callsBeforeAuthChange = container
+            .read(apiCallCounterProvider)
+            .totalCalls;
+
+        authNotifier.setData(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_other'),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(
+          container.read(apiCallCounterProvider).totalCalls,
+          callsBeforeAuthChange,
+        );
+        expect(container.read(provider).isMonitoring, isFalse);
+      },
+    );
+
+    test(
+      'auth transition does not start monitoring with empty selection',
+      () async {
+        final authNotifier = _TestAuthNotifier(
+          const AuthState(status: AuthStatus.unauthenticated),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+
+        notifier.state = const GroupMonitorState(selectedGroupIds: <String>{});
+        authNotifier.setData(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_test'),
+          ),
+        );
+        expect(container.read(provider).isMonitoring, isFalse);
+      },
+    );
+
+    test(
+      'auth transition starts monitoring when selected groups exist',
+      () async {
+        final authNotifier = _TestAuthNotifier(
+          const AuthState(status: AuthStatus.unauthenticated),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+
+        notifier.state = const GroupMonitorState(
+          selectedGroupIds: {'grp_alpha'},
+        );
+        authNotifier.setData(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_test'),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(container.read(provider).isMonitoring, isTrue);
+        notifier.stopMonitoring();
+      },
+    );
+
+    test(
+      'toggleGroupSelection starts monitoring when first group is selected',
+      () async {
+        final authNotifier = _TestAuthNotifier(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_test'),
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        notifier.state = const GroupMonitorState();
+
+        notifier.toggleGroupSelection('grp_alpha');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        final currentState = container.read(provider);
+        expect(currentState.selectedGroupIds, contains('grp_alpha'));
+        expect(currentState.isMonitoring, isTrue);
+      },
+    );
+
+    test(
+      'toggleGroupSelection restarts monitoring after deselect/reselect',
+      () {
+        final authNotifier = _TestAuthNotifier(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_test'),
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        notifier.state = const GroupMonitorState();
+
+        notifier.toggleGroupSelection('grp_alpha');
+        expect(container.read(provider).isMonitoring, isTrue);
+
+        notifier.toggleGroupSelection('grp_alpha');
+        expect(container.read(provider).isMonitoring, isFalse);
+        expect(container.read(provider).selectedGroupIds, isEmpty);
+
+        notifier.toggleGroupSelection('grp_alpha');
+        expect(container.read(provider).isMonitoring, isTrue);
+      },
+    );
+
+    test(
+      'toggleGroupSelection immediately refreshes when adding a group while already monitoring',
+      () async {
+        final authNotifier = _TestAuthNotifier(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_test'),
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        notifier.state = const GroupMonitorState(
+          selectedGroupIds: {'grp_alpha'},
+          isMonitoring: true,
+        );
+        notifier.requestRefresh(immediate: false);
+
+        final callsBefore = container.read(apiCallCounterProvider).totalCalls;
+
+        notifier.toggleGroupSelection('grp_beta');
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        expect(container.read(provider).selectedGroupIds, contains('grp_beta'));
+        expect(
+          container.read(apiCallCounterProvider).totalCalls,
+          greaterThan(callsBefore),
+        );
+      },
+    );
+
+    test(
+      'toggleGroupSelection does not immediately refresh on removal while still monitoring',
+      () async {
+        final authNotifier = _TestAuthNotifier(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_test'),
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        notifier.state = const GroupMonitorState(
+          selectedGroupIds: {'grp_alpha', 'grp_beta'},
+          isMonitoring: true,
+        );
+        notifier.requestRefresh(immediate: false);
+
+        final callsBefore = container.read(apiCallCounterProvider).totalCalls;
+
+        notifier.toggleGroupSelection('grp_beta');
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        expect(
+          container.read(provider).selectedGroupIds,
+          isNot(contains('grp_beta')),
+        );
+        expect(container.read(provider).isMonitoring, isTrue);
+        expect(container.read(apiCallCounterProvider).totalCalls, callsBefore);
+      },
+    );
+
+    test(
+      'toggleGroupSelection does not start monitoring for ineligible session',
+      () {
+        final authNotifier = _TestAuthNotifier(
+          const AuthState(status: AuthStatus.unauthenticated),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        notifier.state = const GroupMonitorState();
+
+        notifier.toggleGroupSelection('grp_alpha');
+
+        final currentState = container.read(provider);
+        expect(currentState.selectedGroupIds, contains('grp_alpha'));
+        expect(currentState.isMonitoring, isFalse);
+      },
+    );
+  });
+
+  group('baseline polling timer invariant', () {
+    test(
+      'creates a baseline polling timer when refresh is requested non-immediately',
+      () {
+        final authNotifier = _TestAuthNotifier(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_test'),
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        notifier.state = const GroupMonitorState(
+          selectedGroupIds: {'grp_alpha'},
+          isMonitoring: true,
+        );
+        expect(notifier.hasActivePollingTimer, isFalse);
+
+        notifier.requestRefresh(immediate: false);
+
+        expect(notifier.hasActivePollingTimer, isTrue);
+      },
+    );
+
+    test('forces monitoring off when active monitoring becomes ineligible', () {
+      final authNotifier = _TestAuthNotifier(
+        const AuthState(status: AuthStatus.unauthenticated),
+      );
+      final container = ProviderContainer(
+        overrides: [authProvider.overrideWith(() => authNotifier)],
+      );
+      addTearDown(container.dispose);
+
+      final provider = groupMonitorProvider('usr_test');
+      final notifier = container.read(provider.notifier);
+      notifier.state = const GroupMonitorState(
+        selectedGroupIds: {'grp_alpha'},
+        isMonitoring: true,
+      );
+
+      notifier.toggleGroupSelection('grp_beta');
+
+      expect(container.read(provider).isMonitoring, isFalse);
+      expect(notifier.hasActivePollingTimer, isFalse);
     });
   });
 
