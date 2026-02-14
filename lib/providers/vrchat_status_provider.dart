@@ -97,11 +97,14 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
     );
 
     _refreshTimer = Timer(delay, () async {
+      if (!ref.mounted) {
+        return;
+      }
       if (!_isAuthenticated()) {
         _disposeTimer();
         return;
       }
-      await refresh();
+      unawaited(refresh());
     });
   }
 
