@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 
+import '../../constants/ui_constants.dart';
 import '../../providers/group_calendar_provider.dart';
 import '../../providers/group_monitor_provider.dart';
 import '../debug_info_card.dart';
@@ -84,13 +85,13 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
                       followerAnchor: Alignment.bottomRight,
                       offset: Offset(0, -context.m3e.spacing.sm),
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 260),
-                        child: IntrinsicWidth(
-                          child: Card(
-                            child: DebugInfoCard(
-                              userId: widget.userId,
-                              useCard: false,
-                            ),
+                        constraints: const BoxConstraints(
+                          maxWidth: UiConstants.dashboardDebugPopoverMaxWidth,
+                        ),
+                        child: Card(
+                          child: DebugInfoCard(
+                            userId: widget.userId,
+                            useCard: false,
                           ),
                         ),
                       ),

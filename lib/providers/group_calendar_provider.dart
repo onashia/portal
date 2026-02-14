@@ -2,14 +2,17 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import '../constants/app_constants.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../models/group_calendar_event.dart';
 import '../providers/api_call_counter.dart';
+import '../providers/api_rate_limit_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import '../providers/polling_lifecycle.dart';
+import '../services/api_rate_limit_coordinator.dart';
 import '../utils/app_logger.dart';
 import '../utils/calendar_event_utils.dart';
 
@@ -120,6 +123,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   GroupCalendarNotifier(this.userId);
 
   Timer? _refreshTimer;
+  Timer? _selectionRefreshDebounceTimer;
   bool _isFetching = false;
   bool _pendingRefresh = false;
 
@@ -165,7 +169,9 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   }
 
   void requestRefresh({bool immediate = true}) {
-    _requestCalendarRefresh(immediate: immediate);
+    _selectionRefreshDebounceTimer?.cancel();
+    _selectionRefreshDebounceTimer = null;
+    _requestCalendarRefresh(immediate: immediate, bypassRateLimit: true);
   }
 
   @override
@@ -174,12 +180,14 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     _listenForAuthChanges();
     ref.onDispose(() {
       _disposeTimer();
+      _selectionRefreshDebounceTimer?.cancel();
+      _selectionRefreshDebounceTimer = null;
       _pendingRefresh = false;
     });
 
     final shouldRefresh = _calendarActive();
     if (shouldRefresh) {
-      Future.microtask(() => requestRefresh(immediate: true));
+      Future.microtask(() => _requestCalendarRefresh(immediate: true));
     }
     return GroupCalendarState(isLoading: shouldRefresh);
   }
@@ -213,6 +221,8 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
 
   void _handleSessionIneligible() {
     _disposeTimer();
+    _selectionRefreshDebounceTimer?.cancel();
+    _selectionRefreshDebounceTimer = null;
     _pendingRefresh = false;
     if (state.isLoading) {
       state = state.copyWith(isLoading: false);
@@ -235,7 +245,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
         final nextActive = _calendarActiveForSelection(next.selectedGroupIds);
 
         if (nextActive) {
-          _requestCalendarRefresh(immediate: true);
+          _scheduleSelectionTriggeredRefresh();
           return;
         }
 
@@ -249,7 +259,23 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     });
   }
 
-  void _requestCalendarRefresh({bool immediate = true}) {
+  void _scheduleSelectionTriggeredRefresh() {
+    _selectionRefreshDebounceTimer?.cancel();
+    _selectionRefreshDebounceTimer = Timer(
+      AppConstants.selectionRefreshDebounceDuration,
+      () {
+        if (!ref.mounted) {
+          return;
+        }
+        _requestCalendarRefresh(immediate: true);
+      },
+    );
+  }
+
+  void _requestCalendarRefresh({
+    bool immediate = true,
+    bool bypassRateLimit = false,
+  }) {
     if (!_calendarActive()) {
       _reconcileCalendarLoop();
       return;
@@ -265,7 +291,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     }
 
     if (immediate) {
-      unawaited(refresh());
+      unawaited(refresh(bypassRateLimit: bypassRateLimit));
       return;
     }
 
@@ -325,6 +351,8 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     );
     if (!isSelectionActive(selectedGroupIds)) {
       _disposeTimer();
+      _selectionRefreshDebounceTimer?.cancel();
+      _selectionRefreshDebounceTimer = null;
       _pendingRefresh = false;
       _clearForEmptySelectionIfNeeded();
       return;
@@ -354,7 +382,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     _reconcileCalendarLoop();
   }
 
-  Future<void> refresh() async {
+  Future<void> refresh({bool bypassRateLimit = false}) async {
     if (!_calendarActive()) {
       _reconcileCalendarLoop();
       return;
@@ -380,6 +408,25 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       return;
     }
 
+    if (!bypassRateLimit) {
+      final coordinator = ref.read(apiRateLimitCoordinatorProvider);
+      if (!coordinator.canRequest(ApiRequestLane.calendar)) {
+        final remaining = coordinator.remainingCooldown(
+          ApiRequestLane.calendar,
+        );
+        AppLogger.debug(
+          'Calendar refresh deferred due to cooldown'
+          '${remaining == null ? '' : ' (${remaining.inSeconds}s remaining)'}',
+          subCategory: 'calendar',
+        );
+        ref
+            .read(apiCallCounterProvider.notifier)
+            .incrementThrottledSkip(lane: ApiRequestLane.calendar);
+        _scheduleNextCalendarTick();
+        return;
+      }
+    }
+
     _isFetching = true;
     if (!state.isLoading) {
       state = state.copyWith(isLoading: true);
@@ -402,10 +449,16 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
         previousEventsByGroup: state.eventsByGroup,
         maxConcurrentRequests: _maxConcurrentRequests,
         fetchEvents: (groupId) async {
-          ref.read(apiCallCounterProvider.notifier).incrementApiCall();
+          ref
+              .read(apiCallCounterProvider.notifier)
+              .incrementApiCall(lane: ApiRequestLane.calendar);
           final response = await api.rawApi
               .getCalendarApi()
-              .getGroupCalendarEvents(groupId: groupId, n: _eventsPerGroup);
+              .getGroupCalendarEvents(
+                groupId: groupId,
+                n: _eventsPerGroup,
+                extra: apiRequestLaneExtra(ApiRequestLane.calendar),
+              );
           return response.data?.results ?? [];
         },
         onFetchError: (groupId, error, stackTrace) {

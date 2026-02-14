@@ -5,9 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:portal/models/group_instance_with_group.dart';
 import 'package:portal/providers/api_call_counter.dart';
+import 'package:portal/providers/api_rate_limit_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/providers/group_monitor_storage.dart';
+import 'package:portal/services/api_rate_limit_coordinator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
@@ -1107,7 +1109,7 @@ void main() {
     );
 
     test(
-      'toggleGroupSelection immediately refreshes when adding a group while already monitoring',
+      'toggleGroupSelection debounces refresh when adding a group while already monitoring',
       () async {
         final authNotifier = _TestAuthNotifier(
           AuthState(
@@ -1131,7 +1133,7 @@ void main() {
         final callsBefore = container.read(apiCallCounterProvider).totalCalls;
 
         notifier.toggleGroupSelection('grp_beta');
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await Future<void>.delayed(const Duration(milliseconds: 700));
 
         expect(container.read(provider).selectedGroupIds, contains('grp_beta'));
         expect(
@@ -1250,6 +1252,258 @@ void main() {
 
       expect(container.read(provider).isMonitoring, isFalse);
       expect(notifier.hasActivePollingTimer, isFalse);
+    });
+  });
+
+  group('rate limit and boost baseline behaviors', () {
+    test(
+      'baseline polling excludes boosted group to avoid duplicate calls',
+      () async {
+        final authNotifier = _TestAuthNotifier(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_test'),
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_alpha'},
+          isMonitoring: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+        await notifier.fetchGroupInstances();
+        notifier.stopMonitoring();
+
+        expect(container.read(apiCallCounterProvider).totalCalls, 0);
+      },
+    );
+
+    test('clearing boost triggers baseline recovery refresh', () async {
+      final authNotifier = _TestAuthNotifier(
+        AuthState(
+          status: AuthStatus.authenticated,
+          currentUser: _mockCurrentUser('usr_test'),
+        ),
+      );
+      final container = ProviderContainer(
+        overrides: [authProvider.overrideWith(() => authNotifier)],
+      );
+      addTearDown(container.dispose);
+
+      final provider = groupMonitorProvider('usr_test');
+      final notifier = container.read(provider.notifier);
+      notifier.state = GroupMonitorState(
+        selectedGroupIds: const {'grp_alpha'},
+        isMonitoring: true,
+        boostedGroupId: 'grp_alpha',
+        boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+      );
+
+      await notifier.clearBoost();
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(container.read(apiCallCounterProvider).totalCalls, greaterThan(0));
+    });
+
+    test('automatic baseline poll is deferred during cooldown', () async {
+      final authNotifier = _TestAuthNotifier(
+        AuthState(
+          status: AuthStatus.authenticated,
+          currentUser: _mockCurrentUser('usr_test'),
+        ),
+      );
+      final container = ProviderContainer(
+        overrides: [authProvider.overrideWith(() => authNotifier)],
+      );
+      addTearDown(container.dispose);
+
+      container
+          .read(apiRateLimitCoordinatorProvider)
+          .recordRateLimited(
+            ApiRequestLane.groupBaseline,
+            retryAfter: const Duration(seconds: 60),
+          );
+
+      final provider = groupMonitorProvider('usr_test');
+      final notifier = container.read(provider.notifier);
+      notifier.state = const GroupMonitorState(
+        selectedGroupIds: {'grp_alpha'},
+        isMonitoring: true,
+      );
+
+      await notifier.fetchGroupInstances();
+
+      expect(container.read(apiCallCounterProvider).totalCalls, 0);
+      expect(container.read(apiCallCounterProvider).throttledSkips, 1);
+      expect(container.read(provider).groupErrors, isEmpty);
+    });
+
+    test('manual refresh bypasses baseline cooldown', () async {
+      final authNotifier = _TestAuthNotifier(
+        AuthState(
+          status: AuthStatus.authenticated,
+          currentUser: _mockCurrentUser('usr_test'),
+        ),
+      );
+      final container = ProviderContainer(
+        overrides: [authProvider.overrideWith(() => authNotifier)],
+      );
+      addTearDown(container.dispose);
+
+      container
+          .read(apiRateLimitCoordinatorProvider)
+          .recordRateLimited(
+            ApiRequestLane.groupBaseline,
+            retryAfter: const Duration(seconds: 60),
+          );
+
+      final provider = groupMonitorProvider('usr_test');
+      final notifier = container.read(provider.notifier);
+      notifier.state = const GroupMonitorState(
+        selectedGroupIds: {'grp_alpha'},
+        isMonitoring: true,
+      );
+
+      notifier.requestRefresh(immediate: true);
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(container.read(apiCallCounterProvider).totalCalls, greaterThan(0));
+    });
+
+    test(
+      'queued manual refresh preserves bypass intent during cooldown',
+      () async {
+        final authNotifier = _TestAuthNotifier(
+          AuthState(
+            status: AuthStatus.authenticated,
+            currentUser: _mockCurrentUser('usr_test'),
+          ),
+        );
+        final container = ProviderContainer(
+          overrides: [authProvider.overrideWith(() => authNotifier)],
+        );
+        addTearDown(container.dispose);
+
+        container
+            .read(apiRateLimitCoordinatorProvider)
+            .recordRateLimited(
+              ApiRequestLane.groupBaseline,
+              retryAfter: const Duration(seconds: 60),
+            );
+
+        final provider = groupMonitorProvider('usr_test');
+        final notifier = container.read(provider.notifier);
+        notifier.state = const GroupMonitorState(
+          selectedGroupIds: {'grp_alpha'},
+          isMonitoring: true,
+        );
+
+        unawaited(notifier.fetchGroupInstances(bypassRateLimit: true));
+        notifier.requestRefresh(immediate: true);
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+
+        final baselineCalls =
+            container
+                .read(apiCallCounterProvider)
+                .callsByLane['groupBaseline'] ??
+            0;
+        expect(baselineCalls, greaterThanOrEqualTo(2));
+      },
+    );
+
+    test('records baseline diagnostics for cooldown skip', () async {
+      final authNotifier = _TestAuthNotifier(
+        AuthState(
+          status: AuthStatus.authenticated,
+          currentUser: _mockCurrentUser('usr_test'),
+        ),
+      );
+      final container = ProviderContainer(
+        overrides: [authProvider.overrideWith(() => authNotifier)],
+      );
+      addTearDown(container.dispose);
+
+      container
+          .read(apiRateLimitCoordinatorProvider)
+          .recordRateLimited(
+            ApiRequestLane.groupBaseline,
+            retryAfter: const Duration(seconds: 60),
+          );
+
+      final provider = groupMonitorProvider('usr_test');
+      final notifier = container.read(provider.notifier);
+      notifier.state = const GroupMonitorState(
+        selectedGroupIds: {'grp_alpha'},
+        isMonitoring: true,
+      );
+
+      await notifier.fetchGroupInstances();
+
+      final state = container.read(provider);
+      expect(state.lastBaselineAttemptAt, isNotNull);
+      expect(state.lastBaselineSuccessAt, isNull);
+      expect(state.lastBaselineSkipReason, 'cooldown');
+    });
+
+    test('records baseline diagnostics for completed cycle', () async {
+      final authNotifier = _TestAuthNotifier(
+        AuthState(
+          status: AuthStatus.authenticated,
+          currentUser: _mockCurrentUser('usr_test'),
+        ),
+      );
+      final container = ProviderContainer(
+        overrides: [authProvider.overrideWith(() => authNotifier)],
+      );
+      addTearDown(container.dispose);
+
+      final provider = groupMonitorProvider('usr_test');
+      final notifier = container.read(provider.notifier);
+      notifier.state = const GroupMonitorState(
+        selectedGroupIds: {'grp_alpha'},
+        isMonitoring: true,
+      );
+
+      await notifier.fetchGroupInstances(bypassRateLimit: true);
+
+      final state = container.read(provider);
+      expect(state.lastBaselineAttemptAt, isNotNull);
+      expect(state.lastBaselineSuccessAt, isNotNull);
+      expect(state.lastBaselinePolledGroupCount, 1);
+      expect(state.lastBaselineTotalInstances, isNotNull);
+      expect(state.lastBaselineSkipReason, isNull);
+    });
+
+    test('startMonitoring records a baseline attempt', () async {
+      final authNotifier = _TestAuthNotifier(
+        AuthState(
+          status: AuthStatus.authenticated,
+          currentUser: _mockCurrentUser('usr_test'),
+        ),
+      );
+      final container = ProviderContainer(
+        overrides: [authProvider.overrideWith(() => authNotifier)],
+      );
+      addTearDown(container.dispose);
+
+      final provider = groupMonitorProvider('usr_test');
+      final notifier = container.read(provider.notifier);
+      notifier.state = const GroupMonitorState(selectedGroupIds: {'grp_alpha'});
+
+      notifier.startMonitoring();
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(container.read(provider).lastBaselineAttemptAt, isNotNull);
     });
   });
 

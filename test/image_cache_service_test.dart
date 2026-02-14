@@ -147,6 +147,61 @@ void main() {
       expect(results, everyElement(equals(expected)));
       expect(await service.getCachedImage(url), equals(expected));
     });
+
+    test('temporarily suppresses repeated fetches after failure', () async {
+      const url = 'https://api.vrchat.cloud/api/1/file_negative_cache_test/1';
+      final baseTime = DateTime.utc(2026, 2, 14, 12, 0, 0);
+      var now = baseTime;
+      service.setNowProviderForTesting(() => now);
+
+      var fetchCalls = 0;
+      Future<Uint8List?> failingFetcher() async {
+        fetchCalls += 1;
+        return null;
+      }
+
+      final first = await service.getOrFetchImage(url, failingFetcher);
+      final second = await service.getOrFetchImage(url, failingFetcher);
+
+      expect(first, isNull);
+      expect(second, isNull);
+      expect(fetchCalls, 1);
+
+      now = baseTime.add(
+        Duration(minutes: AppConstants.imageFailureCacheTtlMinutes + 1),
+      );
+      await service.getOrFetchImage(url, failingFetcher);
+      expect(fetchCalls, 2);
+    });
+
+    test('success clears negative cache and caches bytes', () async {
+      const url = 'https://api.vrchat.cloud/api/1/file_negative_clear_test/1';
+
+      var fetchCalls = 0;
+      Future<Uint8List?> mixedFetcher() async {
+        fetchCalls += 1;
+        if (fetchCalls == 1) {
+          return null;
+        }
+        return Uint8List.fromList([4, 5, 6]);
+      }
+
+      final first = await service.getOrFetchImage(url, mixedFetcher);
+      expect(first, isNull);
+
+      service.setNowProviderForTesting(
+        () => DateTime.now().add(
+          Duration(minutes: AppConstants.imageFailureCacheTtlMinutes + 1),
+        ),
+      );
+      final second = await service.getOrFetchImage(url, mixedFetcher);
+      expect(second, isNotNull);
+      expect(fetchCalls, 2);
+
+      final third = await service.getOrFetchImage(url, mixedFetcher);
+      expect(third, second);
+      expect(fetchCalls, 2);
+    });
   });
 
   group('disk cache pruning', () {

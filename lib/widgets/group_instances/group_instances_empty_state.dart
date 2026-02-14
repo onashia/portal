@@ -23,11 +23,19 @@ class GroupInstancesEmptyState extends StatelessWidget {
 
     final scheme = Theme.of(context).colorScheme;
 
-    return EmptyState(
-      icon: hasErrors ? Icons.error_outline : Icons.wifi_off,
+    if (hasErrors) {
+      return EmptyState(
+        icon: Icons.error_outline,
+        title: 'Unable to Load Instances',
+        message: 'Could not refresh group instances. Try manual refresh.',
+        iconColor: scheme.error,
+      );
+    }
+
+    return const EmptyState(
+      icon: Icons.wifi_off,
       title: 'No Instances Open',
       message: 'No instances are currently open for your selected groups',
-      iconColor: hasErrors ? scheme.error : null,
     );
   }
 }

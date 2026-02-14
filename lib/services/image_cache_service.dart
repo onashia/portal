@@ -19,6 +19,7 @@ class ImageCacheService {
   );
   final Map<String, Future<Uint8List?>> _inFlightRequests =
       <String, Future<Uint8List?>>{};
+  final Map<String, DateTime> _negativeCacheUntilByKey = <String, DateTime>{};
 
   io.Directory? _cacheDirectory;
   bool _isInitialized = false;
@@ -137,6 +138,7 @@ class ImageCacheService {
     required Uint8List bytes,
   }) async {
     _memoryCache.put(cacheKey, bytes);
+    _negativeCacheUntilByKey.remove(cacheKey);
 
     await _initialize();
 
@@ -182,6 +184,19 @@ class ImageCacheService {
       return null;
     }
 
+    final now = _nowProvider();
+    final negativeCachedUntil = _negativeCacheUntilByKey[cacheKey];
+    if (negativeCachedUntil != null) {
+      if (negativeCachedUntil.isAfter(now)) {
+        AppLogger.debug(
+          'Skipping fetch due to recent failure cache for: $url',
+          subCategory: 'image_cache',
+        );
+        return null;
+      }
+      _negativeCacheUntilByKey.remove(cacheKey);
+    }
+
     final cached = await _getCachedImageByKey(url: url, cacheKey: cacheKey);
     if (cached != null) {
       return cached;
@@ -196,6 +211,10 @@ class ImageCacheService {
       final bytes = await fetcher();
       if (bytes != null) {
         await _cacheImageByKey(url: url, cacheKey: cacheKey, bytes: bytes);
+      } else {
+        _negativeCacheUntilByKey[cacheKey] = _nowProvider().add(
+          Duration(minutes: AppConstants.imageFailureCacheTtlMinutes),
+        );
       }
       return bytes;
     }();
@@ -295,6 +314,7 @@ class ImageCacheService {
   Future<void> clearCache() async {
     _memoryCache.clear();
     _inFlightRequests.clear();
+    _negativeCacheUntilByKey.clear();
 
     if (_cacheDirectory != null) {
       try {
@@ -337,6 +357,7 @@ class ImageCacheService {
   static void reset() {
     _instance._memoryCache.clear();
     _instance._inFlightRequests.clear();
+    _instance._negativeCacheUntilByKey.clear();
     _instance._cacheDirectory = null;
     _instance._isInitialized = false;
     _instance._lastPrunedAt = null;

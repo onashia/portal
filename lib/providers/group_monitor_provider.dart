@@ -5,10 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../constants/app_constants.dart';
-import '../utils/app_logger.dart';
 import '../models/group_instance_with_group.dart';
+import '../services/api_rate_limit_coordinator.dart';
 import '../services/invite_service.dart';
+import '../utils/app_logger.dart';
 import 'api_call_counter.dart';
+import 'api_rate_limit_provider.dart';
 import 'auth_provider.dart';
 import 'group_monitor_state.dart';
 import 'group_monitor_storage.dart';
@@ -452,8 +454,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       _pollingTimer = null;
       _boostPollingTimer?.cancel();
       _boostPollingTimer = null;
+      _selectionRefreshDebounceTimer?.cancel();
+      _selectionRefreshDebounceTimer = null;
       _pendingBaselineRefresh = false;
+      _pendingBaselineBypassRateLimit = false;
       _pendingBoostRefresh = false;
+      _pendingBoostBypassRateLimit = false;
     });
     _loadSelectedGroups();
     _loadAutoInviteSetting();
@@ -655,7 +661,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   Future<void> _clearBoost({
     required bool persist,
     required bool logExpired,
+    bool requestBaselineRecovery = true,
   }) async {
+    final hadBoost =
+        state.boostedGroupId != null || state.boostExpiresAt != null;
     _boostPollingTimer?.cancel();
     _boostPollingTimer = null;
     _pendingBoostRefresh = false;
@@ -680,6 +689,13 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         'Boost expired, reverting to normal polling',
         subCategory: 'group_monitor',
       );
+    }
+
+    if (requestBaselineRecovery &&
+        hadBoost &&
+        state.isMonitoring &&
+        state.selectedGroupIds.isNotEmpty) {
+      _requestBaselineRefresh(immediate: true);
     }
   }
 
@@ -728,11 +744,14 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     try {
       AppLogger.debug('Fetching groups for user', subCategory: 'group_monitor');
 
-      ref.read(apiCallCounterProvider.notifier).incrementApiCall();
+      ref
+          .read(apiCallCounterProvider.notifier)
+          .incrementApiCall(lane: ApiRequestLane.userGroups);
 
       final api = ref.read(vrchatApiProvider);
       final response = await api.rawApi.getUsersApi().getUserGroups(
         userId: arg,
+        extra: apiRequestLaneExtra(ApiRequestLane.userGroups),
       );
       final groups = response.data ?? [];
 
@@ -815,7 +834,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     );
     _reconcileMonitoringForSelectionState();
     if (!wasSelected && wasMonitoring && state.isMonitoring) {
-      _requestBaselineRefresh(immediate: true);
+      _scheduleSelectionTriggeredBaselineRefresh();
     }
     _saveSelectedGroups();
     AppLogger.debug(
@@ -826,12 +845,15 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   Timer? _pollingTimer;
   Timer? _boostPollingTimer;
+  Timer? _selectionRefreshDebounceTimer;
   int _backoffDelay = 1;
   bool _isFetchingBaseline = false;
   bool _isBoostFetching = false;
   bool _isFetchingGroups = false;
   bool _pendingBaselineRefresh = false;
+  bool _pendingBaselineBypassRateLimit = false;
   bool _pendingBoostRefresh = false;
+  bool _pendingBoostBypassRateLimit = false;
   bool _hasBaseline = false;
   DateTime? _boostStartedAt;
   int _boostPollCount = 0;
@@ -856,6 +878,51 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         state.isBoostActive &&
         state.boostedGroupId != null &&
         _canPollForCurrentSession();
+  }
+
+  void _recordBaselineAttempt([DateTime? at]) {
+    state = state.copyWith(
+      lastBaselineAttemptAt: at ?? DateTime.now(),
+      lastBaselineSkipReason: null,
+    );
+  }
+
+  void _recordBaselineSkip(String reason, [DateTime? at]) {
+    state = state.copyWith(
+      lastBaselineAttemptAt: at ?? DateTime.now(),
+      lastBaselineSkipReason: reason,
+    );
+  }
+
+  void _recordBaselineSuccess({
+    required int polledGroupCount,
+    required int totalInstances,
+    DateTime? at,
+  }) {
+    final timestamp = at ?? DateTime.now();
+    state = state.copyWith(
+      lastBaselineSuccessAt: timestamp,
+      lastBaselinePolledGroupCount: polledGroupCount,
+      lastBaselineTotalInstances: totalInstances,
+      lastBaselineSkipReason: null,
+    );
+  }
+
+  void _scheduleSelectionTriggeredBaselineRefresh() {
+    _selectionRefreshDebounceTimer?.cancel();
+    _pendingBaselineRefresh = true;
+    _pendingBaselineBypassRateLimit = false;
+    _selectionRefreshDebounceTimer = Timer(
+      AppConstants.selectionRefreshDebounceDuration,
+      () {
+        if (!ref.mounted) {
+          return;
+        }
+        _selectionRefreshDebounceTimer = null;
+        _pendingBaselineRefresh = false;
+        _requestBaselineRefresh(immediate: true);
+      },
+    );
   }
 
   void _reconcileMonitoringForSelectionState() {
@@ -890,6 +957,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       _pollingTimer?.cancel();
       _pollingTimer = null;
       _pendingBaselineRefresh = false;
+      _pendingBaselineBypassRateLimit = false;
       return;
     }
 
@@ -923,6 +991,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       _boostPollingTimer?.cancel();
       _boostPollingTimer = null;
       _pendingBoostRefresh = false;
+      _pendingBoostBypassRateLimit = false;
       return;
     }
 
@@ -989,7 +1058,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     });
   }
 
-  void _requestBaselineRefresh({bool immediate = true}) {
+  void _requestBaselineRefresh({
+    bool immediate = true,
+    bool bypassRateLimit = false,
+  }) {
     if (!_baselineActive()) {
       _reconcileBaselineLoop();
       return;
@@ -1003,18 +1075,24 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     );
     if (decision.shouldQueuePending) {
       _pendingBaselineRefresh = true;
+      _pendingBaselineBypassRateLimit =
+          _pendingBaselineBypassRateLimit || bypassRateLimit;
+      _recordBaselineSkip('in_flight_queue');
       return;
     }
 
     if (immediate) {
-      unawaited(fetchGroupInstances());
+      unawaited(fetchGroupInstances(bypassRateLimit: bypassRateLimit));
       return;
     }
 
     _scheduleNextBaselineTick();
   }
 
-  void _requestBoostRefresh({bool immediate = true}) {
+  void _requestBoostRefresh({
+    bool immediate = true,
+    bool bypassRateLimit = false,
+  }) {
     if (!_boostActive()) {
       _reconcileBoostLoop();
       return;
@@ -1028,11 +1106,13 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     );
     if (decision.shouldQueuePending) {
       _pendingBoostRefresh = true;
+      _pendingBoostBypassRateLimit =
+          _pendingBoostBypassRateLimit || bypassRateLimit;
       return;
     }
 
     if (immediate) {
-      unawaited(fetchBoostedGroupInstances());
+      unawaited(fetchBoostedGroupInstances(bypassRateLimit: bypassRateLimit));
       return;
     }
 
@@ -1045,14 +1125,18 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     }
 
     if (_pendingBaselineRefresh && _baselineActive()) {
+      final bypassRateLimit = _pendingBaselineBypassRateLimit;
       _pendingBaselineRefresh = false;
-      unawaited(fetchGroupInstances());
+      _pendingBaselineBypassRateLimit = false;
+      unawaited(fetchGroupInstances(bypassRateLimit: bypassRateLimit));
       return;
     }
 
     if (_pendingBoostRefresh && _boostActive()) {
+      final bypassRateLimit = _pendingBoostBypassRateLimit;
       _pendingBoostRefresh = false;
-      unawaited(fetchBoostedGroupInstances());
+      _pendingBoostBypassRateLimit = false;
+      unawaited(fetchBoostedGroupInstances(bypassRateLimit: bypassRateLimit));
       return;
     }
 
@@ -1062,6 +1146,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       _pollingTimer?.cancel();
       _pollingTimer = null;
       _pendingBaselineRefresh = false;
+      _pendingBaselineBypassRateLimit = false;
     }
 
     if (_boostActive() && _boostPollingTimer == null) {
@@ -1070,6 +1155,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       _boostPollingTimer?.cancel();
       _boostPollingTimer = null;
       _pendingBoostRefresh = false;
+      _pendingBoostBypassRateLimit = false;
     }
   }
 
@@ -1119,7 +1205,11 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   /// pending if another fetch is already in-flight). When false, it schedules
   /// the next baseline tick using the normal polling cadence.
   void requestRefresh({bool immediate = true}) {
-    _requestBaselineRefresh(immediate: immediate);
+    _selectionRefreshDebounceTimer?.cancel();
+    _selectionRefreshDebounceTimer = null;
+    _pendingBaselineRefresh = false;
+    _pendingBaselineBypassRateLimit = false;
+    _requestBaselineRefresh(immediate: immediate, bypassRateLimit: true);
   }
 
   void startMonitoring() {
@@ -1168,26 +1258,39 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     _pollingTimer = null;
     _boostPollingTimer?.cancel();
     _boostPollingTimer = null;
+    _selectionRefreshDebounceTimer?.cancel();
+    _selectionRefreshDebounceTimer = null;
     _pendingBaselineRefresh = false;
+    _pendingBaselineBypassRateLimit = false;
     _pendingBoostRefresh = false;
-    unawaited(_clearBoost(persist: true, logExpired: false));
+    _pendingBoostBypassRateLimit = false;
+    unawaited(
+      _clearBoost(
+        persist: true,
+        logExpired: false,
+        requestBaselineRecovery: false,
+      ),
+    );
     state = state.copyWith(isMonitoring: false);
     _backoffDelay = 1;
 
     AppLogger.info('Stopped monitoring', subCategory: 'group_monitor');
   }
 
-  Future<void> fetchGroupInstances() async {
+  Future<void> fetchGroupInstances({bool bypassRateLimit = false}) async {
     AppLogger.debug(
       'fetchGroupInstances() called',
       subCategory: 'group_monitor',
     );
+    final attemptAt = DateTime.now();
+    _recordBaselineAttempt(attemptAt);
 
     if (!_baselineActive()) {
       AppLogger.debug(
         'Skipping instance fetch for inactive baseline loop',
         subCategory: 'group_monitor',
       );
+      _recordBaselineSkip('inactive', attemptAt);
       _reconcileBaselineLoop();
       return;
     }
@@ -1197,10 +1300,13 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     );
     if (decision.shouldQueuePending) {
       _pendingBaselineRefresh = true;
+      _pendingBaselineBypassRateLimit =
+          _pendingBaselineBypassRateLimit || bypassRateLimit;
       AppLogger.debug(
         'Fetch already in progress, queueing pending baseline refresh',
         subCategory: 'group_monitor',
       );
+      _recordBaselineSkip('in_flight_queue', attemptAt);
       return;
     }
 
@@ -1208,14 +1314,39 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     _pollingTimer = null;
 
     final selectedGroupIdSet = state.selectedGroupIds;
-    final selectedGroupIds = selectedGroupIdSet.toList(growable: false)..sort();
+    final selectedGroupIds = selectedGroupIdSet.toList(growable: true);
+    if (state.isBoostActive && state.boostedGroupId != null) {
+      selectedGroupIds.remove(state.boostedGroupId);
+    }
+    selectedGroupIds.sort();
     if (selectedGroupIds.isEmpty) {
-      AppLogger.warning(
-        'No groups selected, skipping instance fetch',
+      AppLogger.debug(
+        'No non-boost groups selected, skipping baseline fetch',
         subCategory: 'group_monitor',
       );
-      _reconcileBaselineLoop();
+      _recordBaselineSkip('no_targets', attemptAt);
+      _scheduleNextBaselineTick();
       return;
+    }
+
+    if (!bypassRateLimit) {
+      final coordinator = ref.read(apiRateLimitCoordinatorProvider);
+      if (!coordinator.canRequest(ApiRequestLane.groupBaseline)) {
+        final remaining = coordinator.remainingCooldown(
+          ApiRequestLane.groupBaseline,
+        );
+        AppLogger.debug(
+          'Baseline poll deferred due to cooldown'
+          '${remaining == null ? '' : ' (${remaining.inSeconds}s remaining)'}',
+          subCategory: 'group_monitor',
+        );
+        ref
+            .read(apiCallCounterProvider.notifier)
+            .incrementThrottledSkip(lane: ApiRequestLane.groupBaseline);
+        _recordBaselineSkip('cooldown', attemptAt);
+        _scheduleNextBaselineTick();
+        return;
+      }
     }
 
     _isFetchingBaseline = true;
@@ -1233,22 +1364,47 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       final inviteTargets = <GroupInstanceWithGroup>[];
       final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
       final newGroupErrors = <String, String>{};
+      GroupInstanceWithGroup? newestInstance;
+      final excludedGroupIds = selectedGroupIdSet.difference(
+        selectedGroupIds.toSet(),
+      );
+      for (final excludedGroupId in excludedGroupIds) {
+        final previousInstances = previousGroupInstances[excludedGroupId] ?? [];
+        newGroupInstances[excludedGroupId] = previousInstances;
+        for (final previous in previousInstances) {
+          newestInstance = _pickNewestInstance(newestInstance, previous);
+        }
+
+        final previousError = previousGroupErrors[excludedGroupId];
+        if (previousError != null) {
+          newGroupErrors[excludedGroupId] = previousError;
+        }
+      }
       var didInstancesChange = hasGroupInstanceKeyMismatch(
         selectedGroupIds: selectedGroupIdSet,
         groupInstances: previousGroupInstances,
       );
-      GroupInstanceWithGroup? newestInstance;
 
       final responses = await fetchGroupInstancesChunked(
         orderedGroupIds: selectedGroupIds,
         maxConcurrentRequests: AppConstants.groupInstancesMaxConcurrentRequests,
         fetchGroupInstances: (groupId) async {
-          ref.read(apiCallCounterProvider.notifier).incrementApiCall();
+          ref
+              .read(apiCallCounterProvider.notifier)
+              .incrementApiCall(lane: ApiRequestLane.groupBaseline);
           try {
-            return await api.rawApi.getUsersApi().getUserGroupInstancesForGroup(
-              userId: arg,
-              groupId: groupId,
-            );
+            return await api.rawApi
+                .getUsersApi()
+                .getUserGroupInstancesForGroup(
+                  userId: arg,
+                  groupId: groupId,
+                  extra: apiRequestLaneExtra(ApiRequestLane.groupBaseline),
+                )
+                .timeout(
+                  const Duration(
+                    seconds: AppConstants.groupInstancesRequestTimeoutSeconds,
+                  ),
+                );
           } catch (e, s) {
             AppLogger.error(
               'Failed to fetch instances for group $groupId',
@@ -1334,6 +1490,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         newGroupErrors,
       );
       final didNewestChange = state.newestInstanceId != nextNewestInstanceId;
+      final totalInstances = nextGroupInstances.values.fold<int>(
+        0,
+        (sum, instances) => sum + instances.length,
+      );
 
       if (didInstancesChange || didErrorsChange || didNewestChange) {
         state = state.copyWith(
@@ -1344,6 +1504,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       }
 
       _hasBaseline = true;
+      _recordBaselineSuccess(
+        polledGroupCount: selectedGroupIds.length,
+        totalInstances: totalInstances,
+      );
       // Reset backoff on successful fetch
       _backoffDelay = 1;
 
@@ -1360,6 +1524,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         error: e,
         stackTrace: s,
       );
+      _recordBaselineSkip('error', attemptAt);
       // Exponential backoff: delay before retry, doubling each time
       // Prevents overwhelming the API on transient failures
       await Future.delayed(Duration(seconds: _backoffDelay));
@@ -1375,7 +1540,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     }
   }
 
-  Future<void> fetchBoostedGroupInstances() async {
+  Future<void> fetchBoostedGroupInstances({
+    bool bypassRateLimit = false,
+  }) async {
     if (!_boostActive()) {
       _reconcileBoostLoop();
       return;
@@ -1402,6 +1569,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     );
     if (decision.shouldQueuePending) {
       _pendingBoostRefresh = true;
+      _pendingBoostBypassRateLimit =
+          _pendingBoostBypassRateLimit || bypassRateLimit;
       AppLogger.debug(
         'Fetch already in progress, queueing pending boost refresh',
         subCategory: 'group_monitor',
@@ -1417,6 +1586,26 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
     _boostPollingTimer?.cancel();
     _boostPollingTimer = null;
+
+    if (!bypassRateLimit) {
+      final coordinator = ref.read(apiRateLimitCoordinatorProvider);
+      if (!coordinator.canRequest(ApiRequestLane.groupBoost)) {
+        final remaining = coordinator.remainingCooldown(
+          ApiRequestLane.groupBoost,
+        );
+        AppLogger.debug(
+          'Boost poll deferred due to cooldown'
+          '${remaining == null ? '' : ' (${remaining.inSeconds}s remaining)'}',
+          subCategory: 'group_monitor',
+        );
+        ref
+            .read(apiCallCounterProvider.notifier)
+            .incrementThrottledSkip(lane: ApiRequestLane.groupBoost);
+        _scheduleNextBoostTick();
+        return;
+      }
+    }
+
     _isBoostFetching = true;
     try {
       _boostPollCount += 1;
@@ -1426,12 +1615,23 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         subCategory: 'group_monitor',
       );
 
-      ref.read(apiCallCounterProvider.notifier).incrementApiCall();
+      ref
+          .read(apiCallCounterProvider.notifier)
+          .incrementApiCall(lane: ApiRequestLane.groupBoost);
       final api = ref.read(vrchatApiProvider);
       final inviteService = ref.read(inviteServiceProvider);
       final response = await api.rawApi
           .getUsersApi()
-          .getUserGroupInstancesForGroup(userId: arg, groupId: groupId);
+          .getUserGroupInstancesForGroup(
+            userId: arg,
+            groupId: groupId,
+            extra: apiRequestLaneExtra(ApiRequestLane.groupBoost),
+          )
+          .timeout(
+            const Duration(
+              seconds: AppConstants.groupInstancesRequestTimeoutSeconds,
+            ),
+          );
       if (!ref.mounted) {
         return;
       }
@@ -1579,7 +1779,11 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   Future<void> clearSelectedGroups() async {
     try {
       await GroupMonitorStorage.clearSelectedGroups();
-      await _clearBoost(persist: true, logExpired: false);
+      await _clearBoost(
+        persist: true,
+        logExpired: false,
+        requestBaselineRecovery: false,
+      );
 
       state = state.copyWith(
         selectedGroupIds: {},

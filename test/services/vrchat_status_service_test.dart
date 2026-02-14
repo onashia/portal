@@ -21,7 +21,9 @@ void main() {
       statusCode: 200,
       requestOptions: RequestOptions(path: ''),
     );
-    when(() => mockDio.get(any())).thenAnswer((_) async => response);
+    when(
+      () => mockDio.get(any(), options: any(named: 'options')),
+    ).thenAnswer((_) async => response);
   }
 
   group('VrchatStatusService - Success Cases', () {
@@ -671,7 +673,7 @@ void main() {
 
   group('VrchatStatusService - Network Error Cases', () {
     test('6.1: DioException with connection error', () async {
-      when(() => mockDio.get(any())).thenThrow(
+      when(() => mockDio.get(any(), options: any(named: 'options'))).thenThrow(
         DioException(
           requestOptions: RequestOptions(path: ''),
           type: DioExceptionType.connectionError,
@@ -682,7 +684,7 @@ void main() {
     });
 
     test('6.2: DioException with timeout', () async {
-      when(() => mockDio.get(any())).thenThrow(
+      when(() => mockDio.get(any(), options: any(named: 'options'))).thenThrow(
         DioException(
           requestOptions: RequestOptions(path: ''),
           type: DioExceptionType.receiveTimeout,
@@ -693,7 +695,7 @@ void main() {
     });
 
     test('6.3: Generic DioException', () async {
-      when(() => mockDio.get(any())).thenThrow(
+      when(() => mockDio.get(any(), options: any(named: 'options'))).thenThrow(
         DioException(
           requestOptions: RequestOptions(path: ''),
           type: DioExceptionType.badResponse,
@@ -711,7 +713,9 @@ void main() {
         statusCode: 200,
         requestOptions: RequestOptions(path: ''),
       );
-      when(() => mockDio.get(any())).thenAnswer((_) async => response);
+      when(
+        () => mockDio.get(any(), options: any(named: 'options')),
+      ).thenAnswer((_) async => response);
 
       expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
     });
@@ -722,7 +726,9 @@ void main() {
         statusCode: 200,
         requestOptions: RequestOptions(path: ''),
       );
-      when(() => mockDio.get(any())).thenAnswer((_) async => response);
+      when(
+        () => mockDio.get(any(), options: any(named: 'options')),
+      ).thenAnswer((_) async => response);
 
       expect(() => service.fetchStatus(), throwsA(isA<FormatException>()));
     });

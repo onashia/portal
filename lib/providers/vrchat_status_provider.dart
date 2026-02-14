@@ -5,7 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/vrchat_status.dart';
+import 'api_call_counter.dart';
+import 'api_rate_limit_provider.dart';
 import 'auth_provider.dart';
+import '../services/api_rate_limit_coordinator.dart';
 import '../services/vrchat_status_service.dart';
 import '../utils/timing_utils.dart';
 import '../constants/app_constants.dart';
@@ -75,12 +78,12 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
       }
 
       if (!wasAuthenticated && !_isRefreshing) {
-        unawaited(refresh());
+        Future.microtask(() => refresh(bypassRateLimit: false));
       }
     });
 
     if (_isAuthenticated()) {
-      unawaited(refresh());
+      Future.microtask(() => refresh(bypassRateLimit: false));
     }
 
     ref.onDispose(_disposeTimer);
@@ -104,11 +107,16 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
         _disposeTimer();
         return;
       }
-      unawaited(refresh());
+      unawaited(refresh(bypassRateLimit: false));
     });
   }
 
-  Future<void> refresh() async {
+  /// Refreshes VRChat status.
+  ///
+  /// By default, refreshes are cooldown-aware. Manual actions should pass
+  /// `bypassRateLimit: true` when an explicit user-triggered refresh should
+  /// ignore active cooldown.
+  Future<void> refresh({bool bypassRateLimit = false}) async {
     if (!_isAuthenticated()) {
       _disposeTimer();
       return;
@@ -118,10 +126,33 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
       return;
     }
 
+    if (!bypassRateLimit) {
+      final coordinator = ref.read(apiRateLimitCoordinatorProvider);
+      final allowed = coordinator.canRequest(ApiRequestLane.status);
+      if (!allowed) {
+        final remaining = coordinator.remainingCooldown(ApiRequestLane.status);
+        AppLogger.debug(
+          'Status refresh deferred due to cooldown'
+          '${remaining == null ? '' : ' (${remaining.inSeconds}s remaining)'}',
+          subCategory: 'vrchat_status',
+        );
+        ref
+            .read(apiCallCounterProvider.notifier)
+            .incrementThrottledSkip(lane: ApiRequestLane.status);
+        _scheduleNextRefresh();
+        return;
+      }
+    }
+
     _isRefreshing = true;
     try {
       AppLogger.info('Refreshing VRChat status', subCategory: 'vrchat_status');
-      final status = await _service.fetchStatus();
+      ref
+          .read(apiCallCounterProvider.notifier)
+          .incrementApiCall(lane: ApiRequestLane.status);
+      final status = await _service.fetchStatus(
+        extra: apiRequestLaneExtra(ApiRequestLane.status),
+      );
       if (!_canCommitRefreshResult()) {
         return;
       }
@@ -154,6 +185,7 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
 }
 
 final dioProvider = Provider<Dio>((ref) {
+  final coordinator = ref.read(apiRateLimitCoordinatorProvider);
   final dio = Dio();
   // Configure User-Agent header as required by VRChat API
   dio.options.headers['User-Agent'] =
@@ -161,6 +193,7 @@ final dioProvider = Provider<Dio>((ref) {
   // Add reasonable timeouts to prevent hanging on network issues
   dio.options.connectTimeout = const Duration(seconds: 10);
   dio.options.receiveTimeout = const Duration(seconds: 10);
+  ensureApiRateLimitInterceptor(dio, coordinator);
   return dio;
 });
 

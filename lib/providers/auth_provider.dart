@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
+import '../constants/app_constants.dart';
 import '../services/auth_service.dart';
+import '../services/api_rate_limit_coordinator.dart';
 import '../services/two_factor_auth_service.dart';
 import 'api_call_counter.dart';
+import 'api_rate_limit_provider.dart';
 
 enum AuthStatus {
   initial,
@@ -178,15 +181,25 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 }
 
 final vrchatApiProvider = Provider<VrchatDart>((ref) {
+  final coordinator = ref.read(apiRateLimitCoordinatorProvider);
+
   // Single shared API instance for the entire application
   // This ensures authentication state is shared across all providers
-  return VrchatDart(
+  final api = VrchatDart(
     userAgent: VrchatUserAgent(
       applicationName: 'portal.',
       version: '1.0.0',
       contactInfo: 'https://github.com/onashia/portal',
     ),
   );
+  api.rawApi.dio.options.connectTimeout = Duration(
+    seconds: AppConstants.vrchatApiConnectTimeoutSeconds,
+  );
+  api.rawApi.dio.options.receiveTimeout = Duration(
+    seconds: AppConstants.vrchatApiReceiveTimeoutSeconds,
+  );
+  ensureApiRateLimitInterceptor(api.rawApi.dio, coordinator);
+  return api;
 });
 
 final authProvider = AsyncNotifierProvider<AuthNotifier, AuthState>(

@@ -62,11 +62,14 @@ class VrchatStatusService {
     return data;
   }
 
-  Future<VrchatStatus> fetchStatus() async {
+  Future<VrchatStatus> fetchStatus({Map<String, dynamic>? extra}) async {
     try {
       AppLogger.info('Fetching VRChat status', subCategory: 'vrchat_status');
 
-      final response = await _dio.get('$baseUrl/summary.json');
+      final response = await _dio.get(
+        '$baseUrl/summary.json',
+        options: extra == null ? null : Options(extra: extra),
+      );
 
       final summaryData = _validateResponseData(response.data);
 
