@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:portal/models/group_calendar_event.dart';
 import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/api_rate_limit_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
@@ -111,6 +112,148 @@ void main() {
         expect(result.eventsByGroup['grp_d']?.first.id, 'fresh_grp_d');
       },
     );
+  });
+
+  group('calendar state equivalence helpers', () {
+    test('calendar event list comparison is deep and value-based', () {
+      final previous = _buildEvent(
+        id: 'event_1',
+        tags: ['tag_a'],
+        languages: ['en'],
+        roleIds: ['role_1'],
+        platforms: [CalendarEventPlatform.standalonewindows],
+      );
+      final next = _buildEvent(
+        id: 'event_1',
+        tags: ['tag_a'],
+        languages: ['en'],
+        roleIds: ['role_1'],
+        platforms: [CalendarEventPlatform.standalonewindows],
+      );
+
+      expect(areCalendarEventListsEquivalent([previous], [next]), isTrue);
+      expect(areCalendarEventsEquivalent(previous, next), isTrue);
+    });
+
+    test('calendar event list comparison detects meaningful changes', () {
+      final previous = _buildEvent(id: 'event_1', title: 'Title A');
+      final next = _buildEvent(id: 'event_1', title: 'Title B');
+
+      expect(areCalendarEventListsEquivalent([previous], [next]), isFalse);
+    });
+
+    test('events-by-group comparison ignores map and list identity', () {
+      final firstMap = <String, List<CalendarEvent>>{
+        'grp_alpha': [_buildEvent(id: 'event_a')],
+        'grp_beta': [_buildEvent(id: 'event_b')],
+      };
+      final secondMap = <String, List<CalendarEvent>>{
+        'grp_alpha': [_buildEvent(id: 'event_a')],
+        'grp_beta': [_buildEvent(id: 'event_b')],
+      };
+
+      expect(areEventsByGroupEquivalent(firstMap, secondMap), isTrue);
+    });
+
+    test('today-events comparison is value-based', () {
+      final first = [
+        GroupCalendarEvent(
+          event: _buildEvent(id: 'event_a'),
+          groupId: 'grp_alpha',
+          group: _buildGroup('grp_alpha', name: 'Alpha'),
+        ),
+      ];
+      final second = [
+        GroupCalendarEvent(
+          event: _buildEvent(id: 'event_a'),
+          groupId: 'grp_alpha',
+          group: _buildGroup('grp_alpha', name: 'Alpha'),
+        ),
+      ];
+
+      expect(areTodayEventsEquivalent(first, second), isTrue);
+    });
+
+    test(
+      'selectCalendarDataForState reuses previous references when unchanged',
+      () {
+        final previousEventsByGroup = <String, List<CalendarEvent>>{
+          'grp_alpha': [_buildEvent(id: 'event_a')],
+        };
+        final previousTodayEvents = [
+          GroupCalendarEvent(
+            event: _buildEvent(id: 'event_a'),
+            groupId: 'grp_alpha',
+            group: _buildGroup('grp_alpha', name: 'Alpha'),
+          ),
+        ];
+        final previousState = GroupCalendarState(
+          eventsByGroup: previousEventsByGroup,
+          todayEvents: previousTodayEvents,
+          groupErrors: const {'grp_alpha': 'Failed to fetch events'},
+          isLoading: false,
+          lastDataChangedAt: DateTime.utc(2026, 2, 13, 12, 0),
+        );
+
+        final selected = selectCalendarDataForState(
+          previousState: previousState,
+          nextEventsByGroup: <String, List<CalendarEvent>>{
+            'grp_alpha': [_buildEvent(id: 'event_a')],
+          },
+          nextTodayEvents: [
+            GroupCalendarEvent(
+              event: _buildEvent(id: 'event_a'),
+              groupId: 'grp_alpha',
+              group: _buildGroup('grp_alpha', name: 'Alpha'),
+            ),
+          ],
+          nextGroupErrors: const {'grp_alpha': 'Failed to fetch events'},
+        );
+
+        expect(selected.didDataChange, isFalse);
+        expect(
+          identical(
+            selected.effectiveEventsByGroup,
+            previousState.eventsByGroup,
+          ),
+          isTrue,
+        );
+        expect(
+          identical(selected.effectiveTodayEvents, previousState.todayEvents),
+          isTrue,
+        );
+        expect(
+          identical(selected.effectiveGroupErrors, previousState.groupErrors),
+          isTrue,
+        );
+      },
+    );
+
+    test('foreground/background loading write decisions are correct', () {
+      const emptyState = GroupCalendarState();
+      final populatedState = GroupCalendarState(
+        eventsByGroup: <String, List<CalendarEvent>>{
+          'grp_alpha': [_buildEvent(id: 'event_a')],
+        },
+      );
+
+      expect(shouldEnterForegroundCalendarLoading(emptyState), isTrue);
+      expect(shouldEnterForegroundCalendarLoading(populatedState), isFalse);
+      expect(
+        shouldEmitCalendarRefreshStateUpdate(
+          currentState: populatedState,
+          didDataChange: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldEmitCalendarRefreshStateUpdate(
+          currentState: const GroupCalendarState(isLoading: true),
+          didDataChange: false,
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('session guards', () {
@@ -397,14 +540,22 @@ void main() {
         final afterSecond = container.read(provider);
 
         expect(identical(afterFirst, afterSecond), isTrue);
-        expect(afterSecond.lastFetchedAt, isNull);
+        expect(afterSecond.lastDataChangedAt, isNull);
       },
     );
   });
 }
 
-CalendarEvent _buildEvent({required String id}) {
-  final start = DateTime.utc(2026, 2, 13, 12, 0);
+CalendarEvent _buildEvent({
+  required String id,
+  String? title,
+  DateTime? startsAt,
+  List<String>? tags,
+  List<String>? languages,
+  List<String>? roleIds,
+  List<CalendarEventPlatform>? platforms,
+}) {
+  final start = startsAt ?? DateTime.utc(2026, 2, 13, 12, 0);
   return CalendarEvent(
     accessType: CalendarEventAccess.group,
     category: CalendarEventCategory.other,
@@ -412,6 +563,14 @@ CalendarEvent _buildEvent({required String id}) {
     endsAt: start.add(const Duration(hours: 1)),
     id: id,
     startsAt: start,
-    title: 'Event $id',
+    title: title ?? 'Event $id',
+    tags: tags,
+    languages: languages,
+    roleIds: roleIds,
+    platforms: platforms,
   );
+}
+
+LimitedUserGroups _buildGroup(String id, {String? name}) {
+  return LimitedUserGroups(groupId: id, name: name ?? id, discriminator: id);
 }

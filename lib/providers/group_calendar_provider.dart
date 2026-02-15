@@ -24,14 +24,14 @@ class GroupCalendarState {
   final List<GroupCalendarEvent> todayEvents;
   final Map<String, String> groupErrors;
   final bool isLoading;
-  final DateTime? lastFetchedAt;
+  final DateTime? lastDataChangedAt;
 
   const GroupCalendarState({
     this.eventsByGroup = const {},
     this.todayEvents = const [],
     this.groupErrors = const {},
     this.isLoading = false,
-    this.lastFetchedAt,
+    this.lastDataChangedAt,
   });
 
   GroupCalendarState copyWith({
@@ -39,16 +39,16 @@ class GroupCalendarState {
     List<GroupCalendarEvent>? todayEvents,
     Map<String, String>? groupErrors,
     bool? isLoading,
-    Object? lastFetchedAt = _unset,
+    Object? lastDataChangedAt = _unset,
   }) {
     return GroupCalendarState(
       eventsByGroup: eventsByGroup ?? this.eventsByGroup,
       todayEvents: todayEvents ?? this.todayEvents,
       groupErrors: groupErrors ?? this.groupErrors,
       isLoading: isLoading ?? this.isLoading,
-      lastFetchedAt: lastFetchedAt == _unset
-          ? this.lastFetchedAt
-          : lastFetchedAt as DateTime?,
+      lastDataChangedAt: lastDataChangedAt == _unset
+          ? this.lastDataChangedAt
+          : lastDataChangedAt as DateTime?,
     );
   }
 }
@@ -111,6 +111,200 @@ fetchGroupCalendarEventsChunked({
   }
 
   return (eventsByGroup: eventsByGroup, groupErrors: groupErrors);
+}
+
+bool _areListsEquivalent<T>(
+  List<T>? previous,
+  List<T>? next, {
+  bool Function(T previous, T next)? equals,
+}) {
+  if (identical(previous, next)) {
+    return true;
+  }
+  if (previous == null || next == null) {
+    return previous == null && next == null;
+  }
+  if (previous.length != next.length) {
+    return false;
+  }
+
+  final itemEquals = equals ?? (T a, T b) => a == b;
+  for (int i = 0; i < previous.length; i++) {
+    if (!itemEquals(previous[i], next[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+@visibleForTesting
+bool areCalendarEventsEquivalent(CalendarEvent previous, CalendarEvent next) {
+  return previous.accessType == next.accessType &&
+      previous.category == next.category &&
+      previous.closeInstanceAfterEndMinutes ==
+          next.closeInstanceAfterEndMinutes &&
+      previous.createdAt == next.createdAt &&
+      previous.deletedAt == next.deletedAt &&
+      previous.description == next.description &&
+      previous.durationInMs == next.durationInMs &&
+      previous.endsAt == next.endsAt &&
+      previous.featured == next.featured &&
+      previous.guestEarlyJoinMinutes == next.guestEarlyJoinMinutes &&
+      previous.hostEarlyJoinMinutes == next.hostEarlyJoinMinutes &&
+      previous.id == next.id &&
+      previous.imageId == next.imageId &&
+      previous.imageUrl == next.imageUrl &&
+      previous.interestedUserCount == next.interestedUserCount &&
+      previous.isDraft == next.isDraft &&
+      _areListsEquivalent(previous.languages, next.languages) &&
+      previous.ownerId == next.ownerId &&
+      _areListsEquivalent(previous.platforms, next.platforms) &&
+      _areListsEquivalent(previous.roleIds, next.roleIds) &&
+      previous.startsAt == next.startsAt &&
+      _areListsEquivalent(previous.tags, next.tags) &&
+      previous.title == next.title &&
+      previous.type == next.type &&
+      previous.updatedAt == next.updatedAt &&
+      previous.userInterest == next.userInterest &&
+      previous.usesInstanceOverflow == next.usesInstanceOverflow;
+}
+
+@visibleForTesting
+bool areCalendarEventListsEquivalent(
+  List<CalendarEvent> previous,
+  List<CalendarEvent> next,
+) {
+  return _areListsEquivalent(
+    previous,
+    next,
+    equals: areCalendarEventsEquivalent,
+  );
+}
+
+@visibleForTesting
+bool areEventsByGroupEquivalent(
+  Map<String, List<CalendarEvent>> previous,
+  Map<String, List<CalendarEvent>> next,
+) {
+  if (identical(previous, next)) {
+    return true;
+  }
+  if (previous.length != next.length) {
+    return false;
+  }
+
+  for (final entry in previous.entries) {
+    final nextEvents = next[entry.key];
+    if (nextEvents == null ||
+        !areCalendarEventListsEquivalent(entry.value, nextEvents)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+@visibleForTesting
+bool areStringMapsEquivalent(
+  Map<String, String> previous,
+  Map<String, String> next,
+) {
+  if (identical(previous, next)) {
+    return true;
+  }
+  if (previous.length != next.length) {
+    return false;
+  }
+
+  for (final entry in previous.entries) {
+    if (next[entry.key] != entry.value) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+@visibleForTesting
+bool areTodayEventsEquivalent(
+  List<GroupCalendarEvent> previous,
+  List<GroupCalendarEvent> next,
+) {
+  if (identical(previous, next)) {
+    return true;
+  }
+  if (previous.length != next.length) {
+    return false;
+  }
+
+  for (int i = 0; i < previous.length; i++) {
+    final previousEvent = previous[i];
+    final nextEvent = next[i];
+    if (previousEvent.groupId != nextEvent.groupId ||
+        previousEvent.group != nextEvent.group ||
+        !areCalendarEventsEquivalent(previousEvent.event, nextEvent.event)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+@visibleForTesting
+({
+  Map<String, List<CalendarEvent>> effectiveEventsByGroup,
+  List<GroupCalendarEvent> effectiveTodayEvents,
+  Map<String, String> effectiveGroupErrors,
+  bool didDataChange,
+})
+selectCalendarDataForState({
+  required GroupCalendarState previousState,
+  required Map<String, List<CalendarEvent>> nextEventsByGroup,
+  required List<GroupCalendarEvent> nextTodayEvents,
+  required Map<String, String> nextGroupErrors,
+}) {
+  final didEventsByGroupChange = !areEventsByGroupEquivalent(
+    previousState.eventsByGroup,
+    nextEventsByGroup,
+  );
+  final didTodayEventsChange = !areTodayEventsEquivalent(
+    previousState.todayEvents,
+    nextTodayEvents,
+  );
+  final didGroupErrorsChange = !areStringMapsEquivalent(
+    previousState.groupErrors,
+    nextGroupErrors,
+  );
+  final didDataChange =
+      didEventsByGroupChange || didTodayEventsChange || didGroupErrorsChange;
+
+  return (
+    effectiveEventsByGroup: didEventsByGroupChange
+        ? nextEventsByGroup
+        : previousState.eventsByGroup,
+    effectiveTodayEvents: didTodayEventsChange
+        ? nextTodayEvents
+        : previousState.todayEvents,
+    effectiveGroupErrors: didGroupErrorsChange
+        ? nextGroupErrors
+        : previousState.groupErrors,
+    didDataChange: didDataChange,
+  );
+}
+
+@visibleForTesting
+bool shouldEnterForegroundCalendarLoading(GroupCalendarState currentState) {
+  return currentState.eventsByGroup.isEmpty &&
+      currentState.todayEvents.isEmpty &&
+      currentState.groupErrors.isEmpty;
+}
+
+@visibleForTesting
+bool shouldEmitCalendarRefreshStateUpdate({
+  required GroupCalendarState currentState,
+  required bool didDataChange,
+}) {
+  return didDataChange || currentState.isLoading;
 }
 
 class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
@@ -326,7 +520,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
         state.todayEvents.isEmpty &&
         state.groupErrors.isEmpty &&
         !state.isLoading &&
-        state.lastFetchedAt == null;
+        state.lastDataChangedAt == null;
     if (isNoopState) {
       return;
     }
@@ -336,7 +530,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       todayEvents: const [],
       groupErrors: const {},
       isLoading: false,
-      lastFetchedAt: null,
+      lastDataChangedAt: null,
     );
   }
 
@@ -428,7 +622,11 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     }
 
     _isFetching = true;
-    if (!state.isLoading) {
+    final previousState = state;
+    final shouldEnterForegroundLoading =
+        shouldEnterForegroundCalendarLoading(previousState) &&
+        !previousState.isLoading;
+    if (shouldEnterForegroundLoading) {
       state = state.copyWith(isLoading: true);
     }
 
@@ -480,13 +678,34 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
         today: today,
       );
 
-      state = state.copyWith(
-        eventsByGroup: updatedEventsByGroup,
-        todayEvents: todayEvents,
-        groupErrors: updatedErrors,
-        isLoading: false,
-        lastFetchedAt: DateTime.now(),
+      final selectedData = selectCalendarDataForState(
+        previousState: previousState,
+        nextEventsByGroup: updatedEventsByGroup,
+        nextTodayEvents: todayEvents,
+        nextGroupErrors: updatedErrors,
       );
+      final shouldEmitState = shouldEmitCalendarRefreshStateUpdate(
+        currentState: state,
+        didDataChange: selectedData.didDataChange,
+      );
+      if (shouldEmitState) {
+        if (selectedData.didDataChange) {
+          state = state.copyWith(
+            eventsByGroup: selectedData.effectiveEventsByGroup,
+            todayEvents: selectedData.effectiveTodayEvents,
+            groupErrors: selectedData.effectiveGroupErrors,
+            isLoading: false,
+            lastDataChangedAt: DateTime.now(),
+          );
+        } else {
+          state = state.copyWith(
+            eventsByGroup: selectedData.effectiveEventsByGroup,
+            todayEvents: selectedData.effectiveTodayEvents,
+            groupErrors: selectedData.effectiveGroupErrors,
+            isLoading: false,
+          );
+        }
+      }
     } catch (e, s) {
       AppLogger.error(
         'Failed to refresh calendar events',
