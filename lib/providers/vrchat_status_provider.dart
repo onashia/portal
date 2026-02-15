@@ -13,6 +13,7 @@ import '../services/vrchat_status_service.dart';
 import '../utils/timing_utils.dart';
 import '../constants/app_constants.dart';
 import '../utils/app_logger.dart';
+import 'polling_lifecycle.dart';
 
 @immutable
 class VrchatStatusState {
@@ -91,13 +92,15 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
     return const VrchatStatusState(isLoading: true);
   }
 
-  void _scheduleNextRefresh() {
+  void _scheduleNextRefresh({Duration? overrideDelay}) {
     _refreshTimer?.cancel();
 
-    final delay = TimingUtils.durationWithJitter(
-      baseSeconds: AppConstants.vrchatStatusPollingIntervalSeconds,
-      jitterSeconds: AppConstants.vrchatStatusPollingJitterSeconds,
-    );
+    final delay =
+        overrideDelay ??
+        TimingUtils.durationWithJitter(
+          baseSeconds: AppConstants.vrchatStatusPollingIntervalSeconds,
+          jitterSeconds: AppConstants.vrchatStatusPollingJitterSeconds,
+        );
 
     _refreshTimer = Timer(delay, () async {
       if (!ref.mounted) {
@@ -128,18 +131,25 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
 
     if (!bypassRateLimit) {
       final coordinator = ref.read(apiRateLimitCoordinatorProvider);
-      final allowed = coordinator.canRequest(ApiRequestLane.status);
-      if (!allowed) {
-        final remaining = coordinator.remainingCooldown(ApiRequestLane.status);
+      final remaining = coordinator.remainingCooldown(ApiRequestLane.status);
+      if (remaining != null) {
         AppLogger.debug(
           'Status refresh deferred due to cooldown'
-          '${remaining == null ? '' : ' (${remaining.inSeconds}s remaining)'}',
+          ' (${remaining.inSeconds}s remaining)',
           subCategory: 'vrchat_status',
         );
         ref
             .read(apiCallCounterProvider.notifier)
             .incrementThrottledSkip(lane: ApiRequestLane.status);
-        _scheduleNextRefresh();
+        _scheduleNextRefresh(
+          overrideDelay: resolveCooldownAwareDelay(
+            remainingCooldown: remaining,
+            fallbackDelay: TimingUtils.durationWithJitter(
+              baseSeconds: AppConstants.vrchatStatusPollingIntervalSeconds,
+              jitterSeconds: AppConstants.vrchatStatusPollingJitterSeconds,
+            ),
+          ),
+        );
         return;
       }
     }

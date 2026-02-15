@@ -1348,6 +1348,41 @@ void main() {
       expect(container.read(provider).groupErrors, isEmpty);
     });
 
+    test('automatic boost poll is deferred during cooldown', () async {
+      final authNotifier = _TestAuthNotifier(
+        AuthState(
+          status: AuthStatus.authenticated,
+          currentUser: _mockCurrentUser('usr_test'),
+        ),
+      );
+      final container = ProviderContainer(
+        overrides: [authProvider.overrideWith(() => authNotifier)],
+      );
+      addTearDown(container.dispose);
+
+      container
+          .read(apiRateLimitCoordinatorProvider)
+          .recordRateLimited(
+            ApiRequestLane.groupBoost,
+            retryAfter: const Duration(seconds: 60),
+          );
+
+      final provider = groupMonitorProvider('usr_test');
+      final notifier = container.read(provider.notifier);
+      notifier.state = GroupMonitorState(
+        selectedGroupIds: const {'grp_alpha'},
+        isMonitoring: true,
+        boostedGroupId: 'grp_alpha',
+        boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+      );
+
+      await notifier.fetchBoostedGroupInstances();
+
+      expect(container.read(apiCallCounterProvider).totalCalls, 0);
+      expect(container.read(apiCallCounterProvider).throttledSkips, 1);
+      expect(container.read(provider).groupErrors, isEmpty);
+    });
+
     test('manual refresh bypasses baseline cooldown', () async {
       final authNotifier = _TestAuthNotifier(
         AuthState(

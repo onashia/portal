@@ -113,6 +113,39 @@ void main() {
     },
   );
 
+  test('automatic refresh resumes shortly after cooldown expires', () async {
+    final mockDio = _MockDio();
+    when(
+      () => mockDio.get(any(), options: any(named: 'options')),
+    ).thenAnswer((_) async => _statusResponse());
+    final container = ProviderContainer(
+      overrides: [
+        authProvider.overrideWith(
+          () => _TestAuthNotifier(
+            AuthState(
+              status: AuthStatus.authenticated,
+              currentUser: _mockCurrentUser('usr_test'),
+            ),
+          ),
+        ),
+        dioProvider.overrideWith((ref) => mockDio),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    container
+        .read(apiRateLimitCoordinatorProvider)
+        .recordRateLimited(
+          ApiRequestLane.status,
+          retryAfter: const Duration(milliseconds: 10),
+        );
+
+    container.read(vrchatStatusProvider.notifier);
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+
+    verify(() => mockDio.get(any(), options: any(named: 'options'))).called(1);
+  });
+
   test('manual refresh bypasses status cooldown', () async {
     final mockDio = _MockDio();
     when(

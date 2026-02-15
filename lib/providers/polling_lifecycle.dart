@@ -33,3 +33,19 @@ RefreshRequestDecision resolveRefreshRequestDecision({
 }) {
   return (shouldQueuePending: isInFlight, shouldRunNow: !isInFlight);
 }
+
+Duration resolveCooldownAwareDelay({
+  required Duration? remainingCooldown,
+  required Duration fallbackDelay,
+  Duration safetyBuffer = const Duration(milliseconds: 250),
+}) {
+  if (remainingCooldown == null) {
+    return fallbackDelay;
+  }
+
+  if (remainingCooldown <= Duration.zero) {
+    return safetyBuffer;
+  }
+
+  return remainingCooldown + safetyBuffer;
+}

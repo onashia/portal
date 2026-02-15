@@ -492,7 +492,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     _scheduleNextCalendarTick();
   }
 
-  void _scheduleNextCalendarTick() {
+  void _scheduleNextCalendarTick({Duration? overrideDelay}) {
     _refreshTimer?.cancel();
     _refreshTimer = null;
 
@@ -501,7 +501,8 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       return;
     }
 
-    _refreshTimer = Timer(const Duration(minutes: _refreshMinutes), () {
+    final delay = overrideDelay ?? const Duration(minutes: _refreshMinutes);
+    _refreshTimer = Timer(delay, () {
       if (!ref.mounted) {
         return;
       }
@@ -604,19 +605,22 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
 
     if (!bypassRateLimit) {
       final coordinator = ref.read(apiRateLimitCoordinatorProvider);
-      if (!coordinator.canRequest(ApiRequestLane.calendar)) {
-        final remaining = coordinator.remainingCooldown(
-          ApiRequestLane.calendar,
-        );
+      final remaining = coordinator.remainingCooldown(ApiRequestLane.calendar);
+      if (remaining != null) {
         AppLogger.debug(
           'Calendar refresh deferred due to cooldown'
-          '${remaining == null ? '' : ' (${remaining.inSeconds}s remaining)'}',
+          ' (${remaining.inSeconds}s remaining)',
           subCategory: 'calendar',
         );
         ref
             .read(apiCallCounterProvider.notifier)
             .incrementThrottledSkip(lane: ApiRequestLane.calendar);
-        _scheduleNextCalendarTick();
+        _scheduleNextCalendarTick(
+          overrideDelay: resolveCooldownAwareDelay(
+            remainingCooldown: remaining,
+            fallbackDelay: const Duration(minutes: _refreshMinutes),
+          ),
+        );
         return;
       }
     }

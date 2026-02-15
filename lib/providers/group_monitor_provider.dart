@@ -1022,7 +1022,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     return math.max(1, base + delta);
   }
 
-  void _scheduleNextBaselineTick() {
+  void _scheduleNextBaselineTick({Duration? overrideDelay}) {
     _pollingTimer?.cancel();
     _pollingTimer = null;
 
@@ -1031,8 +1031,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    final delaySeconds = _nextPollDelaySeconds();
-    _pollingTimer = Timer(Duration(seconds: delaySeconds), () {
+    final delay = overrideDelay ?? Duration(seconds: _nextPollDelaySeconds());
+    _pollingTimer = Timer(delay, () {
       if (!ref.mounted) {
         return;
       }
@@ -1040,7 +1040,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     });
   }
 
-  void _scheduleNextBoostTick() {
+  void _scheduleNextBoostTick({Duration? overrideDelay}) {
     _boostPollingTimer?.cancel();
     _boostPollingTimer = null;
 
@@ -1049,8 +1049,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    final delaySeconds = _nextBoostPollDelaySeconds();
-    _boostPollingTimer = Timer(Duration(seconds: delaySeconds), () {
+    final delay =
+        overrideDelay ?? Duration(seconds: _nextBoostPollDelaySeconds());
+    _boostPollingTimer = Timer(delay, () {
       if (!ref.mounted) {
         return;
       }
@@ -1331,20 +1332,25 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
     if (!bypassRateLimit) {
       final coordinator = ref.read(apiRateLimitCoordinatorProvider);
-      if (!coordinator.canRequest(ApiRequestLane.groupBaseline)) {
-        final remaining = coordinator.remainingCooldown(
-          ApiRequestLane.groupBaseline,
-        );
+      final remaining = coordinator.remainingCooldown(
+        ApiRequestLane.groupBaseline,
+      );
+      if (remaining != null) {
         AppLogger.debug(
           'Baseline poll deferred due to cooldown'
-          '${remaining == null ? '' : ' (${remaining.inSeconds}s remaining)'}',
+          ' (${remaining.inSeconds}s remaining)',
           subCategory: 'group_monitor',
         );
         ref
             .read(apiCallCounterProvider.notifier)
             .incrementThrottledSkip(lane: ApiRequestLane.groupBaseline);
         _recordBaselineSkip('cooldown', attemptAt);
-        _scheduleNextBaselineTick();
+        _scheduleNextBaselineTick(
+          overrideDelay: resolveCooldownAwareDelay(
+            remainingCooldown: remaining,
+            fallbackDelay: Duration(seconds: _nextPollDelaySeconds()),
+          ),
+        );
         return;
       }
     }
@@ -1589,19 +1595,24 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
     if (!bypassRateLimit) {
       final coordinator = ref.read(apiRateLimitCoordinatorProvider);
-      if (!coordinator.canRequest(ApiRequestLane.groupBoost)) {
-        final remaining = coordinator.remainingCooldown(
-          ApiRequestLane.groupBoost,
-        );
+      final remaining = coordinator.remainingCooldown(
+        ApiRequestLane.groupBoost,
+      );
+      if (remaining != null) {
         AppLogger.debug(
           'Boost poll deferred due to cooldown'
-          '${remaining == null ? '' : ' (${remaining.inSeconds}s remaining)'}',
+          ' (${remaining.inSeconds}s remaining)',
           subCategory: 'group_monitor',
         );
         ref
             .read(apiCallCounterProvider.notifier)
             .incrementThrottledSkip(lane: ApiRequestLane.groupBoost);
-        _scheduleNextBoostTick();
+        _scheduleNextBoostTick(
+          overrideDelay: resolveCooldownAwareDelay(
+            remainingCooldown: remaining,
+            fallbackDelay: Duration(seconds: _nextBoostPollDelaySeconds()),
+          ),
+        );
         return;
       }
     }
