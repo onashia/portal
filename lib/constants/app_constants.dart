@@ -10,6 +10,8 @@ class AppConstants {
   static const int boostPollingJitterSeconds = 2;
   static const int boostDurationMinutes = 15;
   static const int maxAvatarCacheSize = 100;
+  static const int maxAvatarMemoryCacheBytes = 33554432;
+  static const int maxAvatarMemoryEntryBytes = 2097152;
   static const int imageDiskCacheMaxEntries = 400;
   static const int imageDiskCacheTtlDays = 30;
   static const int imageCachePruneIntervalHours = 12;

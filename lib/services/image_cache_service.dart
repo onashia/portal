@@ -14,9 +14,12 @@ class ImageCacheService {
   factory ImageCacheService() => _instance;
   ImageCacheService._internal();
 
-  final LRUCache<String, Uint8List> _memoryCache = LRUCache<String, Uint8List>(
-    maxSize: AppConstants.maxAvatarCacheSize,
-  );
+  final ByteBudgetLRUCache<String, Uint8List> _memoryCache =
+      ByteBudgetLRUCache<String, Uint8List>(
+        maxEntries: AppConstants.maxAvatarCacheSize,
+        maxBytes: AppConstants.maxAvatarMemoryCacheBytes,
+        sizeOf: (bytes) => bytes.lengthInBytes,
+      );
   final Map<String, Future<Uint8List?>> _inFlightRequests =
       <String, Future<Uint8List?>>{};
   final Map<String, DateTime> _negativeCacheUntilByKey = <String, DateTime>{};
@@ -96,7 +99,9 @@ class ImageCacheService {
         final file = io.File('${_cacheDirectory!.path}/$cacheKey');
         if (await file.exists()) {
           final bytes = await file.readAsBytes();
-          _memoryCache.put(cacheKey, bytes);
+          if (_canStoreInMemory(bytes)) {
+            _memoryCache.put(cacheKey, bytes);
+          }
           AppLogger.debug(
             'Disk cache HIT for: $url',
             subCategory: 'image_cache',
@@ -137,7 +142,9 @@ class ImageCacheService {
     required String cacheKey,
     required Uint8List bytes,
   }) async {
-    _memoryCache.put(cacheKey, bytes);
+    if (_canStoreInMemory(bytes)) {
+      _memoryCache.put(cacheKey, bytes);
+    }
     _negativeCacheUntilByKey.remove(cacheKey);
 
     await _initialize();
@@ -351,6 +358,25 @@ class ImageCacheService {
   @visibleForTesting
   void setNowProviderForTesting(DateTime Function() nowProvider) {
     _nowProvider = nowProvider;
+  }
+
+  bool _canStoreInMemory(Uint8List bytes) {
+    return bytes.lengthInBytes <= AppConstants.maxAvatarMemoryEntryBytes;
+  }
+
+  @visibleForTesting
+  int get memoryEntryCountForTesting => _memoryCache.length;
+
+  @visibleForTesting
+  int get memoryBytesForTesting => _memoryCache.totalBytes;
+
+  @visibleForTesting
+  bool hasMemoryEntryForTesting(String url) {
+    final cacheKey = _safeCacheKey(url);
+    if (cacheKey == null) {
+      return false;
+    }
+    return _memoryCache.containsKey(cacheKey);
   }
 
   @visibleForTesting

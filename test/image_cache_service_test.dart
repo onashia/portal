@@ -111,6 +111,70 @@ void main() {
       final result = await service.getCachedImage(url);
       expect(result, equals(bytes));
     });
+
+    test('oversized entries skip memory cache but remain on disk', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'portal_cache_large_',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      await service.setCacheDirectoryForTesting(tempDir);
+
+      const url = 'https://api.vrchat.cloud/api/1/file_oversized_memory/1';
+      final bytes = Uint8List(AppConstants.maxAvatarMemoryEntryBytes + 1);
+      bytes[0] = 1;
+
+      await service.cacheImage(url, bytes);
+
+      expect(service.memoryEntryCountForTesting, 0);
+      expect(service.memoryBytesForTesting, 0);
+      expect(service.hasMemoryEntryForTesting(url), isFalse);
+
+      final result = await service.getCachedImage(url);
+      expect(result, equals(bytes));
+      expect(service.hasMemoryEntryForTesting(url), isFalse);
+      expect(service.memoryEntryCountForTesting, 0);
+      expect(service.memoryBytesForTesting, 0);
+    });
+
+    test('enforces memory byte budget with LRU eviction', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'portal_cache_memory_budget_',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      await service.setCacheDirectoryForTesting(tempDir);
+
+      final entrySize = AppConstants.maxAvatarMemoryEntryBytes;
+      final totalEntries =
+          (AppConstants.maxAvatarMemoryCacheBytes ~/ entrySize) + 1;
+      final urls = <String>[];
+
+      for (int i = 0; i < totalEntries; i++) {
+        final url = 'https://api.vrchat.cloud/api/1/file_budget_$i/1';
+        urls.add(url);
+        final bytes = Uint8List(entrySize);
+        bytes[0] = i % 255;
+        await service.cacheImage(url, bytes);
+      }
+
+      expect(
+        service.memoryBytesForTesting <= AppConstants.maxAvatarMemoryCacheBytes,
+        isTrue,
+      );
+      expect(
+        service.memoryEntryCountForTesting <= AppConstants.maxAvatarCacheSize,
+        isTrue,
+      );
+      expect(service.hasMemoryEntryForTesting(urls.first), isFalse);
+      expect(service.hasMemoryEntryForTesting(urls.last), isTrue);
+    });
   });
 
   group('clearCache', () {
