@@ -75,5 +75,71 @@ void main() {
         isFalse,
       );
     });
+
+    test('preserves server-provided Retry-After without clamping', () {
+      final now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+      final coordinator = ApiRateLimitCoordinator(nowProvider: () => now);
+
+      coordinator.recordRateLimited(
+        ApiRequestLane.calendar,
+        retryAfter: const Duration(seconds: 300),
+      );
+
+      expect(
+        coordinator.remainingCooldown(ApiRequestLane.calendar, now: now),
+        const Duration(seconds: 300),
+      );
+    });
+
+    test('clamps fallback delays to maxFallbackBackoff', () {
+      final now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+      final coordinator = ApiRateLimitCoordinator(
+        nowProvider: () => now,
+        maxFallbackBackoff: const Duration(seconds: 120),
+      );
+
+      coordinator.recordRateLimited(ApiRequestLane.calendar);
+      coordinator.recordRateLimited(ApiRequestLane.calendar);
+      coordinator.recordRateLimited(ApiRequestLane.calendar);
+
+      expect(
+        coordinator.remainingCooldown(ApiRequestLane.calendar, now: now),
+        const Duration(seconds: 80),
+      );
+
+      coordinator.recordRateLimited(ApiRequestLane.calendar);
+
+      expect(
+        coordinator.remainingCooldown(ApiRequestLane.calendar, now: now),
+        const Duration(seconds: 120),
+      );
+    });
+
+    test('handles zero and negative Retry-After values', () {
+      final now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+      final coordinator = ApiRateLimitCoordinator(nowProvider: () => now);
+
+      coordinator.recordRateLimited(
+        ApiRequestLane.calendar,
+        retryAfter: Duration.zero,
+      );
+
+      expect(coordinator.canRequest(ApiRequestLane.calendar, now: now), isTrue);
+    });
+
+    test('handles very large Retry-After values', () {
+      final now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+      final coordinator = ApiRateLimitCoordinator(nowProvider: () => now);
+
+      coordinator.recordRateLimited(
+        ApiRequestLane.calendar,
+        retryAfter: const Duration(seconds: 86400),
+      );
+
+      expect(
+        coordinator.remainingCooldown(ApiRequestLane.calendar, now: now),
+        const Duration(seconds: 86400),
+      );
+    });
   });
 }

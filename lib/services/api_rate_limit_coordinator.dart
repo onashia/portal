@@ -77,7 +77,7 @@ class ApiRateLimitCoordinator {
     final currentTime = now ?? _nowProvider();
     final currentStreak = _consecutiveRateLimitHitsByLane[lane] ?? 0;
     final fallbackDelay = _fallbackBackoffForStreak(currentStreak);
-    final effectiveDelay = _clampDelay(retryAfter ?? fallbackDelay);
+    final effectiveDelay = retryAfter ?? _clampDelay(fallbackDelay);
     final nextBlockedUntil = currentTime.add(effectiveDelay);
     final previousBlockedUntil = _blockedUntilByLane[lane];
 
