@@ -409,7 +409,12 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
         return;
       }
 
-      _reconcileCalendarLoop();
+      Future.microtask(() {
+        if (!ref.mounted) {
+          return;
+        }
+        _reconcileCalendarLoop();
+      });
     });
   }
 
@@ -444,7 +449,12 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
         }
 
         if (becameInactive(previousActive, nextActive)) {
-          _reconcileCalendarLoop();
+          Future.microtask(() {
+            if (!ref.mounted) {
+              return;
+            }
+            _reconcileCalendarLoop();
+          });
           return;
         }
 

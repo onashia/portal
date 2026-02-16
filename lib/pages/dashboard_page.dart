@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
+import '../providers/group_monitor_storage.dart';
 import '../providers/theme_provider.dart';
 import '../services/notification_service.dart';
 import '../utils/animation_constants.dart';
@@ -185,7 +186,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             tooltip: 'Logout',
             onPressed: () async {
               ref.read(groupMonitorProvider(userId).notifier).stopMonitoring();
+              try {
+                await GroupMonitorStorage.clearAll();
+              } catch (e, s) {
+                AppLogger.error(
+                  'Failed to clear group monitor storage on logout',
+                  subCategory: 'group_monitor',
+                  error: e,
+                  stackTrace: s,
+                );
+              }
               await ref.read(authProvider.notifier).logout();
+              ref.invalidate(groupMonitorProvider(userId));
             },
           ),
         ],

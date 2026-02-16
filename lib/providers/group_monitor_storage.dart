@@ -67,4 +67,12 @@ class GroupMonitorStorage {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(StorageKeys.selectedGroupIds);
   }
+
+  static Future<void> clearAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(StorageKeys.selectedGroupIds);
+    await prefs.remove(StorageKeys.boostedGroupId);
+    await prefs.remove(StorageKeys.boostExpiresAt);
+    await prefs.remove(StorageKeys.autoInviteEnabled);
+  }
 }

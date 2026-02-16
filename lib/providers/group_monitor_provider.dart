@@ -487,7 +487,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       }
 
       if (!wasEligible) {
-        _reconcileMonitoringForSelectionState();
+        Future.microtask(() {
+          if (!ref.mounted) {
+            return;
+          }
+          _reconcileMonitoringForSelectionState();
+        });
         return;
       }
 
