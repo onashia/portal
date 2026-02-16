@@ -320,6 +320,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   Timer? _selectionRefreshDebounceTimer;
   bool _isFetching = false;
   bool _pendingRefresh = false;
+  bool _pendingBypassRateLimit = false;
 
   @visibleForTesting
   bool get hasActiveRefreshTimer => _refreshTimer != null;
@@ -377,6 +378,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       _selectionRefreshDebounceTimer?.cancel();
       _selectionRefreshDebounceTimer = null;
       _pendingRefresh = false;
+      _pendingBypassRateLimit = false;
     });
 
     final shouldRefresh = _calendarActive();
@@ -423,6 +425,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     _selectionRefreshDebounceTimer?.cancel();
     _selectionRefreshDebounceTimer = null;
     _pendingRefresh = false;
+    _pendingBypassRateLimit = false;
     if (state.isLoading) {
       state = state.copyWith(isLoading: false);
     }
@@ -491,6 +494,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     final decision = resolveRefreshRequestDecision(isInFlight: _isFetching);
     if (decision.shouldQueuePending) {
       _pendingRefresh = true;
+      _pendingBypassRateLimit = _pendingBypassRateLimit || bypassRateLimit;
       return;
     }
 
@@ -559,6 +563,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       _selectionRefreshDebounceTimer?.cancel();
       _selectionRefreshDebounceTimer = null;
       _pendingRefresh = false;
+      _pendingBypassRateLimit = false;
       _clearForEmptySelectionIfNeeded();
       return;
     }
@@ -574,8 +579,10 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     }
 
     if (_pendingRefresh && _calendarActive()) {
+      final bypassRateLimit = _pendingBypassRateLimit;
       _pendingRefresh = false;
-      unawaited(refresh());
+      _pendingBypassRateLimit = false;
+      unawaited(refresh(bypassRateLimit: bypassRateLimit));
       return;
     }
 
@@ -595,6 +602,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
 
     if (_isFetching) {
       _pendingRefresh = true;
+      _pendingBypassRateLimit = _pendingBypassRateLimit || bypassRateLimit;
       AppLogger.debug(
         'Calendar refresh already in progress',
         subCategory: 'calendar',

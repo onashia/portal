@@ -543,6 +543,145 @@ void main() {
         expect(afterSecond.lastDataChangedAt, isNull);
       },
     );
+
+    test(
+      'manual refresh queued during in-flight fetch preserves bypass intent',
+      () async {
+        final container = ProviderContainer(
+          overrides: [
+            authProvider.overrideWith(
+              () => _TestAuthNotifier(
+                AuthState(
+                  status: AuthStatus.authenticated,
+                  currentUser: _mockCurrentUser('usr_test'),
+                ),
+              ),
+            ),
+            groupMonitorProvider('usr_test').overrideWith(
+              () => _TestGroupMonitorNotifier(
+                const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        container
+            .read(apiRateLimitCoordinatorProvider)
+            .recordRateLimited(
+              ApiRequestLane.calendar,
+              retryAfter: const Duration(seconds: 60),
+            );
+
+        final notifier = container.read(
+          groupCalendarProvider('usr_test').notifier,
+        );
+
+        final fetchFuture = notifier.refresh();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        notifier.requestRefresh(immediate: true);
+        await fetchFuture;
+
+        expect(
+          container.read(apiCallCounterProvider).totalCalls,
+          greaterThan(0),
+        );
+      },
+    );
+
+    test(
+      'direct refresh call during in-flight fetch preserves bypass intent',
+      () async {
+        final container = ProviderContainer(
+          overrides: [
+            authProvider.overrideWith(
+              () => _TestAuthNotifier(
+                AuthState(
+                  status: AuthStatus.authenticated,
+                  currentUser: _mockCurrentUser('usr_test'),
+                ),
+              ),
+            ),
+            groupMonitorProvider('usr_test').overrideWith(
+              () => _TestGroupMonitorNotifier(
+                const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        container
+            .read(apiRateLimitCoordinatorProvider)
+            .recordRateLimited(
+              ApiRequestLane.calendar,
+              retryAfter: const Duration(seconds: 60),
+            );
+
+        final notifier = container.read(
+          groupCalendarProvider('usr_test').notifier,
+        );
+
+        final fetchFuture = notifier.refresh();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        notifier.refresh(bypassRateLimit: true);
+        await fetchFuture;
+
+        expect(
+          container.read(apiCallCounterProvider).totalCalls,
+          greaterThan(0),
+        );
+      },
+    );
+
+    test(
+      'multiple queued refreshes accumulate bypass flag correctly',
+      () async {
+        final container = ProviderContainer(
+          overrides: [
+            authProvider.overrideWith(
+              () => _TestAuthNotifier(
+                AuthState(
+                  status: AuthStatus.authenticated,
+                  currentUser: _mockCurrentUser('usr_test'),
+                ),
+              ),
+            ),
+            groupMonitorProvider('usr_test').overrideWith(
+              () => _TestGroupMonitorNotifier(
+                const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        container
+            .read(apiRateLimitCoordinatorProvider)
+            .recordRateLimited(
+              ApiRequestLane.calendar,
+              retryAfter: const Duration(seconds: 60),
+            );
+
+        final notifier = container.read(
+          groupCalendarProvider('usr_test').notifier,
+        );
+
+        final fetchFuture = notifier.refresh();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        notifier.requestRefresh(immediate: true);
+        notifier.refresh(bypassRateLimit: true);
+        await fetchFuture;
+
+        expect(
+          container.read(apiCallCounterProvider).totalCalls,
+          greaterThan(0),
+        );
+      },
+    );
   });
 }
 
