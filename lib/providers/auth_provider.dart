@@ -64,10 +64,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     _twoFactorAuthService = TwoFactorAuthService(api);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final isTest = WidgetsBinding.instance.toString().contains('Test');
-      if (!isTest) {
-        checkExistingSession();
-      }
+      checkExistingSession();
     });
 
     return AuthState(status: AuthStatus.initial);
