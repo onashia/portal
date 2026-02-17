@@ -37,7 +37,8 @@ class DashboardCards extends ConsumerWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final eventsCardHeight = UiConstants.dashboardStackedEventsCardHeight;
-        final minMonitoringHeight = 260.0;
+        final minMonitoringHeight =
+            UiConstants.dashboardMinMonitoringCardHeight;
         final monitoringCardHeight =
             (constraints.maxHeight - eventsCardHeight - spacing).clamp(
               minMonitoringHeight,
