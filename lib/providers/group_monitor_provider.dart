@@ -252,8 +252,14 @@ bool areGroupInstanceListsEquivalent(
     return false;
   }
 
+  final seenInstanceIds = <String>{};
   for (final nextEntry in next) {
-    final previousEntry = previousByInstanceId[nextEntry.instance.instanceId];
+    final instanceId = nextEntry.instance.instanceId;
+    if (!seenInstanceIds.add(instanceId)) {
+      return false;
+    }
+
+    final previousEntry = previousByInstanceId[instanceId];
     if (previousEntry == null ||
         !areGroupInstanceEntriesEquivalent(previousEntry, nextEntry)) {
       return false;

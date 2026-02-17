@@ -424,6 +424,39 @@ void main() {
 
       expect(areGroupInstanceListsEquivalent(previous, next), isFalse);
     });
+
+    test(
+      'returns false when next contains duplicates replacing previous items',
+      () {
+        final world = buildTestWorld(id: 'wrld_a', name: 'World A');
+        final detectedAt = DateTime.utc(2026, 2, 13, 9, 0);
+
+        final previous = [
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_a',
+              world: world,
+              userCount: 3,
+            ),
+            groupId: 'grp_alpha',
+            firstDetectedAt: detectedAt,
+          ),
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_b',
+              world: world,
+              userCount: 4,
+            ),
+            groupId: 'grp_alpha',
+            firstDetectedAt: detectedAt,
+          ),
+        ];
+
+        final next = [previous[0], previous[0]];
+
+        expect(areGroupInstanceListsEquivalent(previous, next), isFalse);
+      },
+    );
   });
 
   group('areGroupInstancesByGroupEquivalent', () {
