@@ -284,6 +284,53 @@ void main() {
       expect(merged.newInstances, isEmpty);
       expect(identical(merged.effectiveInstances, previousInstances), isFalse);
     });
+
+    test('detects when previous instances are replaced by duplicates', () {
+      final world = buildTestWorld(id: 'wrld_a', name: 'World A');
+      final detectedAt = DateTime.utc(2026, 2, 13, 10, 0);
+      final previousDetectedAt = DateTime.utc(2026, 2, 13, 9, 0);
+
+      final previousInstances = <GroupInstanceWithGroup>[
+        GroupInstanceWithGroup(
+          instance: buildTestInstance(
+            instanceId: 'inst_a',
+            world: world,
+            userCount: 5,
+          ),
+          groupId: 'grp_alpha',
+          firstDetectedAt: previousDetectedAt,
+        ),
+        GroupInstanceWithGroup(
+          instance: buildTestInstance(
+            instanceId: 'inst_b',
+            world: world,
+            userCount: 3,
+          ),
+          groupId: 'grp_alpha',
+          firstDetectedAt: previousDetectedAt,
+        ),
+      ];
+
+      final fetchedInstances = <Instance>[
+        buildTestInstance(instanceId: 'inst_a', world: world, userCount: 5),
+        buildTestInstance(instanceId: 'inst_a', world: world, userCount: 5),
+      ];
+
+      final merged = mergeFetchedGroupInstancesWithDiffForTesting(
+        groupId: 'grp_alpha',
+        fetchedInstances: fetchedInstances,
+        previousInstances: previousInstances,
+        detectedAt: detectedAt,
+      );
+
+      expect(merged.didChange, isTrue);
+      expect(merged.newInstances, isEmpty);
+      expect(merged.effectiveInstances, hasLength(2));
+      expect(merged.effectiveInstances[0].instance.instanceId, 'inst_a');
+      expect(merged.effectiveInstances[1].instance.instanceId, 'inst_a');
+      expect(merged.effectiveInstances[0].firstDetectedAt, previousDetectedAt);
+      expect(merged.effectiveInstances[1].firstDetectedAt, previousDetectedAt);
+    });
   });
 
   group('areGroupInstanceListsEquivalent', () {

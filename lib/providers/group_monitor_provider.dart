@@ -162,8 +162,10 @@ _mergeFetchedGroupInstancesWithDiff({
       previousByInstanceId.length != previousInstances.length;
   final mergedInstances = <GroupInstanceWithGroup>[];
   final newInstances = <GroupInstanceWithGroup>[];
+  final fetchedInstanceIds = <String>{};
 
   for (final fetched in fetchedInstances) {
+    fetchedInstanceIds.add(fetched.instanceId);
     final previous = previousByInstanceId[fetched.instanceId];
     final merged = GroupInstanceWithGroup(
       instance: fetched,
@@ -180,6 +182,13 @@ _mergeFetchedGroupInstancesWithDiff({
 
     if (!areGroupInstanceEntriesEquivalent(previous, merged)) {
       didChange = true;
+    }
+  }
+
+  for (final previousId in previousByInstanceId.keys) {
+    if (!fetchedInstanceIds.contains(previousId)) {
+      didChange = true;
+      break;
     }
   }
 
