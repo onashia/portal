@@ -4,14 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:motor/motor.dart';
+import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
+import '../providers/group_monitor_storage.dart';
 import '../providers/theme_provider.dart';
 import '../services/notification_service.dart';
 import '../utils/animation_constants.dart';
 import '../utils/app_logger.dart';
+import '../utils/error_utils.dart';
 import '../widgets/common/empty_state.dart';
 import '../constants/icon_sizes.dart';
 import '../widgets/custom_title_bar.dart';
@@ -21,6 +24,37 @@ import '../widgets/dashboard/dashboard_cards.dart';
 import '../widgets/dashboard/dashboard_side_sheet_layout.dart';
 import '../widgets/dashboard/dashboard_user_card.dart';
 import '../widgets/group_selection_side_sheet.dart';
+
+enum DashboardAuthViewState { loading, error, handoff, ready }
+
+@visibleForTesting
+DashboardAuthViewState resolveDashboardAuthViewState({
+  required AuthAsyncMeta authMeta,
+  required AuthStatus? authStatus,
+  required CurrentUser? currentUser,
+}) {
+  if (authMeta.isLoading) {
+    return DashboardAuthViewState.loading;
+  }
+
+  if (authMeta.hasError) {
+    return DashboardAuthViewState.error;
+  }
+
+  final isRedirectingUnauthenticated =
+      currentUser == null &&
+      (authStatus == AuthStatus.initial ||
+          authStatus == AuthStatus.unauthenticated);
+  if (isRedirectingUnauthenticated) {
+    return DashboardAuthViewState.handoff;
+  }
+
+  if (currentUser == null) {
+    return DashboardAuthViewState.loading;
+  }
+
+  return DashboardAuthViewState.ready;
+}
 
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -70,10 +104,17 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    final authValue = ref.watch(authProvider);
+    final authMeta = ref.watch(authAsyncMetaProvider);
+    final authStatus = ref.watch(authStatusProvider);
+    final currentUser = ref.watch(authCurrentUserProvider);
     final themeMode = ref.watch(themeProvider);
+    final authViewState = resolveDashboardAuthViewState(
+      authMeta: authMeta,
+      authStatus: authStatus,
+      currentUser: currentUser,
+    );
 
-    if (authValue.isLoading) {
+    if (authViewState == DashboardAuthViewState.loading) {
       return Scaffold(
         body: Center(
           child: Transform.scale(
@@ -87,7 +128,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       );
     }
 
-    if (authValue.hasError) {
+    if (authViewState == DashboardAuthViewState.error) {
       final scheme = Theme.of(context).colorScheme;
       return Scaffold(
         appBar: CustomTitleBar(
@@ -111,39 +152,17 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         body: EmptyState(
           icon: Icons.error_outline,
           title: 'An error occurred',
-          message: authValue.error.toString(),
+          message: formatUiErrorMessage(authMeta.error),
           iconColor: scheme.error,
         ),
       );
     }
 
-    final authState = authValue.value;
-    if (authState == null) {
+    if (authViewState == DashboardAuthViewState.handoff) {
       return const SizedBox.shrink();
     }
-    final currentUser = authState.currentUser;
-    final streamedUser = authState.streamedUser;
 
-    if (currentUser == null) {
-      return Scaffold(
-        body: Center(
-          child: Transform.scale(
-            scale: UiConstants.dashboardLoadingScale,
-            child: const LoadingIndicatorM3E(
-              variant: LoadingIndicatorM3EVariant.defaultStyle,
-              semanticLabel: 'Loading portal',
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Null-safe: currentUser is guaranteed non-null after the check above
-    final userId = currentUser.id;
-    final monitorState = ref.watch(groupMonitorProvider(userId));
-    final selectedGroups = monitorState.allGroups
-        .where((g) => monitorState.selectedGroupIds.contains(g.groupId))
-        .toList();
+    final userId = currentUser!.id;
 
     return Scaffold(
       appBar: CustomTitleBar(
@@ -167,7 +186,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             tooltip: 'Logout',
             onPressed: () async {
               ref.read(groupMonitorProvider(userId).notifier).stopMonitoring();
+              try {
+                await GroupMonitorStorage.clearAll();
+              } catch (e, s) {
+                AppLogger.error(
+                  'Failed to clear group monitor storage on logout',
+                  subCategory: 'group_monitor',
+                  error: e,
+                  stackTrace: s,
+                );
+              }
               await ref.read(authProvider.notifier).logout();
+              ref.invalidate(groupMonitorProvider(userId));
             },
           ),
         ],
@@ -223,16 +253,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              DashboardUserCard(
-                                currentUser: currentUser,
-                                streamedUser: streamedUser,
-                              ),
+                              DashboardUserCard(currentUser: currentUser),
                               SizedBox(height: context.m3e.spacing.lg),
                               Expanded(
                                 child: DashboardCards(
                                   userId: userId,
-                                  monitorState: monitorState,
-                                  selectedGroups: selectedGroups,
                                   canShowSideBySide: canShowSideBySide,
                                 ),
                               ),
@@ -266,7 +291,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       right: context.m3e.spacing.xl,
                       child: DashboardActionArea(
                         userId: userId,
-                        monitorState: monitorState,
                         onManageGroups: () => _toggleSideSheetForUser(userId),
                         sheetWidth: effectiveSheetWidth,
                         progress: progress,

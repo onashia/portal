@@ -5,6 +5,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../constants/ui_constants.dart';
 import '../providers/auth_provider.dart';
+import '../utils/error_utils.dart';
 import '../widgets/common/empty_state.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/login/login_submit_button.dart';
@@ -121,7 +122,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
         body: EmptyState(
           icon: Icons.error_outline,
           title: 'An error occurred',
-          message: authValue.error.toString(),
+          message: formatUiErrorMessage(authValue.error),
           iconColor: scheme.error,
           padding: EdgeInsets.all(context.m3e.spacing.lg),
         ),

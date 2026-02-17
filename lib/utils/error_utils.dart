@@ -54,3 +54,30 @@ String formatApiError(String prefix, dynamic error) {
 
   return '$prefix: $message';
 }
+
+/// Formats an unknown error object into a user-facing message.
+///
+/// Returns [fallbackMessage] when the error is null, empty, or an
+/// implementation detail string such as "Instance of 'SomeType'".
+String formatUiErrorMessage(
+  Object? error, {
+  String fallbackMessage = 'Something went wrong. Please try again.',
+}) {
+  if (error == null) {
+    return fallbackMessage;
+  }
+
+  final firstLine = error.toString().split('\n').first.trim();
+  if (firstLine.isEmpty) {
+    return fallbackMessage;
+  }
+
+  final lower = firstLine.toLowerCase();
+  if (lower.startsWith('instance of') ||
+      lower == 'exception' ||
+      lower == 'error') {
+    return fallbackMessage;
+  }
+
+  return firstLine;
+}

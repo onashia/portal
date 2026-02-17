@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 
+import '../../constants/ui_constants.dart';
 import '../../providers/group_calendar_provider.dart';
 import '../../providers/group_monitor_provider.dart';
 import '../debug_info_card.dart';
 
 class DashboardActionArea extends ConsumerStatefulWidget {
   final String userId;
-  final GroupMonitorState monitorState;
   final VoidCallback onManageGroups;
   final double sheetWidth;
   final double progress;
@@ -16,7 +16,6 @@ class DashboardActionArea extends ConsumerStatefulWidget {
   const DashboardActionArea({
     super.key,
     required this.userId,
-    required this.monitorState,
     required this.onManageGroups,
     required this.sheetWidth,
     required this.progress,
@@ -34,30 +33,32 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
 
   @override
   Widget build(BuildContext context) {
+    final autoInviteEnabled = ref.watch(
+      groupMonitorProvider(
+        widget.userId,
+      ).select((monitorState) => monitorState.autoInviteEnabled),
+    );
+
     final actions = [
       ToolbarActionM3E(
-        icon: widget.monitorState.autoInviteEnabled
-            ? Icons.event_available
-            : Icons.event_busy,
+        icon: autoInviteEnabled ? Icons.event_available : Icons.event_busy,
         onPressed: () {
           ref
               .read(groupMonitorProvider(widget.userId).notifier)
               .toggleAutoInvite();
         },
-        tooltip: widget.monitorState.autoInviteEnabled
-            ? 'Auto-Invite On'
-            : 'Auto-Invite Off',
-        label: widget.monitorState.autoInviteEnabled
-            ? 'Auto-Invite On'
-            : 'Auto-Invite Off',
+        tooltip: autoInviteEnabled ? 'Auto-Invite On' : 'Auto-Invite Off',
+        label: autoInviteEnabled ? 'Auto-Invite On' : 'Auto-Invite Off',
       ),
       ToolbarActionM3E(
         icon: Icons.refresh,
         onPressed: () {
           ref
               .read(groupMonitorProvider(widget.userId).notifier)
-              .fetchGroupInstances();
-          ref.read(groupCalendarProvider(widget.userId).notifier).refresh();
+              .requestRefresh(immediate: true);
+          ref
+              .read(groupCalendarProvider(widget.userId).notifier)
+              .requestRefresh(immediate: true);
         },
         tooltip: 'Refresh Dashboard',
       ),
@@ -84,13 +85,13 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
                       followerAnchor: Alignment.bottomRight,
                       offset: Offset(0, -context.m3e.spacing.sm),
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 260),
-                        child: IntrinsicWidth(
-                          child: Card(
-                            child: DebugInfoCard(
-                              userId: widget.userId,
-                              useCard: false,
-                            ),
+                        constraints: const BoxConstraints(
+                          maxWidth: UiConstants.dashboardDebugPopoverMaxWidth,
+                        ),
+                        child: Card(
+                          child: DebugInfoCard(
+                            userId: widget.userId,
+                            useCard: false,
                           ),
                         ),
                       ),

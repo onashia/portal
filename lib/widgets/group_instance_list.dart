@@ -15,9 +15,11 @@ class GroupInstanceList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final monitorState = ref.watch(groupMonitorProvider(userId));
+    final selectedGroupIds = ref.watch(
+      groupMonitorSelectedGroupIdsProvider(userId),
+    );
 
-    if (monitorState.selectedGroupIds.isEmpty) {
+    if (selectedGroupIds.isEmpty) {
       return const SizedBox.shrink();
     }
 

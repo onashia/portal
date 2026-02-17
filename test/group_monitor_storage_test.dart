@@ -59,4 +59,35 @@ void main() {
     expect(prefs.getString(StorageKeys.boostedGroupId), isNull);
     expect(prefs.getString(StorageKeys.boostExpiresAt), isNull);
   });
+
+  test('load boost settings handles invalid persisted timestamp', () async {
+    SharedPreferences.setMockInitialValues({
+      StorageKeys.boostedGroupId: 'g1',
+      StorageKeys.boostExpiresAt: 'not-a-timestamp',
+    });
+
+    final loaded = await GroupMonitorStorage.loadBoostSettings();
+
+    expect(loaded.groupId, 'g1');
+    expect(loaded.expiresAt, isNull);
+  });
+
+  test('save boost settings clears when either value is missing', () async {
+    await GroupMonitorStorage.saveBoostSettings(
+      groupId: 'g1',
+      boostExpiresAt: null,
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(StorageKeys.boostedGroupId), isNull);
+    expect(prefs.getString(StorageKeys.boostExpiresAt), isNull);
+
+    await GroupMonitorStorage.saveBoostSettings(
+      groupId: null,
+      boostExpiresAt: DateTime.now(),
+    );
+
+    expect(prefs.getString(StorageKeys.boostedGroupId), isNull);
+    expect(prefs.getString(StorageKeys.boostExpiresAt), isNull);
+  });
 }

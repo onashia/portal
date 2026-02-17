@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:portal/models/file_id_info.dart';
 import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/auth_provider.dart';
+import 'package:portal/services/api_rate_limit_coordinator.dart';
 import 'package:portal/utils/app_logger.dart';
 
 FileIdInfo extractFileIdFromUrl(String url) {
@@ -55,11 +56,14 @@ Future<Uint8List?> fetchImageBytesWithAuth(
       subCategory: 'image_fetch',
     );
 
-    ref.read(apiCallCounterProvider.notifier).incrementApiCall();
+    ref
+        .read(apiCallCounterProvider.notifier)
+        .incrementApiCall(lane: ApiRequestLane.image);
 
     final response = await api.rawApi.getFilesApi().downloadFileVersion(
       fileId: fileIdInfo.fileId,
       versionId: fileIdInfo.version,
+      extra: apiRequestLaneExtra(ApiRequestLane.image),
     );
     AppLogger.debug(
       'Successfully fetched image: $imageUrl',

@@ -164,4 +164,177 @@ void main() {
       });
     });
   });
+
+  group('ByteBudgetLRUCache', () {
+    test('throws when maxEntries is less than 1', () {
+      expect(
+        () => ByteBudgetLRUCache<String, String>(
+          maxEntries: 0,
+          maxBytes: 10,
+          sizeOf: (value) => value.length,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('throws when maxBytes is less than 1', () {
+      expect(
+        () => ByteBudgetLRUCache<String, String>(
+          maxEntries: 1,
+          maxBytes: 0,
+          sizeOf: (value) => value.length,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('throws when sizeOf returns negative bytes', () {
+      final cache = ByteBudgetLRUCache<String, String>(
+        maxEntries: 2,
+        maxBytes: 10,
+        sizeOf: (_) => -1,
+      );
+      expect(() => cache.put('a', 'x'), throwsArgumentError);
+    });
+
+    test('evicts least recently used when exceeding maxEntries', () {
+      final cache = ByteBudgetLRUCache<String, String>(
+        maxEntries: 2,
+        maxBytes: 100,
+        sizeOf: (value) => value.length,
+      );
+      cache.put('a', '111');
+      cache.put('b', '222');
+      cache.put('c', '333');
+
+      expect(cache.get('a'), isNull);
+      expect(cache.get('b'), '222');
+      expect(cache.get('c'), '333');
+      expect(cache.length, 2);
+    });
+
+    test('evicts least recently used when exceeding maxBytes', () {
+      final cache = ByteBudgetLRUCache<String, String>(
+        maxEntries: 10,
+        maxBytes: 5,
+        sizeOf: (value) => value.length,
+      );
+      cache.put('a', 'aa');
+      cache.put('b', 'bb');
+      cache.put('c', 'cc');
+
+      expect(cache.get('a'), isNull);
+      expect(cache.get('b'), 'bb');
+      expect(cache.get('c'), 'cc');
+      expect(cache.totalBytes, 4);
+    });
+
+    test('put overwrite updates total bytes and recency', () {
+      final cache = ByteBudgetLRUCache<String, String>(
+        maxEntries: 3,
+        maxBytes: 6,
+        sizeOf: (value) => value.length,
+      );
+      cache.put('a', 'aa');
+      cache.put('b', 'bb');
+      cache.put('a', 'aaaa');
+
+      expect(cache.totalBytes, 6);
+      cache.put('c', 'c');
+      expect(cache.get('b'), isNull);
+      expect(cache.get('a'), 'aaaa');
+      expect(cache.get('c'), 'c');
+    });
+
+    test('get marks key as recently used for byte-based eviction', () {
+      final cache = ByteBudgetLRUCache<String, String>(
+        maxEntries: 3,
+        maxBytes: 4,
+        sizeOf: (value) => value.length,
+      );
+      cache.put('a', 'aa');
+      cache.put('b', 'bb');
+      cache.get('a');
+      cache.put('c', 'cc');
+
+      expect(cache.get('a'), 'aa');
+      expect(cache.get('b'), isNull);
+      expect(cache.get('c'), 'cc');
+    });
+
+    test('clear resets entries and byte budget', () {
+      final cache = ByteBudgetLRUCache<String, String>(
+        maxEntries: 3,
+        maxBytes: 100,
+        sizeOf: (value) => value.length,
+      );
+      cache.put('a', 'hello');
+      cache.put('b', 'world');
+
+      cache.clear();
+
+      expect(cache.length, 0);
+      expect(cache.totalBytes, 0);
+      expect(cache.get('a'), isNull);
+      expect(cache.get('b'), isNull);
+    });
+
+    test('repeated overwrite keeps total bytes coherent', () {
+      final cache = ByteBudgetLRUCache<String, String>(
+        maxEntries: 3,
+        maxBytes: 100,
+        sizeOf: (value) => value.length,
+      );
+
+      cache.put('key', 'a');
+      expect(cache.totalBytes, 1);
+      cache.put('key', 'abcd');
+      expect(cache.totalBytes, 4);
+      cache.put('key', 'ab');
+      expect(cache.totalBytes, 2);
+      expect(cache.length, 1);
+      expect(cache.get('key'), 'ab');
+    });
+
+    test('heavy churn keeps bytes non-negative and bounded', () {
+      final cache = ByteBudgetLRUCache<String, String>(
+        maxEntries: 4,
+        maxBytes: 6,
+        sizeOf: (value) => value.length,
+      );
+
+      for (int i = 0; i < 25; i++) {
+        final key = 'k${i % 5}';
+        final value = 'x' * ((i % 4) + 1);
+        cache.put(key, value);
+        cache.get('k${(i + 1) % 5}');
+      }
+      cache.clear();
+
+      expect(cache.totalBytes, greaterThanOrEqualTo(0));
+      expect(cache.totalBytes, lessThanOrEqualTo(6));
+      expect(cache.length, 0);
+    });
+
+    test('byte-budget eviction remains LRU-correct under churn', () {
+      final cache = ByteBudgetLRUCache<String, String>(
+        maxEntries: 10,
+        maxBytes: 6,
+        sizeOf: (value) => value.length,
+      );
+
+      cache.put('a', 'aa'); // 2
+      cache.put('b', 'bb'); // 4
+      cache.put('c', 'cc'); // 6
+      cache.get('a'); // b is now LRU
+      cache.put('d', 'dd'); // should evict b
+
+      expect(cache.get('b'), isNull);
+      expect(cache.get('a'), 'aa');
+      expect(cache.get('c'), 'cc');
+      expect(cache.get('d'), 'dd');
+      expect(cache.totalBytes, 6);
+      expect(cache.length, 3);
+    });
+  });
 }

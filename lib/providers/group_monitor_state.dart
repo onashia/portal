@@ -22,6 +22,11 @@ class GroupMonitorState {
   final bool isLoading;
   final String? errorMessage;
   final Map<String, String> groupErrors;
+  final DateTime? lastBaselineAttemptAt;
+  final DateTime? lastBaselineSuccessAt;
+  final int? lastBaselinePolledGroupCount;
+  final int? lastBaselineTotalInstances;
+  final String? lastBaselineSkipReason;
   final DateTime? lastGroupsFetchTime;
 
   const GroupMonitorState({
@@ -40,6 +45,11 @@ class GroupMonitorState {
     this.isLoading = false,
     this.errorMessage,
     this.groupErrors = const {},
+    this.lastBaselineAttemptAt,
+    this.lastBaselineSuccessAt,
+    this.lastBaselinePolledGroupCount,
+    this.lastBaselineTotalInstances,
+    this.lastBaselineSkipReason,
     this.lastGroupsFetchTime,
   });
 
@@ -59,6 +69,11 @@ class GroupMonitorState {
     bool? isLoading,
     Object? errorMessage = _unset,
     Map<String, String>? groupErrors,
+    Object? lastBaselineAttemptAt = _unset,
+    Object? lastBaselineSuccessAt = _unset,
+    Object? lastBaselinePolledGroupCount = _unset,
+    Object? lastBaselineTotalInstances = _unset,
+    Object? lastBaselineSkipReason = _unset,
     Object? lastGroupsFetchTime = _unset,
   }) {
     return GroupMonitorState(
@@ -89,19 +104,26 @@ class GroupMonitorState {
           ? this.errorMessage
           : errorMessage as String?,
       groupErrors: groupErrors ?? this.groupErrors,
+      lastBaselineAttemptAt: lastBaselineAttemptAt == _unset
+          ? this.lastBaselineAttemptAt
+          : lastBaselineAttemptAt as DateTime?,
+      lastBaselineSuccessAt: lastBaselineSuccessAt == _unset
+          ? this.lastBaselineSuccessAt
+          : lastBaselineSuccessAt as DateTime?,
+      lastBaselinePolledGroupCount: lastBaselinePolledGroupCount == _unset
+          ? this.lastBaselinePolledGroupCount
+          : lastBaselinePolledGroupCount as int?,
+      lastBaselineTotalInstances: lastBaselineTotalInstances == _unset
+          ? this.lastBaselineTotalInstances
+          : lastBaselineTotalInstances as int?,
+      lastBaselineSkipReason: lastBaselineSkipReason == _unset
+          ? this.lastBaselineSkipReason
+          : lastBaselineSkipReason as String?,
       lastGroupsFetchTime: lastGroupsFetchTime == _unset
           ? this.lastGroupsFetchTime
           : lastGroupsFetchTime as DateTime?,
     );
   }
-
-  List<GroupInstanceWithGroup> get allInstancesSorted =>
-      groupInstances.values.expand((instances) => instances).toList()
-        ..sort((a, b) {
-          final aTime = a.firstDetectedAt ?? DateTime.now();
-          final bTime = b.firstDetectedAt ?? DateTime.now();
-          return bTime.compareTo(aTime);
-        });
 
   bool get isBoostActive =>
       boostedGroupId != null &&
