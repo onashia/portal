@@ -582,7 +582,9 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       final bypassRateLimit = _pendingBypassRateLimit;
       _pendingRefresh = false;
       _pendingBypassRateLimit = false;
-      unawaited(refresh(bypassRateLimit: bypassRateLimit));
+      if (ref.mounted) {
+        unawaited(refresh(bypassRateLimit: bypassRateLimit));
+      }
       return;
     }
 
@@ -595,6 +597,9 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   }
 
   Future<void> refresh({bool bypassRateLimit = false}) async {
+    if (!ref.mounted) {
+      return;
+    }
     if (!_calendarActive()) {
       _reconcileCalendarLoop();
       return;
@@ -735,7 +740,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
         error: e,
         stackTrace: s,
       );
-      if (state.isLoading) {
+      if (state.isLoading && ref.mounted) {
         state = state.copyWith(isLoading: false);
       }
     } finally {

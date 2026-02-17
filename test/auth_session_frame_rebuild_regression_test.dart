@@ -56,7 +56,9 @@ void main() {
     'auth transition from authenticated to logged out does not trigger provider rebuild crash',
     (tester) async {
       final mockDio = _MockDio();
-      when(() => mockDio.get(any())).thenAnswer((_) async => _statusResponse());
+      when(
+        () => mockDio.get(any(), options: any(named: 'options')),
+      ).thenAnswer((_) async => _statusResponse());
       final authNotifier = _TestAuthNotifier(
         AuthState(
           status: AuthStatus.authenticated,
