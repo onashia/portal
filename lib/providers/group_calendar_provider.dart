@@ -740,7 +740,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
         error: e,
         stackTrace: s,
       );
-      if (state.isLoading && ref.mounted) {
+      if (ref.mounted && state.isLoading) {
         state = state.copyWith(isLoading: false);
       }
     } finally {
