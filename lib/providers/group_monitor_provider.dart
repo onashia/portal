@@ -1486,7 +1486,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
           groupId: groupId,
           fetchedInstances: instances,
           previousInstances: previousInstances,
-          detectedAt: DateTime.now(),
+          detectedAt: attemptAt,
         );
         newInstances.addAll(merged.newInstances);
         if (merged.didChange) {
@@ -1711,7 +1711,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
         groupId: groupId,
         fetchedInstances: instances,
         previousInstances: previousInstances,
-        detectedAt: DateTime.now(),
+        detectedAt: pollStart,
       );
       final newInstances = merged.newInstances;
       final mergedInstances = merged.effectiveInstances;
