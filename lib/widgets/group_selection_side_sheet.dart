@@ -4,6 +4,7 @@ import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../providers/group_monitor_provider.dart';
+import '../theme/side_sheet_theme.dart';
 import 'group_selection/group_avatar.dart';
 import 'group_selection/groups_empty_state.dart';
 import 'group_selection/groups_loading_state.dart';
@@ -64,14 +65,16 @@ class _GroupSelectionSideSheetState
   }
 
   Widget _buildSheetBody(BuildContext context) {
-    final cardTheme = Theme.of(context).cardTheme;
+    final sideSheetTheme = Theme.of(context).extension<SideSheetTheme>()!;
+    final sideSheetShape = RoundedRectangleBorder(
+      borderRadius: context.m3e.shapes.round.md,
+    ).copyWith(side: BorderSide(color: sideSheetTheme.outlineColor));
     return Card(
       margin: EdgeInsets.zero,
-      color: cardTheme.color,
-      elevation: cardTheme.elevation,
-      shadowColor: cardTheme.shadowColor,
-      surfaceTintColor: cardTheme.surfaceTintColor,
-      shape: cardTheme.shape,
+      color: sideSheetTheme.containerColor,
+      elevation: sideSheetTheme.elevation,
+      shadowColor: sideSheetTheme.shadowColor,
+      shape: sideSheetShape,
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
         height: double.infinity,

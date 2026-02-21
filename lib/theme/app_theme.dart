@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 
+import 'side_sheet_theme.dart';
 import 'status_colors.dart';
 import 'vrchat_status_colors.dart';
+
+const double _sideSheetElevation = 8.0;
+const double _sideSheetOutlineAlphaLight = 0.50;
+const double _sideSheetOutlineAlphaDark = 0.65;
 
 class AppTheme {
   static ThemeData lightTheme = _buildTheme(Brightness.light);
@@ -21,6 +26,9 @@ class AppTheme {
     final shapes = m3e.shapes;
     final spacing = m3e.spacing;
     final textTheme = m3e.typography.base;
+    final sideSheetOutlineAlpha = brightness == Brightness.dark
+        ? _sideSheetOutlineAlphaDark
+        : _sideSheetOutlineAlphaLight;
 
     final inputBorder = OutlineInputBorder(
       borderRadius: shapes.square.lg,
@@ -50,6 +58,14 @@ class AppTheme {
           operational: const Color(0xFF81C784), // green
           degraded: const Color(0xFFFFB74D), // orange/yellow
           outage: const Color(0xFFE57373), // red
+        ),
+        SideSheetTheme(
+          containerColor: scheme.surfaceContainerHigh,
+          outlineColor: scheme.outlineVariant.withValues(
+            alpha: sideSheetOutlineAlpha,
+          ),
+          elevation: _sideSheetElevation,
+          shadowColor: scheme.shadow,
         ),
       ],
       textTheme: textTheme,
