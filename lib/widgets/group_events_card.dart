@@ -29,7 +29,7 @@ class GroupEventsCard extends ConsumerWidget {
         cardTheme.shape as RoundedRectangleBorder? ??
         RoundedRectangleBorder(borderRadius: context.m3e.shapes.round.md);
     final outlineColor = scheme.outlineVariant.withValues(alpha: 0.4);
-    final todayLabel = _formatDateLabel(DateTime.now());
+    final todayLabel = DateTimeUtils.formatLocalDate(DateTime.now());
 
     return Card(
       color: scheme.surfaceContainerLow,
@@ -102,25 +102,5 @@ class GroupEventsCard extends ConsumerWidget {
         );
       },
     );
-  }
-
-  String _formatDateLabel(DateTime date) {
-    final local = DateTimeUtils.toUserLocalTime(date);
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    final month = months[local.month - 1];
-    return '$month ${local.day}, ${local.year}';
   }
 }

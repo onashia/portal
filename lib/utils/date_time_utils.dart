@@ -23,4 +23,10 @@ class DateTimeUtils {
     final seconds = local.second.toString().padLeft(2, '0');
     return '$hours:$minutes:$seconds';
   }
+
+  /// Formats [value] as a localized short date (for example, Feb 22, 2026).
+  static String formatLocalDate(DateTime value) {
+    final local = toUserLocalTime(value);
+    return DateFormat.yMMMd().format(local);
+  }
 }
