@@ -236,9 +236,11 @@ class VrchatStatusWidget extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ...serviceGroups.map(
-          (group) => _buildServiceGroup(context, group, colors),
-        ),
+        for (final entry in serviceGroups.asMap().entries) ...[
+          _buildServiceGroup(context, entry.value, colors),
+          if (entry.key < serviceGroups.length - 1)
+            SizedBox(height: context.m3e.spacing.md),
+        ],
       ],
     );
   }
@@ -271,7 +273,6 @@ class VrchatStatusWidget extends ConsumerWidget {
             ),
           ),
         ),
-        SizedBox(height: context.m3e.spacing.md),
       ],
     );
   }
@@ -341,7 +342,11 @@ class VrchatStatusWidget extends ConsumerWidget {
           ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
         ),
         SizedBox(height: context.m3e.spacing.sm),
-        ...incidents.map((incident) => _buildIncidentItem(context, incident)),
+        for (final entry in incidents.asMap().entries) ...[
+          _buildIncidentItem(context, entry.value),
+          if (entry.key < incidents.length - 1)
+            SizedBox(height: context.m3e.spacing.sm),
+        ],
       ],
     );
   }
@@ -350,9 +355,10 @@ class VrchatStatusWidget extends ConsumerWidget {
     final latestUpdate = incident.updates.isNotEmpty
         ? incident.updates.first
         : null;
+    final incidentContentIndent = IconSizes.xxs + context.m3e.spacing.md;
 
     return Card(
-      margin: EdgeInsets.only(bottom: context.m3e.spacing.sm),
+      margin: EdgeInsets.zero,
       child: Padding(
         padding: EdgeInsets.all(context.m3e.spacing.md),
         child: Column(
@@ -377,12 +383,8 @@ class VrchatStatusWidget extends ConsumerWidget {
               ],
             ),
             SizedBox(height: context.m3e.spacing.sm),
-            Container(
-              padding: EdgeInsets.all(context.m3e.spacing.sm),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: context.m3e.shapes.round.xs,
-              ),
+            Padding(
+              padding: EdgeInsets.only(left: incidentContentIndent),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
