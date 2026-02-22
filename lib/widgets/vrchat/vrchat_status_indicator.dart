@@ -237,9 +237,9 @@ class VrchatStatusWidget extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final entry in serviceGroups.asMap().entries) ...[
-          _buildServiceGroup(context, entry.value, colors),
-          if (entry.key < serviceGroups.length - 1)
+        for (final (index, group) in serviceGroups.indexed) ...[
+          _buildServiceGroup(context, group, colors),
+          if (index < serviceGroups.length - 1)
             SizedBox(height: context.m3e.spacing.md),
         ],
       ],
@@ -343,9 +343,9 @@ class VrchatStatusWidget extends ConsumerWidget {
           ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
         ),
         SizedBox(height: context.m3e.spacing.sm),
-        for (final entry in incidents.asMap().entries) ...[
-          _buildIncidentItem(context, entry.value),
-          if (entry.key < incidents.length - 1)
+        for (final (index, incident) in incidents.indexed) ...[
+          _buildIncidentItem(context, incident),
+          if (index < incidents.length - 1)
             SizedBox(height: context.m3e.spacing.sm),
         ],
       ],
