@@ -34,12 +34,12 @@ void main() {
     });
   });
 
-  group('DateTimeUtils.formatLocalHms', () {
+  group('DateTimeUtils.formatLocalJms', () {
     test('matches intl time format with seconds of local-converted value', () {
       final utc = DateTime.utc(2026, 2, 13, 14, 15, 16);
 
       final expected = DateFormat.jms().format(utc.toLocal());
-      final actual = DateTimeUtils.formatLocalHms(utc);
+      final actual = DateTimeUtils.formatLocalJms(utc);
 
       expect(actual, expected);
     });

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/theme/app_theme.dart';
 import 'package:portal/widgets/debug_info_card.dart';
@@ -17,11 +18,7 @@ class _TestGroupMonitorNotifier extends GroupMonitorNotifier {
 void main() {
   testWidgets('renders Boost Last FetchedAt using local time', (tester) async {
     final fetchedAtUtc = DateTime.utc(2026, 2, 13, 14, 15, 16);
-    final local = fetchedAtUtc.toLocal();
-    final expected =
-        '${local.hour.toString().padLeft(2, '0')}:'
-        '${local.minute.toString().padLeft(2, '0')}:'
-        '${local.second.toString().padLeft(2, '0')}';
+    final expected = DateFormat.jms().format(fetchedAtUtc.toLocal());
 
     final monitorState = GroupMonitorState(
       selectedGroupIds: const {'grp_alpha'},

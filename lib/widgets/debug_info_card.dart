@@ -177,7 +177,7 @@ class DebugInfoCard extends ConsumerWidget {
 
   String _formatDateTime(DateTime? value) {
     if (value == null) return '—';
-    return DateTimeUtils.formatLocalHms(value);
+    return DateTimeUtils.formatLocalJms(value);
   }
 
   List<Widget> _buildApiLaneRows(

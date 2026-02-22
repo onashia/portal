@@ -16,7 +16,7 @@ class DateTimeUtils {
   }
 
   /// Formats [value] as a localized time with hours, minutes, and seconds.
-  static String formatLocalHms(DateTime value) {
+  static String formatLocalJms(DateTime value) {
     final local = toUserLocalTime(value);
     return DateFormat.jms().format(local);
   }
