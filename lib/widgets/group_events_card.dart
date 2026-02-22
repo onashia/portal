@@ -4,6 +4,7 @@ import 'package:m3e_collection/m3e_collection.dart';
 
 import '../providers/group_calendar_provider.dart';
 import '../providers/group_monitor_provider.dart';
+import '../utils/date_time_utils.dart';
 import 'common/empty_state.dart';
 import 'common/loading_state.dart';
 import 'events/events_card_header.dart';
@@ -104,7 +105,7 @@ class GroupEventsCard extends ConsumerWidget {
   }
 
   String _formatDateLabel(DateTime date) {
-    final local = date.toLocal();
+    final local = DateTimeUtils.toUserLocalTime(date);
     const months = [
       'Jan',
       'Feb',
