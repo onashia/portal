@@ -150,6 +150,7 @@ class VrchatStatusWidget extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('VRChat Status'),
+        contentPadding: EdgeInsets.all(context.m3e.spacing.lg),
         content: ConstrainedBox(
           constraints: const BoxConstraints(
             maxWidth: UiConstants.vrchatStatusDialogMaxWidth,
@@ -160,7 +161,7 @@ class VrchatStatusWidget extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildOverallStatus(context, status, statusColor),
-                SizedBox(height: context.m3e.spacing.md),
+                SizedBox(height: context.m3e.spacing.lg),
                 _buildServicesSection(
                   context,
                   status.serviceGroups,
