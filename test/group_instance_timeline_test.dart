@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:portal/models/group_instance_with_group.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/theme/app_theme.dart';
@@ -20,6 +21,8 @@ class _TestGroupMonitorNotifier extends GroupMonitorNotifier {
 void main() {
   testWidgets('renders group names and newest marker', (tester) async {
     final world = buildTestWorld(id: 'wrld_1', name: 'World One');
+    final oldDetectedAtUtc = DateTime.utc(2026, 2, 13, 9);
+    final newDetectedAtUtc = DateTime.utc(2026, 2, 13, 10);
     final monitorState = GroupMonitorState(
       allGroups: [buildTestGroup(groupId: 'grp_alpha', name: 'Alpha')],
       selectedGroupIds: {'grp_alpha'},
@@ -33,7 +36,7 @@ void main() {
               userCount: 3,
             ),
             groupId: 'grp_alpha',
-            firstDetectedAt: DateTime.utc(2026, 2, 13, 9),
+            firstDetectedAt: oldDetectedAtUtc,
           ),
           GroupInstanceWithGroup(
             instance: buildTestInstance(
@@ -42,7 +45,7 @@ void main() {
               userCount: 6,
             ),
             groupId: 'grp_alpha',
-            firstDetectedAt: DateTime.utc(2026, 2, 13, 10),
+            firstDetectedAt: newDetectedAtUtc,
           ),
         ],
       },
@@ -74,6 +77,14 @@ void main() {
 
     expect(find.text('Alpha'), findsNWidgets(2));
     expect(find.text('New'), findsOneWidget);
+    expect(
+      find.text(DateFormat.jm().format(oldDetectedAtUtc.toLocal())),
+      findsOneWidget,
+    );
+    expect(
+      find.text(DateFormat.jm().format(newDetectedAtUtc.toLocal())),
+      findsOneWidget,
+    );
   });
 
   testWidgets('renders no-group empty state', (tester) async {

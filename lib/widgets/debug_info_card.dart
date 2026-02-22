@@ -5,6 +5,7 @@ import 'package:m3e_collection/m3e_collection.dart';
 import '../providers/api_call_counter.dart';
 import '../providers/group_monitor_provider.dart';
 import '../services/api_rate_limit_coordinator.dart';
+import '../utils/date_time_utils.dart';
 import '../utils/group_utils.dart';
 
 class DebugInfoCard extends ConsumerWidget {
@@ -176,10 +177,7 @@ class DebugInfoCard extends ConsumerWidget {
 
   String _formatDateTime(DateTime? value) {
     if (value == null) return '—';
-    final hours = value.hour.toString().padLeft(2, '0');
-    final minutes = value.minute.toString().padLeft(2, '0');
-    final seconds = value.second.toString().padLeft(2, '0');
-    return '$hours:$minutes:$seconds';
+    return DateTimeUtils.formatLocalHms(value);
   }
 
   List<Widget> _buildApiLaneRows(
