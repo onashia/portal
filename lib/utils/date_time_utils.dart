@@ -15,13 +15,10 @@ class DateTimeUtils {
     return DateFormat.jm().format(local);
   }
 
-  /// Formats [value] as HH:mm:ss in local time.
+  /// Formats [value] as a localized time with hours, minutes, and seconds.
   static String formatLocalHms(DateTime value) {
     final local = toUserLocalTime(value);
-    final hours = local.hour.toString().padLeft(2, '0');
-    final minutes = local.minute.toString().padLeft(2, '0');
-    final seconds = local.second.toString().padLeft(2, '0');
-    return '$hours:$minutes:$seconds';
+    return DateFormat.jms().format(local);
   }
 
   /// Formats [value] as a localized short date (for example, Feb 22, 2026).
