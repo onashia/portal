@@ -42,23 +42,25 @@ class CustomTitleBar extends ConsumerWidget implements PreferredSizeWidget {
         children: [
           Expanded(
             child: DragToMoveArea(
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: context.m3e.spacing.md,
-                ),
-                child: Row(
-                  children: [
-                    if (showBranding) ...[
-                      Icon(icon, size: IconSizes.xs, color: fgColor),
-                      SizedBox(width: context.m3e.spacing.sm),
-                      Text(
-                        title,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: fgColor,
+              child: SizedBox.expand(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: context.m3e.spacing.md,
+                  ),
+                  child: Row(
+                    children: [
+                      if (showBranding) ...[
+                        Icon(icon, size: IconSizes.xs, color: fgColor),
+                        SizedBox(width: context.m3e.spacing.sm),
+                        Text(
+                          title,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: fgColor,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
