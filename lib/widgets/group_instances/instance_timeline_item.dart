@@ -29,9 +29,9 @@ class InstanceTimelineItem extends StatelessWidget {
     final instance = instanceWithGroup.instance;
     final world = instance.world;
     final detectedTime = instanceWithGroup.firstDetectedAt;
-    final timeLabel = DateTimeUtils.formatLocalJm(
-      detectedTime ?? DateTime.now(),
-    );
+    final timeLabel = detectedTime != null
+        ? DateTimeUtils.formatLocalJm(detectedTime)
+        : '—';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
