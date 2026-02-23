@@ -995,9 +995,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    if (_pollingTimer == null &&
-        !_isAnyFetchInFlight &&
-        !_pendingBaselineRefresh) {
+    if (shouldScheduleNextTick(
+      isActive: true,
+      hasTimer: _pollingTimer != null,
+      isInFlight: _isAnyFetchInFlight,
+      hasPendingRefresh: _pendingBaselineRefresh,
+    )) {
       AppLogger.debug(
         'Baseline polling timer missing while monitoring is active; rescheduling',
         subCategory: 'group_monitor',
@@ -1015,9 +1018,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    if (_boostPollingTimer == null &&
-        !_isAnyFetchInFlight &&
-        !_pendingBoostRefresh) {
+    if (shouldScheduleNextTick(
+      isActive: true,
+      hasTimer: _boostPollingTimer != null,
+      isInFlight: _isAnyFetchInFlight,
+      hasPendingRefresh: _pendingBoostRefresh,
+    )) {
       _requestBoostRefresh(immediate: true);
     }
   }
@@ -1083,7 +1089,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     bool immediate = true,
     bool bypassRateLimit = false,
   }) {
-    if (!_baselineActive()) {
+    final dispatch = shouldRequestImmediateRefresh(
+      isActive: _baselineActive(),
+      isInFlight: _isAnyFetchInFlight,
+      immediate: immediate,
+    );
+    if (dispatch.shouldReconcile) {
       _reconcileBaselineLoop();
       return;
     }
@@ -1091,30 +1102,37 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     _pollingTimer?.cancel();
     _pollingTimer = null;
 
-    final decision = resolveRefreshRequestDecision(
-      isInFlight: _isAnyFetchInFlight,
-    );
-    if (decision.shouldQueuePending) {
-      _pendingBaselineRefresh = true;
-      _pendingBaselineBypassRateLimit =
-          _pendingBaselineBypassRateLimit || bypassRateLimit;
+    if (dispatch.shouldQueuePending) {
+      final pendingState = mergePendingRefreshState(
+        currentPendingBypassRateLimit: _pendingBaselineBypassRateLimit,
+        nextBypassRateLimit: bypassRateLimit,
+      );
+      _pendingBaselineRefresh = pendingState.pendingRefresh;
+      _pendingBaselineBypassRateLimit = pendingState.pendingBypassRateLimit;
       _recordBaselineSkip('in_flight_queue');
       return;
     }
 
-    if (immediate) {
+    if (dispatch.shouldRunNow) {
       unawaited(fetchGroupInstances(bypassRateLimit: bypassRateLimit));
       return;
     }
 
-    _scheduleNextBaselineTick();
+    if (dispatch.shouldScheduleTick) {
+      _scheduleNextBaselineTick();
+    }
   }
 
   void _requestBoostRefresh({
     bool immediate = true,
     bool bypassRateLimit = false,
   }) {
-    if (!_boostActive()) {
+    final dispatch = shouldRequestImmediateRefresh(
+      isActive: _boostActive(),
+      isInFlight: _isAnyFetchInFlight,
+      immediate: immediate,
+    );
+    if (dispatch.shouldReconcile) {
       _reconcileBoostLoop();
       return;
     }
@@ -1122,22 +1140,24 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     _boostPollingTimer?.cancel();
     _boostPollingTimer = null;
 
-    final decision = resolveRefreshRequestDecision(
-      isInFlight: _isAnyFetchInFlight,
-    );
-    if (decision.shouldQueuePending) {
-      _pendingBoostRefresh = true;
-      _pendingBoostBypassRateLimit =
-          _pendingBoostBypassRateLimit || bypassRateLimit;
+    if (dispatch.shouldQueuePending) {
+      final pendingState = mergePendingRefreshState(
+        currentPendingBypassRateLimit: _pendingBoostBypassRateLimit,
+        nextBypassRateLimit: bypassRateLimit,
+      );
+      _pendingBoostRefresh = pendingState.pendingRefresh;
+      _pendingBoostBypassRateLimit = pendingState.pendingBypassRateLimit;
       return;
     }
 
-    if (immediate) {
+    if (dispatch.shouldRunNow) {
       unawaited(fetchBoostedGroupInstances(bypassRateLimit: bypassRateLimit));
       return;
     }
 
-    _scheduleNextBoostTick();
+    if (dispatch.shouldScheduleTick) {
+      _scheduleNextBoostTick();
+    }
   }
 
   void _drainPendingRefreshesOrScheduleTicks() {
@@ -1145,7 +1165,13 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    if (_pendingBaselineRefresh && _baselineActive()) {
+    final baselineActive = _baselineActive();
+    if (shouldDrainPendingRefresh(
+      isMounted: ref.mounted,
+      isInFlight: _isAnyFetchInFlight,
+      hasPendingRefresh: _pendingBaselineRefresh,
+      isActive: baselineActive,
+    )) {
       final bypassRateLimit = _pendingBaselineBypassRateLimit;
       _pendingBaselineRefresh = false;
       _pendingBaselineBypassRateLimit = false;
@@ -1153,7 +1179,13 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    if (_pendingBoostRefresh && _boostActive()) {
+    final boostActive = _boostActive();
+    if (shouldDrainPendingRefresh(
+      isMounted: ref.mounted,
+      isInFlight: _isAnyFetchInFlight,
+      hasPendingRefresh: _pendingBoostRefresh,
+      isActive: boostActive,
+    )) {
       final bypassRateLimit = _pendingBoostBypassRateLimit;
       _pendingBoostRefresh = false;
       _pendingBoostBypassRateLimit = false;
@@ -1161,18 +1193,28 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    if (_baselineActive() && _pollingTimer == null) {
+    if (shouldScheduleNextTick(
+      isActive: baselineActive,
+      hasTimer: _pollingTimer != null,
+      isInFlight: _isAnyFetchInFlight,
+      hasPendingRefresh: _pendingBaselineRefresh,
+    )) {
       _scheduleNextBaselineTick();
-    } else if (!_baselineActive()) {
+    } else if (!baselineActive) {
       _pollingTimer?.cancel();
       _pollingTimer = null;
       _pendingBaselineRefresh = false;
       _pendingBaselineBypassRateLimit = false;
     }
 
-    if (_boostActive() && _boostPollingTimer == null) {
+    if (shouldScheduleNextTick(
+      isActive: boostActive,
+      hasTimer: _boostPollingTimer != null,
+      isInFlight: _isAnyFetchInFlight,
+      hasPendingRefresh: _pendingBoostRefresh,
+    )) {
       _scheduleNextBoostTick();
-    } else if (!_boostActive()) {
+    } else if (!boostActive) {
       _boostPollingTimer?.cancel();
       _boostPollingTimer = null;
       _pendingBoostRefresh = false;
@@ -1320,9 +1362,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       isInFlight: _isAnyFetchInFlight,
     );
     if (decision.shouldQueuePending) {
-      _pendingBaselineRefresh = true;
-      _pendingBaselineBypassRateLimit =
-          _pendingBaselineBypassRateLimit || bypassRateLimit;
+      final pendingState = mergePendingRefreshState(
+        currentPendingBypassRateLimit: _pendingBaselineBypassRateLimit,
+        nextBypassRateLimit: bypassRateLimit,
+      );
+      _pendingBaselineRefresh = pendingState.pendingRefresh;
+      _pendingBaselineBypassRateLimit = pendingState.pendingBypassRateLimit;
       AppLogger.debug(
         'Fetch already in progress, queueing pending baseline refresh',
         subCategory: 'group_monitor',
@@ -1594,9 +1639,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       isInFlight: _isAnyFetchInFlight,
     );
     if (decision.shouldQueuePending) {
-      _pendingBoostRefresh = true;
-      _pendingBoostBypassRateLimit =
-          _pendingBoostBypassRateLimit || bypassRateLimit;
+      final pendingState = mergePendingRefreshState(
+        currentPendingBypassRateLimit: _pendingBoostBypassRateLimit,
+        nextBypassRateLimit: bypassRateLimit,
+      );
+      _pendingBoostRefresh = pendingState.pendingRefresh;
+      _pendingBoostBypassRateLimit = pendingState.pendingBypassRateLimit;
       AppLogger.debug(
         'Fetch already in progress, queueing pending boost refresh',
         subCategory: 'group_monitor',

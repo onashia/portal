@@ -1,4 +1,14 @@
 typedef RefreshRequestDecision = ({bool shouldQueuePending, bool shouldRunNow});
+typedef PendingRefreshState = ({
+  bool pendingRefresh,
+  bool pendingBypassRateLimit,
+});
+typedef RefreshDispatchDecision = ({
+  bool shouldReconcile,
+  bool shouldQueuePending,
+  bool shouldRunNow,
+  bool shouldScheduleTick,
+});
 
 bool isSessionEligible({
   required bool isAuthenticated,
@@ -32,6 +42,76 @@ RefreshRequestDecision resolveRefreshRequestDecision({
   required bool isInFlight,
 }) {
   return (shouldQueuePending: isInFlight, shouldRunNow: !isInFlight);
+}
+
+PendingRefreshState mergePendingRefreshState({
+  required bool currentPendingBypassRateLimit,
+  required bool nextBypassRateLimit,
+}) {
+  return (
+    pendingRefresh: true,
+    pendingBypassRateLimit:
+        currentPendingBypassRateLimit || nextBypassRateLimit,
+  );
+}
+
+RefreshDispatchDecision shouldRequestImmediateRefresh({
+  required bool isActive,
+  required bool isInFlight,
+  required bool immediate,
+}) {
+  if (!isActive) {
+    return (
+      shouldReconcile: true,
+      shouldQueuePending: false,
+      shouldRunNow: false,
+      shouldScheduleTick: false,
+    );
+  }
+
+  final decision = resolveRefreshRequestDecision(isInFlight: isInFlight);
+  if (decision.shouldQueuePending) {
+    return (
+      shouldReconcile: false,
+      shouldQueuePending: true,
+      shouldRunNow: false,
+      shouldScheduleTick: false,
+    );
+  }
+
+  if (immediate) {
+    return (
+      shouldReconcile: false,
+      shouldQueuePending: false,
+      shouldRunNow: true,
+      shouldScheduleTick: false,
+    );
+  }
+
+  return (
+    shouldReconcile: false,
+    shouldQueuePending: false,
+    shouldRunNow: false,
+    shouldScheduleTick: true,
+  );
+}
+
+bool shouldScheduleNextTick({
+  required bool isActive,
+  required bool hasTimer,
+  required bool isInFlight,
+  required bool hasPendingRefresh,
+}) {
+  return isActive && !hasTimer && !isInFlight && !hasPendingRefresh;
+}
+
+bool shouldDrainPendingRefresh({
+  required bool isMounted,
+  required bool isInFlight,
+  required bool hasPendingRefresh,
+  required bool isActive,
+}) {
+  return isMounted && !isInFlight && hasPendingRefresh && isActive;
 }
 
 Duration resolveCooldownAwareDelay({

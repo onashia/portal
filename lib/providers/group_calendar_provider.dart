@@ -483,7 +483,12 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     bool immediate = true,
     bool bypassRateLimit = false,
   }) {
-    if (!_calendarActive()) {
+    final dispatch = shouldRequestImmediateRefresh(
+      isActive: _calendarActive(),
+      isInFlight: _isFetching,
+      immediate: immediate,
+    );
+    if (dispatch.shouldReconcile) {
       _reconcileCalendarLoop();
       return;
     }
@@ -491,19 +496,24 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     _refreshTimer?.cancel();
     _refreshTimer = null;
 
-    final decision = resolveRefreshRequestDecision(isInFlight: _isFetching);
-    if (decision.shouldQueuePending) {
-      _pendingRefresh = true;
-      _pendingBypassRateLimit = _pendingBypassRateLimit || bypassRateLimit;
+    if (dispatch.shouldQueuePending) {
+      final pendingState = mergePendingRefreshState(
+        currentPendingBypassRateLimit: _pendingBypassRateLimit,
+        nextBypassRateLimit: bypassRateLimit,
+      );
+      _pendingRefresh = pendingState.pendingRefresh;
+      _pendingBypassRateLimit = pendingState.pendingBypassRateLimit;
       return;
     }
 
-    if (immediate) {
+    if (dispatch.shouldRunNow) {
       unawaited(refresh(bypassRateLimit: bypassRateLimit));
       return;
     }
 
-    _scheduleNextCalendarTick();
+    if (dispatch.shouldScheduleTick) {
+      _scheduleNextCalendarTick();
+    }
   }
 
   void _scheduleNextCalendarTick({Duration? overrideDelay}) {
@@ -568,17 +578,24 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       return;
     }
 
-    if (_refreshTimer == null && !_isFetching && !_pendingRefresh) {
+    if (shouldScheduleNextTick(
+      isActive: true,
+      hasTimer: _refreshTimer != null,
+      isInFlight: _isFetching,
+      hasPendingRefresh: _pendingRefresh,
+    )) {
       _requestCalendarRefresh(immediate: true);
     }
   }
 
   void _drainPendingRefreshesOrScheduleTick() {
-    if (!ref.mounted || _isFetching) {
-      return;
-    }
-
-    if (_pendingRefresh && _calendarActive()) {
+    final active = ref.mounted ? _calendarActive() : false;
+    if (shouldDrainPendingRefresh(
+      isMounted: ref.mounted,
+      isInFlight: _isFetching,
+      hasPendingRefresh: _pendingRefresh,
+      isActive: active,
+    )) {
       final bypassRateLimit = _pendingBypassRateLimit;
       _pendingRefresh = false;
       _pendingBypassRateLimit = false;
@@ -588,7 +605,16 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       return;
     }
 
-    if (_calendarActive() && _refreshTimer == null) {
+    if (!ref.mounted || _isFetching) {
+      return;
+    }
+
+    if (shouldScheduleNextTick(
+      isActive: active,
+      hasTimer: _refreshTimer != null,
+      isInFlight: _isFetching,
+      hasPendingRefresh: _pendingRefresh,
+    )) {
       _scheduleNextCalendarTick();
       return;
     }
@@ -606,8 +632,12 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     }
 
     if (_isFetching) {
-      _pendingRefresh = true;
-      _pendingBypassRateLimit = _pendingBypassRateLimit || bypassRateLimit;
+      final pendingState = mergePendingRefreshState(
+        currentPendingBypassRateLimit: _pendingBypassRateLimit,
+        nextBypassRateLimit: bypassRateLimit,
+      );
+      _pendingRefresh = pendingState.pendingRefresh;
+      _pendingBypassRateLimit = pendingState.pendingBypassRateLimit;
       AppLogger.debug(
         'Calendar refresh already in progress',
         subCategory: 'calendar',
