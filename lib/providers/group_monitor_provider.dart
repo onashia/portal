@@ -58,6 +58,16 @@ GroupInstanceWithGroup? _pickNewestInstance(
 }
 
 @visibleForTesting
+bool shouldAttemptSelfInviteForInstance(Instance instance) {
+  if (instance.worldId.isEmpty || instance.instanceId.isEmpty) {
+    return false;
+  }
+
+  // Conservative metadata gate: only explicit denial blocks attempts.
+  return instance.canRequestInvite != false;
+}
+
+@visibleForTesting
 ({
   String? boostedGroupId,
   DateTime? boostExpiresAt,
@@ -1248,16 +1258,22 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       }
     }
 
-    if (best == null || best.worldId.isEmpty || best.instanceId.isEmpty) {
+    if (best == null) {
+      return null;
+    }
+
+    if (!shouldAttemptSelfInviteForInstance(best)) {
+      final hasInvalidIdentifiers =
+          best.worldId.isEmpty || best.instanceId.isEmpty;
+      final skipReason = hasInvalidIdentifiers
+          ? 'invalid instance identifiers'
+          : 'instance metadata denies invite requests';
       AppLogger.warning(
-        'Skipping invite: invalid instance identifiers for group $groupId',
+        'Skipping invite: $skipReason for group $groupId',
         subCategory: 'group_monitor',
       );
       return null;
     }
-
-    // We intentionally do not gate on canRequestInvite; its meaning for
-    // self-invites is unclear, so we attempt and handle failures.
     return GroupInstanceWithGroup(instance: best, groupId: groupId);
   }
 

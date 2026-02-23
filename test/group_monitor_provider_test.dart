@@ -872,6 +872,87 @@ void main() {
     });
   });
 
+  group('shouldAttemptSelfInviteForInstance', () {
+    Instance buildInstance({
+      required String worldId,
+      required String instanceId,
+      required bool? canRequestInvite,
+    }) {
+      final world = buildTestWorld(
+        id: worldId.isEmpty ? 'wrld_fallback' : worldId,
+        name: 'World',
+      );
+      return Instance(
+        canRequestInvite: canRequestInvite,
+        clientNumber: 'unknown',
+        id: 'inst_${instanceId.isEmpty ? 'fallback' : instanceId}',
+        instanceId: instanceId,
+        location: '$worldId:$instanceId',
+        nUsers: 5,
+        name: 'Instance $instanceId',
+        photonRegion: Region.us,
+        platforms: InstancePlatforms(android: 0, standalonewindows: 5),
+        queueEnabled: false,
+        queueSize: 0,
+        recommendedCapacity: 16,
+        region: InstanceRegion.us,
+        secureName: 'secure-${instanceId.isEmpty ? 'fallback' : instanceId}',
+        strict: false,
+        tags: const [],
+        type: InstanceType.group,
+        userCount: 5,
+        world: world,
+        worldId: worldId,
+      );
+    }
+
+    test('returns false when canRequestInvite is explicitly false', () {
+      final instance = buildInstance(
+        worldId: 'wrld_alpha',
+        instanceId: 'inst_alpha',
+        canRequestInvite: false,
+      );
+
+      expect(shouldAttemptSelfInviteForInstance(instance), isFalse);
+    });
+
+    test('returns true when canRequestInvite is true', () {
+      final instance = buildInstance(
+        worldId: 'wrld_alpha',
+        instanceId: 'inst_alpha',
+        canRequestInvite: true,
+      );
+
+      expect(shouldAttemptSelfInviteForInstance(instance), isTrue);
+    });
+
+    test('returns true when canRequestInvite is null', () {
+      final instance = buildInstance(
+        worldId: 'wrld_alpha',
+        instanceId: 'inst_alpha',
+        canRequestInvite: null,
+      );
+
+      expect(shouldAttemptSelfInviteForInstance(instance), isTrue);
+    });
+
+    test('returns false when worldId or instanceId is invalid', () {
+      final missingWorld = buildInstance(
+        worldId: '',
+        instanceId: 'inst_alpha',
+        canRequestInvite: true,
+      );
+      final missingInstance = buildInstance(
+        worldId: 'wrld_alpha',
+        instanceId: '',
+        canRequestInvite: true,
+      );
+
+      expect(shouldAttemptSelfInviteForInstance(missingWorld), isFalse);
+      expect(shouldAttemptSelfInviteForInstance(missingInstance), isFalse);
+    });
+  });
+
   group('pending boost poll decisions', () {
     test(
       'queues pending boost poll only when boost is active and fetching',
