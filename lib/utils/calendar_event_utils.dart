@@ -1,6 +1,8 @@
+import 'date_time_utils.dart';
+
 /// Returns the start of the local day for [day].
 DateTime startOfLocalDay(DateTime day) {
-  final local = day.toLocal();
+  final local = DateTimeUtils.toUserLocalTime(day);
   return DateTime(local.year, local.month, local.day);
 }
 
@@ -21,8 +23,8 @@ bool overlapsLocalDay({
     return false;
   }
 
-  final startLocal = start.toLocal();
-  final endLocal = end.toLocal();
+  final startLocal = DateTimeUtils.toUserLocalTime(start);
+  final endLocal = DateTimeUtils.toUserLocalTime(end);
   final dayStart = startOfLocalDay(day);
   final dayEnd = endOfLocalDay(day);
 

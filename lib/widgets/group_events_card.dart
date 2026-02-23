@@ -4,6 +4,7 @@ import 'package:m3e_collection/m3e_collection.dart';
 
 import '../providers/group_calendar_provider.dart';
 import '../providers/group_monitor_provider.dart';
+import '../utils/date_time_utils.dart';
 import 'common/empty_state.dart';
 import 'common/loading_state.dart';
 import 'events/events_card_header.dart';
@@ -28,7 +29,7 @@ class GroupEventsCard extends ConsumerWidget {
         cardTheme.shape as RoundedRectangleBorder? ??
         RoundedRectangleBorder(borderRadius: context.m3e.shapes.round.md);
     final outlineColor = scheme.outlineVariant.withValues(alpha: 0.4);
-    final todayLabel = _formatDateLabel(DateTime.now());
+    final todayLabel = DateTimeUtils.formatLocalDate(DateTime.now());
 
     return Card(
       color: scheme.surfaceContainerLow,
@@ -101,25 +102,5 @@ class GroupEventsCard extends ConsumerWidget {
         );
       },
     );
-  }
-
-  String _formatDateLabel(DateTime date) {
-    final local = date.toLocal();
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    final month = months[local.month - 1];
-    return '$month ${local.day}, ${local.year}';
   }
 }

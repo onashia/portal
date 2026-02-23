@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../../constants/ui_constants.dart';
 import '../../models/group_instance_with_group.dart';
+import '../../utils/date_time_utils.dart';
 import '../group_selection/group_avatar.dart';
 import '../events/timeline_widgets.dart';
 import 'member_count_badge.dart';
@@ -29,7 +29,9 @@ class InstanceTimelineItem extends StatelessWidget {
     final instance = instanceWithGroup.instance;
     final world = instance.world;
     final detectedTime = instanceWithGroup.firstDetectedAt;
-    final timeLabel = DateFormat.jm().format(detectedTime ?? DateTime.now());
+    final timeLabel = detectedTime != null
+        ? DateTimeUtils.formatLocalJm(detectedTime)
+        : '—';
 
     return Column(
       mainAxisSize: MainAxisSize.min,

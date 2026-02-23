@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../../constants/ui_constants.dart';
 import '../../models/group_calendar_event.dart';
+import '../../utils/date_time_utils.dart';
 import '../../utils/group_utils.dart';
 import '../group_selection/group_avatar.dart';
 import 'event_badge.dart';
@@ -37,7 +37,7 @@ class EventsListItem extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             TimelineRail(
-              label: DateFormat.jm().format(event.event.startsAt),
+              label: DateTimeUtils.formatLocalJm(event.event.startsAt),
               height: avatarSize,
               isFirst: isFirst,
               isLast: isLast,
