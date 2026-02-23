@@ -63,12 +63,53 @@ class ImageCacheService {
     }
   }
 
+  bool _isUrlEmpty(String url) => url.isEmpty;
+
+  String? _resolveCacheKey(String url) {
+    if (_isUrlEmpty(url)) {
+      return null;
+    }
+    return _safeCacheKey(url);
+  }
+
   @visibleForTesting
   String getCacheKeyForTesting(String url) {
     final fileIdInfo = extractFileIdFromUrl(url);
     final bytes = utf8.encode('${fileIdInfo.fileId}_${fileIdInfo.version}');
     final hash = sha256.convert(bytes);
     return hash.toString();
+  }
+
+  bool _hasActiveNegativeCache(String cacheKey, DateTime now) {
+    final negativeCachedUntil = _negativeCacheUntilByKey[cacheKey];
+    return negativeCachedUntil != null && negativeCachedUntil.isAfter(now);
+  }
+
+  void _clearExpiredNegativeCache(String cacheKey, DateTime now) {
+    final negativeCachedUntil = _negativeCacheUntilByKey[cacheKey];
+    if (negativeCachedUntil != null && !negativeCachedUntil.isAfter(now)) {
+      _negativeCacheUntilByKey.remove(cacheKey);
+    }
+  }
+
+  void _recordNegativeCache(String cacheKey, DateTime now) {
+    _negativeCacheUntilByKey[cacheKey] = now.add(
+      Duration(minutes: AppConstants.imageFailureCacheTtlMinutes),
+    );
+  }
+
+  Future<Uint8List?>? _getInFlightRequest(String cacheKey) {
+    return _inFlightRequests[cacheKey];
+  }
+
+  void _trackInFlightRequest(String cacheKey, Future<Uint8List?> request) {
+    _inFlightRequests[cacheKey] = request;
+  }
+
+  void _clearInFlightRequest(String cacheKey, Future<Uint8List?> request) {
+    if (identical(_inFlightRequests[cacheKey], request)) {
+      _inFlightRequests.remove(cacheKey);
+    }
   }
 
   Future<Uint8List?> _getCachedImageByKey({
@@ -94,27 +135,13 @@ class ImageCacheService {
     await _initialize();
     await _pruneDiskCacheIfNeeded();
 
-    if (_cacheDirectory != null) {
-      try {
-        final file = io.File('${_cacheDirectory!.path}/$cacheKey');
-        if (await file.exists()) {
-          final bytes = await file.readAsBytes();
-          if (_canStoreInMemory(bytes)) {
-            _memoryCache.put(cacheKey, bytes);
-          }
-          AppLogger.debug(
-            'Disk cache HIT for: $url',
-            subCategory: 'image_cache',
-          );
-          return bytes;
-        }
-      } catch (e) {
-        AppLogger.error(
-          'Failed to read from disk cache for $url: $e',
-          subCategory: 'image_cache',
-          error: e,
-        );
+    final diskBytes = await _readDiskBytes(cacheKey);
+    if (diskBytes != null) {
+      if (_canStoreInMemory(diskBytes)) {
+        _memoryCache.put(cacheKey, diskBytes);
       }
+      AppLogger.debug('Disk cache HIT for: $url', subCategory: 'image_cache');
+      return diskBytes;
     }
 
     AppLogger.debug(
@@ -125,11 +152,7 @@ class ImageCacheService {
   }
 
   Future<Uint8List?> getCachedImage(String url) async {
-    if (url.isEmpty) {
-      return null;
-    }
-
-    final cacheKey = _safeCacheKey(url);
+    final cacheKey = _resolveCacheKey(url);
     if (cacheKey == null) {
       return null;
     }
@@ -138,7 +161,6 @@ class ImageCacheService {
   }
 
   Future<void> _cacheImageByKey({
-    required String url,
     required String cacheKey,
     required Uint8List bytes,
   }) async {
@@ -148,68 +170,45 @@ class ImageCacheService {
     _negativeCacheUntilByKey.remove(cacheKey);
 
     await _initialize();
-
-    if (_cacheDirectory != null) {
-      try {
-        final file = io.File('${_cacheDirectory!.path}/$cacheKey');
-        await file.writeAsBytes(bytes);
-      } catch (e) {
-        AppLogger.error(
-          'Failed to write to disk cache for $url: $e',
-          subCategory: 'image_cache',
-          error: e,
-        );
-      }
-    }
+    await _writeDiskBytes(cacheKey, bytes);
 
     await _pruneDiskCacheIfNeeded();
   }
 
   Future<void> cacheImage(String url, Uint8List bytes) async {
-    if (url.isEmpty) {
-      return;
-    }
-
-    final cacheKey = _safeCacheKey(url);
+    final cacheKey = _resolveCacheKey(url);
     if (cacheKey == null) {
       return;
     }
 
-    await _cacheImageByKey(url: url, cacheKey: cacheKey, bytes: bytes);
+    await _cacheImageByKey(cacheKey: cacheKey, bytes: bytes);
   }
 
   Future<Uint8List?> getOrFetchImage(
     String url,
     Future<Uint8List?> Function() fetcher,
   ) async {
-    if (url.isEmpty) {
-      return null;
-    }
-
-    final cacheKey = _safeCacheKey(url);
+    final cacheKey = _resolveCacheKey(url);
     if (cacheKey == null) {
       return null;
     }
 
     final now = _nowProvider();
-    final negativeCachedUntil = _negativeCacheUntilByKey[cacheKey];
-    if (negativeCachedUntil != null) {
-      if (negativeCachedUntil.isAfter(now)) {
-        AppLogger.debug(
-          'Skipping fetch due to recent failure cache for: $url',
-          subCategory: 'image_cache',
-        );
-        return null;
-      }
-      _negativeCacheUntilByKey.remove(cacheKey);
+    if (_hasActiveNegativeCache(cacheKey, now)) {
+      AppLogger.debug(
+        'Skipping fetch due to recent failure cache for: $url',
+        subCategory: 'image_cache',
+      );
+      return null;
     }
+    _clearExpiredNegativeCache(cacheKey, now);
 
     final cached = await _getCachedImageByKey(url: url, cacheKey: cacheKey);
     if (cached != null) {
       return cached;
     }
 
-    final inFlight = _inFlightRequests[cacheKey];
+    final inFlight = _getInFlightRequest(cacheKey);
     if (inFlight != null) {
       return inFlight;
     }
@@ -217,37 +216,25 @@ class ImageCacheService {
     final request = () async {
       final bytes = await fetcher();
       if (bytes != null) {
-        await _cacheImageByKey(url: url, cacheKey: cacheKey, bytes: bytes);
+        await _cacheImageByKey(cacheKey: cacheKey, bytes: bytes);
       } else {
-        _negativeCacheUntilByKey[cacheKey] = _nowProvider().add(
-          Duration(minutes: AppConstants.imageFailureCacheTtlMinutes),
-        );
+        _recordNegativeCache(cacheKey, _nowProvider());
       }
       return bytes;
     }();
 
-    _inFlightRequests[cacheKey] = request;
+    _trackInFlightRequest(cacheKey, request);
 
     try {
       return await request;
     } finally {
-      if (identical(_inFlightRequests[cacheKey], request)) {
-        _inFlightRequests.remove(cacheKey);
-      }
+      _clearInFlightRequest(cacheKey, request);
     }
   }
 
   Future<void> _pruneDiskCacheIfNeeded() async {
-    if (_cacheDirectory == null) {
-      return;
-    }
-
     final now = _nowProvider();
-    final minimumInterval = Duration(
-      hours: AppConstants.imageCachePruneIntervalHours,
-    );
-    if (_lastPrunedAt != null &&
-        now.difference(_lastPrunedAt!) < minimumInterval) {
+    if (_shouldSkipPrune(now)) {
       return;
     }
 
@@ -261,6 +248,70 @@ class ImageCacheService {
       return;
     }
 
+    final files = await _listCacheFiles(directory);
+    if (files == null) {
+      return;
+    }
+
+    final retained = await _pruneByTtl(files: files, now: now);
+    await _pruneByMaxEntries(retained: retained);
+  }
+
+  io.File _cacheFile(String cacheKey) {
+    return io.File('${_cacheDirectory!.path}/$cacheKey');
+  }
+
+  Future<Uint8List?> _readDiskBytes(String cacheKey) async {
+    if (_cacheDirectory == null) {
+      return null;
+    }
+
+    try {
+      final file = _cacheFile(cacheKey);
+      if (!await file.exists()) {
+        return null;
+      }
+      return await file.readAsBytes();
+    } catch (e) {
+      AppLogger.error(
+        'Failed to read from disk cache for key $cacheKey',
+        subCategory: 'image_cache',
+        error: e,
+      );
+      return null;
+    }
+  }
+
+  Future<void> _writeDiskBytes(String cacheKey, Uint8List bytes) async {
+    if (_cacheDirectory == null) {
+      return;
+    }
+
+    try {
+      final file = _cacheFile(cacheKey);
+      await file.writeAsBytes(bytes);
+    } catch (e) {
+      AppLogger.error(
+        'Failed to write to disk cache for key $cacheKey',
+        subCategory: 'image_cache',
+        error: e,
+      );
+    }
+  }
+
+  bool _shouldSkipPrune(DateTime now) {
+    if (_cacheDirectory == null) {
+      return true;
+    }
+
+    final minimumInterval = Duration(
+      hours: AppConstants.imageCachePruneIntervalHours,
+    );
+    return _lastPrunedAt != null &&
+        now.difference(_lastPrunedAt!) < minimumInterval;
+  }
+
+  Future<List<io.File>?> _listCacheFiles(io.Directory directory) async {
     final files = <io.File>[];
     try {
       final entities = await directory.list(followLinks: false).toList();
@@ -269,15 +320,21 @@ class ImageCacheService {
           files.add(entity);
         }
       }
+      return files;
     } catch (e) {
       AppLogger.error(
         'Failed to list disk cache entries',
         subCategory: 'image_cache',
         error: e,
       );
-      return;
+      return null;
     }
+  }
 
+  Future<List<({io.File file, io.FileStat stat})>> _pruneByTtl({
+    required List<io.File> files,
+    required DateTime now,
+  }) async {
     final ttl = Duration(days: AppConstants.imageDiskCacheTtlDays);
     final retained = <({io.File file, io.FileStat stat})>[];
     for (final file in files) {
@@ -297,7 +354,12 @@ class ImageCacheService {
         );
       }
     }
+    return retained;
+  }
 
+  Future<void> _pruneByMaxEntries({
+    required List<({io.File file, io.FileStat stat})> retained,
+  }) async {
     final maxEntries = AppConstants.imageDiskCacheMaxEntries;
     if (retained.length <= maxEntries) {
       return;
@@ -372,7 +434,7 @@ class ImageCacheService {
 
   @visibleForTesting
   bool hasMemoryEntryForTesting(String url) {
-    final cacheKey = _safeCacheKey(url);
+    final cacheKey = _resolveCacheKey(url);
     if (cacheKey == null) {
       return false;
     }

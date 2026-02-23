@@ -176,26 +176,14 @@ class _CachedImageState extends ConsumerState<CachedImage> {
       shapedWidget = imageWidget;
     }
 
-    final container = Container(
-      width: widget.width,
-      height: widget.height,
-      decoration: BoxDecoration(
-        shape: widget.shape,
-        color: applyBackgroundColor
-            ? (widget.backgroundColor ??
-                  Theme.of(context).colorScheme.surfaceContainerHighest)
-            : null,
-        border: widget.border,
-        boxShadow: widget.boxShadow,
-      ),
+    final container = _buildBaseContainer(
+      color: applyBackgroundColor
+          ? _resolveSurfaceColor(context, useFallbackBackground: false)
+          : null,
       child: shapedWidget,
     );
 
-    if (widget.onTap != null) {
-      return GestureDetector(onTap: widget.onTap, child: container);
-    }
-
-    return container;
+    return _wrapTapIfNeeded(container);
   }
 
   ({int? cacheWidth, int? cacheHeight}) _resolveDecodeDimensions(
@@ -233,17 +221,8 @@ class _CachedImageState extends ConsumerState<CachedImage> {
   }
 
   Widget _buildLoading(BuildContext context) {
-    final container = Container(
-      width: widget.width,
-      height: widget.height,
-      decoration: BoxDecoration(
-        shape: widget.shape,
-        color:
-            widget.fallbackBackgroundColor ??
-            Theme.of(context).colorScheme.surfaceContainerHighest,
-        border: widget.border,
-        boxShadow: widget.boxShadow,
-      ),
+    final container = _buildBaseContainer(
+      color: _resolveSurfaceColor(context, useFallbackBackground: true),
       child: Center(
         child: SizedBox(
           width: (widget.width ?? 48) * 0.3,
@@ -256,43 +235,21 @@ class _CachedImageState extends ConsumerState<CachedImage> {
       ),
     );
 
-    return widget.onTap != null
-        ? GestureDetector(onTap: widget.onTap, child: container)
-        : container;
+    return _wrapTapIfNeeded(container);
   }
 
   Widget _buildFallback(BuildContext context) {
     if (widget.fallbackWidget != null) {
-      final container = Container(
-        width: widget.width,
-        height: widget.height,
-        decoration: BoxDecoration(
-          shape: widget.shape,
-          color:
-              widget.fallbackBackgroundColor ??
-              Theme.of(context).colorScheme.surfaceContainerHighest,
-          border: widget.border,
-          boxShadow: widget.boxShadow,
-        ),
+      final container = _buildBaseContainer(
+        color: _resolveSurfaceColor(context, useFallbackBackground: true),
         child: widget.fallbackWidget,
       );
 
-      return widget.onTap != null
-          ? GestureDetector(onTap: widget.onTap, child: container)
-          : container;
+      return _wrapTapIfNeeded(container);
     }
 
-    final container = Container(
-      width: widget.width,
-      height: widget.height,
-      decoration: BoxDecoration(
-        shape: widget.shape,
-        color:
-            widget.fallbackBackgroundColor ??
-            Theme.of(context).colorScheme.surfaceContainerHighest,
-        border: widget.border,
-        boxShadow: widget.boxShadow,
-      ),
+    final container = _buildBaseContainer(
+      color: _resolveSurfaceColor(context, useFallbackBackground: true),
       child: widget.fallbackIcon != null
           ? Icon(
               widget.fallbackIcon,
@@ -302,8 +259,38 @@ class _CachedImageState extends ConsumerState<CachedImage> {
           : null,
     );
 
-    return widget.onTap != null
-        ? GestureDetector(onTap: widget.onTap, child: container)
-        : container;
+    return _wrapTapIfNeeded(container);
+  }
+
+  Widget _buildBaseContainer({required Color? color, required Widget? child}) {
+    return Container(
+      width: widget.width,
+      height: widget.height,
+      decoration: BoxDecoration(
+        shape: widget.shape,
+        color: color,
+        border: widget.border,
+        boxShadow: widget.boxShadow,
+      ),
+      child: child,
+    );
+  }
+
+  Widget _wrapTapIfNeeded(Widget child) {
+    if (widget.onTap == null) {
+      return child;
+    }
+    return GestureDetector(onTap: widget.onTap, child: child);
+  }
+
+  Color _resolveSurfaceColor(
+    BuildContext context, {
+    required bool useFallbackBackground,
+  }) {
+    final defaultColor = Theme.of(context).colorScheme.surfaceContainerHighest;
+    if (useFallbackBackground) {
+      return widget.fallbackBackgroundColor ?? defaultColor;
+    }
+    return widget.backgroundColor ?? defaultColor;
   }
 }

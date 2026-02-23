@@ -266,6 +266,33 @@ void main() {
       expect(third, second);
       expect(fetchCalls, 2);
     });
+
+    test('clears in-flight tracking when fetcher throws', () async {
+      const url = 'https://api.vrchat.cloud/api/1/file_inflight_throw_test/1';
+
+      var throwCalls = 0;
+      Future<Uint8List?> throwingFetcher() async {
+        throwCalls += 1;
+        throw StateError('boom');
+      }
+
+      await expectLater(
+        service.getOrFetchImage(url, throwingFetcher),
+        throwsStateError,
+      );
+
+      var successCalls = 0;
+      final expected = Uint8List.fromList([7, 8, 9]);
+      Future<Uint8List?> successFetcher() async {
+        successCalls += 1;
+        return expected;
+      }
+
+      final result = await service.getOrFetchImage(url, successFetcher);
+      expect(result, equals(expected));
+      expect(throwCalls, 1);
+      expect(successCalls, 1);
+    });
   });
 
   group('disk cache pruning', () {
@@ -331,6 +358,35 @@ void main() {
         await File('${tempDir.path}/entry_${totalEntries - 1}').exists(),
         isTrue,
       );
+    });
+
+    test('skips prune when interval has not elapsed', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'portal_cache_prune_interval_',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      await service.setCacheDirectoryForTesting(tempDir);
+
+      final now = DateTime.utc(2026, 2, 20, 12, 0, 0);
+      service.setNowProviderForTesting(() => now);
+      await service.pruneDiskCacheNowForTesting(now: now);
+
+      final staleFile = File('${tempDir.path}/stale_entry');
+      await staleFile.writeAsBytes([1]);
+      await staleFile.setLastModified(
+        now.subtract(Duration(days: AppConstants.imageDiskCacheTtlDays + 1)),
+      );
+
+      await service.cacheImage(
+        'https://api.vrchat.cloud/api/1/file_prune_interval/1',
+        Uint8List.fromList([1, 2, 3]),
+      );
+
+      expect(await staleFile.exists(), isTrue);
     });
   });
 }
