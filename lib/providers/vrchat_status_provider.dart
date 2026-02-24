@@ -45,12 +45,12 @@ class VrchatStatusState {
 }
 
 class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
-  Timer? _refreshTimer;
+  final _statusLoop = RefreshLoopState();
   late final VrchatStatusService _service;
   bool _isRefreshing = false;
 
   @visibleForTesting
-  bool get hasActiveRefreshTimer => _refreshTimer != null;
+  bool get hasActiveRefreshTimer => _statusLoop.hasTimer;
 
   bool _isAuthenticated() =>
       ref.read(authSessionSnapshotProvider).isAuthenticated;
@@ -92,17 +92,18 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
     return const VrchatStatusState(isLoading: true);
   }
 
+  Duration _statusPollingDelay() {
+    return TimingUtils.durationWithJitter(
+      baseSeconds: AppConstants.vrchatStatusPollingIntervalSeconds,
+      jitterSeconds: AppConstants.vrchatStatusPollingJitterSeconds,
+    );
+  }
+
   void _scheduleNextRefresh({Duration? overrideDelay}) {
-    _refreshTimer?.cancel();
+    _statusLoop.cancelTimer();
+    final delay = overrideDelay ?? _statusPollingDelay();
 
-    final delay =
-        overrideDelay ??
-        TimingUtils.durationWithJitter(
-          baseSeconds: AppConstants.vrchatStatusPollingIntervalSeconds,
-          jitterSeconds: AppConstants.vrchatStatusPollingJitterSeconds,
-        );
-
-    _refreshTimer = Timer(delay, () async {
+    _statusLoop.timer = Timer(delay, () async {
       if (!ref.mounted) {
         return;
       }
@@ -144,10 +145,7 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
         _scheduleNextRefresh(
           overrideDelay: resolveCooldownAwareDelay(
             remainingCooldown: remaining,
-            fallbackDelay: TimingUtils.durationWithJitter(
-              baseSeconds: AppConstants.vrchatStatusPollingIntervalSeconds,
-              jitterSeconds: AppConstants.vrchatStatusPollingJitterSeconds,
-            ),
+            fallbackDelay: _statusPollingDelay(),
           ),
         );
         return;
@@ -189,8 +187,7 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
   }
 
   void _disposeTimer() {
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
+    _statusLoop.cancelTimer();
   }
 }
 

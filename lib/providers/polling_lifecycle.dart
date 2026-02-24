@@ -1,3 +1,5 @@
+import 'dart:async';
+
 typedef RefreshRequestDecision = ({bool shouldQueuePending, bool shouldRunNow});
 typedef PendingRefreshState = ({
   bool pendingRefresh,
@@ -53,6 +55,51 @@ PendingRefreshState mergePendingRefreshState({
     pendingBypassRateLimit:
         currentPendingBypassRateLimit || nextBypassRateLimit,
   );
+}
+
+class RefreshLoopState {
+  Timer? timer;
+  bool pendingRefresh;
+  bool pendingBypassRateLimit;
+
+  RefreshLoopState({
+    this.timer,
+    this.pendingRefresh = false,
+    this.pendingBypassRateLimit = false,
+  });
+
+  bool get hasTimer => timer != null;
+
+  void cancelTimer() {
+    timer?.cancel();
+    timer = null;
+  }
+
+  void clearPending() {
+    pendingRefresh = false;
+    pendingBypassRateLimit = false;
+  }
+
+  void reset() {
+    cancelTimer();
+    clearPending();
+  }
+
+  void queuePending({required bool bypassRateLimit}) {
+    final merged = mergePendingRefreshState(
+      currentPendingBypassRateLimit: pendingBypassRateLimit,
+      nextBypassRateLimit: bypassRateLimit,
+    );
+    pendingRefresh = merged.pendingRefresh;
+    pendingBypassRateLimit = merged.pendingBypassRateLimit;
+  }
+
+  ({bool hadPending, bool bypassRateLimit}) consumePending() {
+    final hadPending = pendingRefresh;
+    final bypassRateLimit = pendingBypassRateLimit;
+    clearPending();
+    return (hadPending: hadPending, bypassRateLimit: bypassRateLimit);
+  }
 }
 
 RefreshDispatchDecision shouldRequestImmediateRefresh({
