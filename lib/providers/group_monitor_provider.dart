@@ -28,7 +28,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   bool _canPollForCurrentSession() {
     final session = ref.read(authSessionSnapshotProvider);
-    return canPollForUserSession(
+    return isSessionEligible(
       isAuthenticated: session.isAuthenticated,
       authenticatedUserId: session.userId,
       expectedUserId: arg,

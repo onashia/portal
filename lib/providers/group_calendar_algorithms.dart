@@ -117,13 +117,6 @@ bool areEventsByGroupEquivalent(
   return true;
 }
 
-bool areStringMapsEquivalent(
-  Map<String, String> previous,
-  Map<String, String> next,
-) {
-  return collection_eq.areStringMapsEquivalent(previous, next);
-}
-
 bool areTodayEventsEquivalent(
   List<GroupCalendarEvent> previous,
   List<GroupCalendarEvent> next,
@@ -168,7 +161,7 @@ selectCalendarDataForState({
     previousState.todayEvents,
     nextTodayEvents,
   );
-  final didGroupErrorsChange = !areStringMapsEquivalent(
+  final didGroupErrorsChange = !collection_eq.areStringMapsEquivalent(
     previousState.groupErrors,
     nextGroupErrors,
   );

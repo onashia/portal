@@ -153,7 +153,7 @@ class _GroupSelectionSideSheetState
     _GroupSelectionData data,
   ) {
     final filteredGroups = _filterGroups(data.allGroups);
-    final content = _buildGroupsContent(
+    return _buildGroupsContent(
       filteredGroups: filteredGroups,
       selectedIds: data.selectedIds,
       hasAnyGroups: data.allGroups.isNotEmpty,
@@ -161,8 +161,6 @@ class _GroupSelectionSideSheetState
       isSearching: _searchQuery.isNotEmpty,
       context: context,
     );
-
-    return Column(children: [Expanded(child: content)]);
   }
 
   Widget _buildGroupsContent({
@@ -189,7 +187,7 @@ class _GroupSelectionSideSheetState
   }
 
   List<LimitedUserGroups> _filterGroups(List<LimitedUserGroups> allGroups) {
-    final query = _searchQuery.toLowerCase();
+    final query = _searchQuery;
     if (query.isEmpty) {
       return allGroups;
     }

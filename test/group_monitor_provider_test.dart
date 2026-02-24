@@ -9,6 +9,7 @@ import 'package:portal/providers/api_rate_limit_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/providers/group_monitor_storage.dart';
+import 'package:portal/providers/polling_lifecycle.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
@@ -147,7 +148,7 @@ void main() {
     );
   });
 
-  group('mergeFetchedGroupInstancesWithDiffForTesting', () {
+  group('mergeFetchedGroupInstancesWithDiff', () {
     test(
       'reuses previous reference when payload is unchanged but reordered',
       () {
@@ -181,7 +182,7 @@ void main() {
           previousInstances[0].instance,
         ];
 
-        final merged = mergeFetchedGroupInstancesWithDiffForTesting(
+        final merged = mergeFetchedGroupInstancesWithDiff(
           groupId: 'grp_alpha',
           fetchedInstances: fetchedInstances,
           previousInstances: previousInstances,
@@ -229,7 +230,7 @@ void main() {
           buildTestInstance(instanceId: 'inst_c', world: worldC, userCount: 8),
         ];
 
-        final merged = mergeFetchedGroupInstancesWithDiffForTesting(
+        final merged = mergeFetchedGroupInstancesWithDiff(
           groupId: 'grp_alpha',
           fetchedInstances: fetchedInstances,
           previousInstances: previousInstances,
@@ -273,7 +274,7 @@ void main() {
         buildTestInstance(instanceId: 'inst_a', world: world, userCount: 9),
       ];
 
-      final merged = mergeFetchedGroupInstancesWithDiffForTesting(
+      final merged = mergeFetchedGroupInstancesWithDiff(
         groupId: 'grp_alpha',
         fetchedInstances: fetchedInstances,
         previousInstances: previousInstances,
@@ -316,7 +317,7 @@ void main() {
         buildTestInstance(instanceId: 'inst_a', world: world, userCount: 5),
       ];
 
-      final merged = mergeFetchedGroupInstancesWithDiffForTesting(
+      final merged = mergeFetchedGroupInstancesWithDiff(
         groupId: 'grp_alpha',
         fetchedInstances: fetchedInstances,
         previousInstances: previousInstances,
@@ -576,22 +577,24 @@ void main() {
           selectedGroupIds: {'grp_alpha', 'grp_beta'},
           groupInstances: previousGroupInstances,
         );
-        final resolvedAlpha = resolveGroupInstancesForGroup(
-          previousInstances: previousAlpha,
-          mergedInstances: [previousAlpha.first],
+        final mergedAlpha = [previousAlpha.first];
+        final alphaDidChange = !areGroupInstanceListsEquivalent(
+          previousAlpha,
+          mergedAlpha,
         );
-        final resolvedBeta = resolveGroupInstancesForGroup(
-          previousInstances: previousBeta,
-          mergedInstances: [previousBeta.first],
+        final resolvedAlpha = alphaDidChange ? mergedAlpha : previousAlpha;
+        final mergedBeta = [previousBeta.first];
+        final betaDidChange = !areGroupInstanceListsEquivalent(
+          previousBeta,
+          mergedBeta,
         );
+        final resolvedBeta = betaDidChange ? mergedBeta : previousBeta;
         didInstancesChange =
-            didInstancesChange ||
-            resolvedAlpha.didChange ||
-            resolvedBeta.didChange;
+            didInstancesChange || alphaDidChange || betaDidChange;
 
         final nextGroupInstances = <String, List<GroupInstanceWithGroup>>{
-          'grp_alpha': resolvedAlpha.effectiveInstances,
-          'grp_beta': resolvedBeta.effectiveInstances,
+          'grp_alpha': resolvedAlpha,
+          'grp_beta': resolvedBeta,
         };
         final selectedGroupInstances = selectGroupInstancesForState(
           didInstancesChange: didInstancesChange,
@@ -600,14 +603,8 @@ void main() {
         );
 
         expect(didInstancesChange, isFalse);
-        expect(
-          identical(resolvedAlpha.effectiveInstances, previousAlpha),
-          isTrue,
-        );
-        expect(
-          identical(resolvedBeta.effectiveInstances, previousBeta),
-          isTrue,
-        );
+        expect(identical(resolvedAlpha, previousAlpha), isTrue);
+        expect(identical(resolvedBeta, previousBeta), isTrue);
         expect(
           identical(selectedGroupInstances, previousGroupInstances),
           isTrue,
@@ -651,32 +648,34 @@ void main() {
           selectedGroupIds: {'grp_alpha', 'grp_beta'},
           groupInstances: previousGroupInstances,
         );
-        final resolvedAlpha = resolveGroupInstancesForGroup(
-          previousInstances: previousAlpha,
-          mergedInstances: [
-            GroupInstanceWithGroup(
-              instance: buildTestInstance(
-                instanceId: 'inst_alpha',
-                world: world,
-                userCount: 8,
-              ),
-              groupId: 'grp_alpha',
-              firstDetectedAt: detectedAt,
+        final mergedAlpha = <GroupInstanceWithGroup>[
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_alpha',
+              world: world,
+              userCount: 8,
             ),
-          ],
+            groupId: 'grp_alpha',
+            firstDetectedAt: detectedAt,
+          ),
+        ];
+        final alphaDidChange = !areGroupInstanceListsEquivalent(
+          previousAlpha,
+          mergedAlpha,
         );
-        final resolvedBeta = resolveGroupInstancesForGroup(
-          previousInstances: previousBeta,
-          mergedInstances: [previousBeta.first],
+        final resolvedAlpha = alphaDidChange ? mergedAlpha : previousAlpha;
+        final mergedBeta = [previousBeta.first];
+        final betaDidChange = !areGroupInstanceListsEquivalent(
+          previousBeta,
+          mergedBeta,
         );
+        final resolvedBeta = betaDidChange ? mergedBeta : previousBeta;
         didInstancesChange =
-            didInstancesChange ||
-            resolvedAlpha.didChange ||
-            resolvedBeta.didChange;
+            didInstancesChange || alphaDidChange || betaDidChange;
 
         final nextGroupInstances = <String, List<GroupInstanceWithGroup>>{
-          'grp_alpha': resolvedAlpha.effectiveInstances,
-          'grp_beta': resolvedBeta.effectiveInstances,
+          'grp_alpha': resolvedAlpha,
+          'grp_beta': resolvedBeta,
         };
         final selectedGroupInstances = selectGroupInstancesForState(
           didInstancesChange: didInstancesChange,
@@ -953,79 +952,72 @@ void main() {
     });
   });
 
-  group('pending boost poll decisions', () {
-    test(
-      'queues pending boost poll only when boost is active and fetching',
-      () {
-        expect(
-          shouldQueuePendingBoostPoll(
-            isFetching: true,
-            isMonitoring: true,
-            isBoostActive: true,
-          ),
-          isTrue,
-        );
-        expect(
-          shouldQueuePendingBoostPoll(
-            isFetching: false,
-            isMonitoring: true,
-            isBoostActive: true,
-          ),
-          isFalse,
-        );
-        expect(
-          shouldQueuePendingBoostPoll(
-            isFetching: true,
-            isMonitoring: false,
-            isBoostActive: true,
-          ),
-          isFalse,
-        );
-        expect(
-          shouldQueuePendingBoostPoll(
-            isFetching: true,
-            isMonitoring: true,
-            isBoostActive: false,
-          ),
-          isFalse,
-        );
-      },
-    );
+  group('pending refresh decisions', () {
+    test('queues pending refresh only when active and in-flight', () {
+      final queueWhenActive = shouldRequestImmediateRefresh(
+        isActive: true,
+        isInFlight: true,
+        immediate: true,
+      );
+      expect(queueWhenActive.shouldQueuePending, isTrue);
+
+      final noQueueWhenIdle = shouldRequestImmediateRefresh(
+        isActive: true,
+        isInFlight: false,
+        immediate: true,
+      );
+      expect(noQueueWhenIdle.shouldQueuePending, isFalse);
+
+      final noQueueWhenInactive = shouldRequestImmediateRefresh(
+        isActive: false,
+        isInFlight: true,
+        immediate: true,
+      );
+      expect(noQueueWhenInactive.shouldQueuePending, isFalse);
+    });
 
     test('drains only when pending and not currently fetching', () {
-      expect(
-        shouldDrainPendingBoostPoll(
-          pendingBoostPoll: true,
-          isMonitoring: true,
-          isBoostActive: true,
-          isFetching: false,
-        ),
-        isTrue,
+      final drainsWhenEligible = shouldDrainPendingRefresh(
+        isMounted: true,
+        isInFlight: false,
+        hasPendingRefresh: true,
+        isActive: true,
       );
+      expect(drainsWhenEligible, isTrue);
+
       expect(
-        shouldDrainPendingBoostPoll(
-          pendingBoostPoll: true,
-          isMonitoring: true,
-          isBoostActive: true,
-          isFetching: true,
-        ),
-        isFalse,
-      );
-      expect(
-        shouldDrainPendingBoostPoll(
-          pendingBoostPoll: true,
-          isMonitoring: true,
-          isBoostActive: false,
-          isFetching: false,
+        shouldDrainPendingRefresh(
+          isMounted: true,
+          isInFlight: true,
+          hasPendingRefresh: true,
+          isActive: true,
         ),
         isFalse,
       );
       expect(
-        shouldDrainPendingBoostPoll(
-          pendingBoostPoll: false,
-          isMonitoring: true,
-          isBoostActive: true,
-          isFetching: false,
+        shouldDrainPendingRefresh(
+          isMounted: true,
+          isInFlight: false,
+          hasPendingRefresh: true,
+          isActive: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldDrainPendingRefresh(
+          isMounted: true,
+          isInFlight: false,
+          hasPendingRefresh: false,
+          isActive: true,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldDrainPendingRefresh(
+          isMounted: false,
+          isInFlight: false,
+          hasPendingRefresh: true,
+          isActive: true,
         ),
         isFalse,
       );
@@ -1033,9 +1025,9 @@ void main() {
   });
 
   group('auth session polling guards', () {
-    test('canPollForUserSession requires auth and matching user id', () {
+    test('isSessionEligible requires auth and matching user id', () {
       expect(
-        canPollForUserSession(
+        isSessionEligible(
           isAuthenticated: true,
           authenticatedUserId: 'usr_test',
           expectedUserId: 'usr_test',
@@ -1043,7 +1035,7 @@ void main() {
         isTrue,
       );
       expect(
-        canPollForUserSession(
+        isSessionEligible(
           isAuthenticated: false,
           authenticatedUserId: 'usr_test',
           expectedUserId: 'usr_test',
@@ -1051,7 +1043,7 @@ void main() {
         isFalse,
       );
       expect(
-        canPollForUserSession(
+        isSessionEligible(
           isAuthenticated: true,
           authenticatedUserId: 'usr_other',
           expectedUserId: 'usr_test',

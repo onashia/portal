@@ -4,7 +4,6 @@ import '../constants/app_constants.dart';
 import '../models/group_instance_with_group.dart';
 import '../utils/chunked_async.dart';
 import 'group_monitor_storage.dart';
-import 'polling_lifecycle.dart';
 
 final DateTime _stableTimestampFallback = DateTime.fromMillisecondsSinceEpoch(
   0,
@@ -194,25 +193,6 @@ mergeFetchedGroupInstancesWithDiff({
   );
 }
 
-({
-  List<GroupInstanceWithGroup> effectiveInstances,
-  List<GroupInstanceWithGroup> newInstances,
-  bool didChange,
-})
-mergeFetchedGroupInstancesWithDiffForTesting({
-  required String groupId,
-  required List<Instance> fetchedInstances,
-  required List<GroupInstanceWithGroup> previousInstances,
-  required DateTime detectedAt,
-}) {
-  return mergeFetchedGroupInstancesWithDiff(
-    groupId: groupId,
-    fetchedInstances: fetchedInstances,
-    previousInstances: previousInstances,
-    detectedAt: detectedAt,
-  );
-}
-
 bool areGroupInstanceEntriesEquivalent(
   GroupInstanceWithGroup previous,
   GroupInstanceWithGroup next,
@@ -301,21 +281,6 @@ bool hasGroupInstanceKeyMismatch({
   return false;
 }
 
-({List<GroupInstanceWithGroup> effectiveInstances, bool didChange})
-resolveGroupInstancesForGroup({
-  required List<GroupInstanceWithGroup> previousInstances,
-  required List<GroupInstanceWithGroup> mergedInstances,
-}) {
-  final didChange = !areGroupInstanceListsEquivalent(
-    previousInstances,
-    mergedInstances,
-  );
-  return (
-    effectiveInstances: didChange ? mergedInstances : previousInstances,
-    didChange: didChange,
-  );
-}
-
 Map<String, List<GroupInstanceWithGroup>> selectGroupInstancesForState({
   required bool didInstancesChange,
   required Map<String, List<GroupInstanceWithGroup>> previousGroupInstances,
@@ -336,35 +301,6 @@ Future<List<({String groupId, T? response})>> fetchGroupInstancesChunked<T>({
       final response = await fetchGroupInstances(groupId);
       return (groupId: groupId, response: response);
     },
-  );
-}
-
-bool shouldQueuePendingBoostPoll({
-  required bool isFetching,
-  required bool isMonitoring,
-  required bool isBoostActive,
-}) {
-  return isFetching && isMonitoring && isBoostActive;
-}
-
-bool shouldDrainPendingBoostPoll({
-  required bool pendingBoostPoll,
-  required bool isMonitoring,
-  required bool isBoostActive,
-  required bool isFetching,
-}) {
-  return pendingBoostPoll && isMonitoring && isBoostActive && !isFetching;
-}
-
-bool canPollForUserSession({
-  required bool isAuthenticated,
-  required String? authenticatedUserId,
-  required String expectedUserId,
-}) {
-  return isSessionEligible(
-    isAuthenticated: isAuthenticated,
-    authenticatedUserId: authenticatedUserId,
-    expectedUserId: expectedUserId,
   );
 }
 

@@ -63,10 +63,8 @@ class ImageCacheService {
     }
   }
 
-  bool _isUrlEmpty(String url) => url.isEmpty;
-
   String? _resolveCacheKey(String url) {
-    if (_isUrlEmpty(url)) {
+    if (url.isEmpty) {
       return null;
     }
     return _safeCacheKey(url);

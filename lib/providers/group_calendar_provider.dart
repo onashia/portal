@@ -38,7 +38,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
 
   bool _canRefreshForCurrentSession() {
     final session = ref.read(authSessionSnapshotProvider);
-    return canPollForUserSession(
+    return isSessionEligible(
       isAuthenticated: session.isAuthenticated,
       authenticatedUserId: session.userId,
       expectedUserId: userId,
