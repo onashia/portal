@@ -382,7 +382,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     try {
       await _ensureGroupDetails(monitorState);
       final refreshedMonitor = ref.read(groupMonitorProvider(userId));
-      final groupLookup = _buildGroupLookup(refreshedMonitor.allGroups);
+      final groupLookup = ref.read(groupMonitorAllGroupsByIdProvider(userId));
       final api = ref.read(vrchatApiProvider);
       final orderedGroupIds = refreshedMonitor.selectedGroupIds.toList(
         growable: false,
@@ -488,19 +488,6 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
           .read(groupMonitorProvider(userId).notifier)
           .fetchUserGroupsIfNeeded();
     }
-  }
-
-  Map<String, LimitedUserGroups> _buildGroupLookup(
-    List<LimitedUserGroups> groups,
-  ) {
-    final lookup = <String, LimitedUserGroups>{};
-    for (final group in groups) {
-      final id = group.groupId;
-      if (id != null && id.isNotEmpty) {
-        lookup[id] = group;
-      }
-    }
-    return lookup;
   }
 
   List<GroupCalendarEvent> _buildTodayEvents({

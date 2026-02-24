@@ -7,13 +7,8 @@ import 'group_instances/instance_timeline_item.dart';
 
 class GroupInstanceTimeline extends ConsumerWidget {
   final String userId;
-  final VoidCallback onRefresh;
 
-  const GroupInstanceTimeline({
-    super.key,
-    required this.userId,
-    required this.onRefresh,
-  });
+  const GroupInstanceTimeline({super.key, required this.userId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
