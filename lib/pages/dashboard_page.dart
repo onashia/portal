@@ -56,6 +56,11 @@ DashboardAuthViewState resolveDashboardAuthViewState({
   return DashboardAuthViewState.ready;
 }
 
+@visibleForTesting
+Widget buildDashboardHandoffScaffold() {
+  return const Scaffold(body: SizedBox.expand());
+}
+
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
 
@@ -93,7 +98,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     }
 
     if (authViewState == DashboardAuthViewState.handoff) {
-      return const SizedBox.shrink();
+      return buildDashboardHandoffScaffold();
     }
 
     return _buildReadyScaffold(context, currentUser!);

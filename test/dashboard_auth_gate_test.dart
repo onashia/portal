@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:portal/pages/dashboard_page.dart';
@@ -73,6 +74,25 @@ void main() {
       );
 
       expect(result, DashboardAuthViewState.ready);
+    });
+
+    testWidgets('handoff surface paints a scaffold background', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(home: buildDashboardHandoffScaffold()),
+      );
+
+      final scaffoldFinder = find.byType(Scaffold);
+      final sizedBoxFinder = find.descendant(
+        of: scaffoldFinder,
+        matching: find.byType(SizedBox),
+      );
+
+      expect(scaffoldFinder, findsOneWidget);
+      expect(sizedBoxFinder, findsOneWidget);
+
+      final sizedBox = tester.widget<SizedBox>(sizedBoxFinder);
+      expect(sizedBox.width, double.infinity);
+      expect(sizedBox.height, double.infinity);
     });
   });
 }

@@ -131,7 +131,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
 
     final authState = authValue.value;
     if (authState == null) {
-      return const SizedBox.shrink();
+      return const LoginLoadingScaffold();
     }
     final passwordErrorMessage =
         authState.status == AuthStatus.error ||

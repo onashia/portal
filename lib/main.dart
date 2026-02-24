@@ -15,6 +15,51 @@ import 'pages/dashboard_page.dart';
 import 'theme/app_theme.dart';
 import 'utils/app_logger.dart';
 
+const Duration _authTransitionDuration = Duration(milliseconds: 300);
+const double _authIncomingBeginScale = 0.985;
+
+CustomTransitionPage<void> _buildAuthFadePage({
+  required GoRouterState state,
+  required Widget child,
+}) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    transitionDuration: _authTransitionDuration,
+    reverseTransitionDuration: _authTransitionDuration,
+    child: child,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final incomingOpacity = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      final outgoingOpacity = Tween<double>(begin: 1, end: 0).animate(
+        CurvedAnimation(
+          parent: secondaryAnimation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        ),
+      );
+      final incomingScale =
+          Tween<double>(begin: _authIncomingBeginScale, end: 1.0).animate(
+            CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+              reverseCurve: Curves.easeInCubic,
+            ),
+          );
+
+      return FadeTransition(
+        opacity: outgoingOpacity,
+        child: FadeTransition(
+          opacity: incomingOpacity,
+          child: ScaleTransition(scale: incomingScale, child: child),
+        ),
+      );
+    },
+  );
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -76,12 +121,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/',
         pageBuilder: (context, state) =>
-            MaterialPage(key: state.pageKey, child: const LoginPage()),
+            _buildAuthFadePage(state: state, child: const LoginPage()),
       ),
       GoRoute(
         path: '/dashboard',
         pageBuilder: (context, state) =>
-            MaterialPage(key: state.pageKey, child: const DashboardPage()),
+            _buildAuthFadePage(state: state, child: const DashboardPage()),
       ),
     ],
   );
@@ -102,6 +147,12 @@ class PortalApp extends ConsumerWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,
+      builder: (context, child) {
+        return ColoredBox(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       routerConfig: router,
     );
   }
