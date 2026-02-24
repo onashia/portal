@@ -1,0 +1,388 @@
+// ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+
+part of 'group_monitor_provider.dart';
+
+extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
+  bool _baselineActive() {
+    return isLoopActive(
+      isEnabled: state.isMonitoring,
+      sessionEligible: _canPollForCurrentSession(),
+      selectionActive: isSelectionActive(state.selectedGroupIds),
+    );
+  }
+
+  bool _boostActive() {
+    return state.isMonitoring &&
+        state.isBoostActive &&
+        state.boostedGroupId != null &&
+        _canPollForCurrentSession();
+  }
+
+  void _recordBaselineAttempt([DateTime? at]) {
+    state = state.copyWith(
+      lastBaselineAttemptAt: at ?? DateTime.now(),
+      lastBaselineSkipReason: null,
+    );
+  }
+
+  void _recordBaselineSkip(String reason, [DateTime? at]) {
+    state = state.copyWith(
+      lastBaselineAttemptAt: at ?? DateTime.now(),
+      lastBaselineSkipReason: reason,
+    );
+  }
+
+  void _recordBaselineSuccess({
+    required int polledGroupCount,
+    required int totalInstances,
+    DateTime? at,
+  }) {
+    final timestamp = at ?? DateTime.now();
+    state = state.copyWith(
+      lastBaselineSuccessAt: timestamp,
+      lastBaselinePolledGroupCount: polledGroupCount,
+      lastBaselineTotalInstances: totalInstances,
+      lastBaselineSkipReason: null,
+    );
+  }
+
+  void _scheduleSelectionTriggeredBaselineRefresh() {
+    _selectionRefreshDebounceTimer?.cancel();
+    _baselineLoop.pendingRefresh = true;
+    _baselineLoop.pendingBypassRateLimit = false;
+    _selectionRefreshDebounceTimer = Timer(
+      AppConstants.selectionRefreshDebounceDuration,
+      () {
+        if (!ref.mounted) {
+          return;
+        }
+        _selectionRefreshDebounceTimer = null;
+        _baselineLoop.clearPending();
+        _requestBaselineRefresh(immediate: true);
+      },
+    );
+  }
+
+  void _reconcileMonitoringForSelectionState() {
+    if (state.selectedGroupIds.isEmpty) {
+      if (state.isMonitoring) {
+        stopMonitoring();
+      }
+      _reconcileBaselineLoop();
+      _reconcileBoostLoop();
+      return;
+    }
+
+    if (state.selectedGroupIds.isNotEmpty &&
+        !state.isMonitoring &&
+        _canPollForCurrentSession()) {
+      startMonitoring();
+    } else if (state.selectedGroupIds.isNotEmpty &&
+        !state.isMonitoring &&
+        !_canPollForCurrentSession()) {
+      AppLogger.debug(
+        'Selected groups changed but session is ineligible for monitoring',
+        subCategory: 'group_monitor',
+      );
+    }
+
+    _reconcileBaselineLoop();
+    _reconcileBoostLoop();
+  }
+
+  void _reconcileBaselineLoop() {
+    if (!state.isMonitoring) {
+      _baselineLoop.reset();
+      return;
+    }
+
+    if (state.selectedGroupIds.isEmpty) {
+      stopMonitoring();
+      return;
+    }
+
+    if (!_canPollForCurrentSession()) {
+      AppLogger.debug(
+        'Monitoring active but session is ineligible; stopping monitoring',
+        subCategory: 'group_monitor',
+      );
+      stopMonitoring();
+      return;
+    }
+
+    if (shouldScheduleNextTick(
+      isActive: true,
+      hasTimer: _baselineLoop.hasTimer,
+      isInFlight: _isAnyFetchInFlight,
+      hasPendingRefresh: _baselineLoop.pendingRefresh,
+    )) {
+      AppLogger.debug(
+        'Baseline polling timer missing while monitoring is active; rescheduling',
+        subCategory: 'group_monitor',
+      );
+      _requestBaselineRefresh(immediate: true);
+    }
+  }
+
+  void _reconcileBoostLoop() {
+    if (!_boostActive()) {
+      _boostLoop.reset();
+      return;
+    }
+
+    if (shouldScheduleNextTick(
+      isActive: true,
+      hasTimer: _boostLoop.hasTimer,
+      isInFlight: _isAnyFetchInFlight,
+      hasPendingRefresh: _boostLoop.pendingRefresh,
+    )) {
+      _requestBoostRefresh(immediate: true);
+    }
+  }
+
+  int _nextPollDelaySeconds() {
+    final base = AppConstants.pollingIntervalSeconds;
+    final jitter = AppConstants.pollingJitterSeconds;
+    if (jitter <= 0) {
+      return base;
+    }
+    final delta = _random.nextInt(jitter * 2 + 1) - jitter;
+    return math.max(1, base + delta);
+  }
+
+  int _nextBoostPollDelaySeconds() {
+    final base = AppConstants.boostPollingIntervalSeconds;
+    final jitter = AppConstants.boostPollingJitterSeconds;
+    if (jitter <= 0) {
+      return base;
+    }
+    final delta = _random.nextInt(jitter * 2 + 1) - jitter;
+    return math.max(1, base + delta);
+  }
+
+  void _scheduleNextBaselineTick({Duration? overrideDelay}) {
+    _baselineLoop.cancelTimer();
+
+    if (!_baselineActive()) {
+      _reconcileBaselineLoop();
+      return;
+    }
+
+    final delay = overrideDelay ?? Duration(seconds: _nextPollDelaySeconds());
+    _baselineLoop.timer = Timer(delay, () {
+      if (!ref.mounted) {
+        return;
+      }
+      _requestBaselineRefresh(immediate: true);
+    });
+  }
+
+  void _scheduleNextBoostTick({Duration? overrideDelay}) {
+    _boostLoop.cancelTimer();
+
+    if (!_boostActive()) {
+      _reconcileBoostLoop();
+      return;
+    }
+
+    final delay =
+        overrideDelay ?? Duration(seconds: _nextBoostPollDelaySeconds());
+    _boostLoop.timer = Timer(delay, () {
+      if (!ref.mounted) {
+        return;
+      }
+      _requestBoostRefresh(immediate: true);
+    });
+  }
+
+  void _requestBaselineRefresh({
+    bool immediate = true,
+    bool bypassRateLimit = false,
+  }) {
+    final dispatch = shouldRequestImmediateRefresh(
+      isActive: _baselineActive(),
+      isInFlight: _isAnyFetchInFlight,
+      immediate: immediate,
+    );
+    if (dispatch.shouldReconcile) {
+      _reconcileBaselineLoop();
+      return;
+    }
+
+    _baselineLoop.cancelTimer();
+
+    if (dispatch.shouldQueuePending) {
+      _baselineLoop.queuePending(bypassRateLimit: bypassRateLimit);
+      _recordBaselineSkip('in_flight_queue');
+      return;
+    }
+
+    if (dispatch.shouldRunNow) {
+      unawaited(fetchGroupInstances(bypassRateLimit: bypassRateLimit));
+      return;
+    }
+
+    if (dispatch.shouldScheduleTick) {
+      _scheduleNextBaselineTick();
+    }
+  }
+
+  void _requestBoostRefresh({
+    bool immediate = true,
+    bool bypassRateLimit = false,
+  }) {
+    final dispatch = shouldRequestImmediateRefresh(
+      isActive: _boostActive(),
+      isInFlight: _isAnyFetchInFlight,
+      immediate: immediate,
+    );
+    if (dispatch.shouldReconcile) {
+      _reconcileBoostLoop();
+      return;
+    }
+
+    _boostLoop.cancelTimer();
+
+    if (dispatch.shouldQueuePending) {
+      _boostLoop.queuePending(bypassRateLimit: bypassRateLimit);
+      return;
+    }
+
+    if (dispatch.shouldRunNow) {
+      unawaited(fetchBoostedGroupInstances(bypassRateLimit: bypassRateLimit));
+      return;
+    }
+
+    if (dispatch.shouldScheduleTick) {
+      _scheduleNextBoostTick();
+    }
+  }
+
+  void _drainPendingRefreshesOrScheduleTicks() {
+    if (!ref.mounted || _isAnyFetchInFlight) {
+      return;
+    }
+
+    final baselineActive = _baselineActive();
+    if (shouldDrainPendingRefresh(
+      isMounted: ref.mounted,
+      isInFlight: _isAnyFetchInFlight,
+      hasPendingRefresh: _baselineLoop.pendingRefresh,
+      isActive: baselineActive,
+    )) {
+      final pending = _baselineLoop.consumePending();
+      unawaited(fetchGroupInstances(bypassRateLimit: pending.bypassRateLimit));
+      return;
+    }
+
+    final boostActive = _boostActive();
+    if (shouldDrainPendingRefresh(
+      isMounted: ref.mounted,
+      isInFlight: _isAnyFetchInFlight,
+      hasPendingRefresh: _boostLoop.pendingRefresh,
+      isActive: boostActive,
+    )) {
+      final pending = _boostLoop.consumePending();
+      unawaited(
+        fetchBoostedGroupInstances(bypassRateLimit: pending.bypassRateLimit),
+      );
+      return;
+    }
+
+    if (shouldScheduleNextTick(
+      isActive: baselineActive,
+      hasTimer: _baselineLoop.hasTimer,
+      isInFlight: _isAnyFetchInFlight,
+      hasPendingRefresh: _baselineLoop.pendingRefresh,
+    )) {
+      _scheduleNextBaselineTick();
+    } else if (!baselineActive) {
+      _baselineLoop.reset();
+    }
+
+    if (shouldScheduleNextTick(
+      isActive: boostActive,
+      hasTimer: _boostLoop.hasTimer,
+      isInFlight: _isAnyFetchInFlight,
+      hasPendingRefresh: _boostLoop.pendingRefresh,
+    )) {
+      _scheduleNextBoostTick();
+    } else if (!boostActive) {
+      _boostLoop.reset();
+    }
+  }
+
+  /// Requests a baseline monitoring refresh through the queued single-flight
+  /// lifecycle so manual refreshes and automatic triggers share the same flow.
+  ///
+  /// When [immediate] is true, this starts a refresh now (or marks one as
+  /// pending if another fetch is already in-flight). When false, it schedules
+  /// the next baseline tick using the normal polling cadence.
+  void _requestRefreshInternal({bool immediate = true}) {
+    _selectionRefreshDebounceTimer?.cancel();
+    _selectionRefreshDebounceTimer = null;
+    _baselineLoop.clearPending();
+    _requestBaselineRefresh(immediate: immediate, bypassRateLimit: true);
+  }
+
+  void _startMonitoringInternal() {
+    AppLogger.info('Starting monitoring', subCategory: 'group_monitor');
+
+    if (!_canPollForCurrentSession()) {
+      AppLogger.warning(
+        'Cannot start monitoring without an active matching session',
+        subCategory: 'group_monitor',
+      );
+      return;
+    }
+
+    if (state.selectedGroupIds.isEmpty) {
+      AppLogger.warning(
+        'Cannot start monitoring with no selected groups',
+        subCategory: 'group_monitor',
+      );
+      return;
+    }
+
+    if (state.isMonitoring) {
+      AppLogger.warning(
+        'Already monitoring, skipping start',
+        subCategory: 'group_monitor',
+      );
+      return;
+    }
+
+    _hasBaseline = false;
+    state = state.copyWith(isMonitoring: true);
+    AppLogger.info(
+      'Started monitoring ${state.selectedGroupIds.length} groups',
+      subCategory: 'group_monitor',
+    );
+
+    _requestBaselineRefresh(immediate: true);
+    _reconcileBoostLoop();
+    _reconcileBaselineLoop();
+  }
+
+  void _stopMonitoringInternal() {
+    if (!state.isMonitoring) {
+      return;
+    }
+
+    _baselineLoop.reset();
+    _boostLoop.reset();
+    _selectionRefreshDebounceTimer?.cancel();
+    _selectionRefreshDebounceTimer = null;
+    unawaited(
+      _clearBoost(
+        persist: true,
+        logExpired: false,
+        requestBaselineRecovery: false,
+      ),
+    );
+    state = state.copyWith(isMonitoring: false);
+    _backoffDelay = 1;
+
+    AppLogger.info('Stopped monitoring', subCategory: 'group_monitor');
+  }
+}

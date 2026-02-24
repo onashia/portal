@@ -12,12 +12,12 @@ import '../constants/ui_constants.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import '../providers/group_monitor_storage.dart';
-import '../providers/theme_provider.dart';
 import '../services/notification_service.dart';
 import '../utils/animation_constants.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_utils.dart';
 import '../widgets/common/empty_state.dart';
+import '../widgets/common/theme_mode_toggle_button.dart';
 import '../widgets/custom_title_bar.dart';
 import '../widgets/dashboard/dashboard_action_area.dart';
 import '../widgets/dashboard/dashboard_cards.dart';
@@ -78,7 +78,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final authMeta = ref.watch(authAsyncMetaProvider);
     final authStatus = ref.watch(authStatusProvider);
     final currentUser = ref.watch(authCurrentUserProvider);
-    final themeMode = ref.watch(themeProvider);
     final authViewState = resolveDashboardAuthViewState(
       authMeta: authMeta,
       authStatus: authStatus,
@@ -90,14 +89,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     }
 
     if (authViewState == DashboardAuthViewState.error) {
-      return _buildErrorScaffold(context, themeMode, authMeta);
+      return _buildErrorScaffold(context, authMeta);
     }
 
     if (authViewState == DashboardAuthViewState.handoff) {
       return const SizedBox.shrink();
     }
 
-    return _buildReadyScaffold(context, currentUser!, themeMode);
+    return _buildReadyScaffold(context, currentUser!);
   }
 
   Scaffold _buildLoadingScaffold() {
@@ -114,18 +113,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  Scaffold _buildErrorScaffold(
-    BuildContext context,
-    ThemeMode themeMode,
-    AuthAsyncMeta authMeta,
-  ) {
+  Scaffold _buildErrorScaffold(BuildContext context, AuthAsyncMeta authMeta) {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: CustomTitleBar(
         title: 'portal.',
         icon: Icons.tonality,
-        actions: [_buildThemeToggleAction(themeMode)],
+        actions: const [ThemeModeToggleButton()],
       ),
       body: EmptyState(
         icon: Icons.error_outline,
@@ -136,21 +131,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  Scaffold _buildReadyScaffold(
-    BuildContext context,
-    CurrentUser currentUser,
-    ThemeMode themeMode,
-  ) {
+  Scaffold _buildReadyScaffold(BuildContext context, CurrentUser currentUser) {
     final userId = currentUser.id;
 
     return Scaffold(
       appBar: CustomTitleBar(
         title: 'portal.',
         icon: Icons.tonality,
-        actions: [
-          _buildThemeToggleAction(themeMode),
-          _buildLogoutAction(userId),
-        ],
+        actions: [const ThemeModeToggleButton(), _buildLogoutAction(userId)],
       ),
       body: _buildDashboardBody(context, currentUser, userId),
     );
@@ -288,21 +276,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       maxWidth: maxWidth,
       canShowSideBySide: canShowSideBySide,
       contentBottomPadding: contentBottomPadding,
-    );
-  }
-
-  Widget _buildThemeToggleAction(ThemeMode themeMode) {
-    return IconButton(
-      icon: Icon(
-        themeMode == ThemeMode.dark
-            ? Icons.light_mode_outlined
-            : Icons.dark_mode_outlined,
-        size: IconSizes.xs,
-      ),
-      tooltip: themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
-      onPressed: () {
-        ref.read(themeProvider.notifier).toggleTheme();
-      },
     );
   }
 

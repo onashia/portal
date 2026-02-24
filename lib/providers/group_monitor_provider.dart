@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
@@ -21,10 +22,33 @@ import 'polling_lifecycle.dart';
 export 'group_monitor_algorithms.dart';
 export 'group_monitor_state.dart';
 
+part 'group_monitor_provider_fetch.dart';
+part 'group_monitor_provider_loops.dart';
+part 'group_monitor_provider_persistence.dart';
+
 class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
+  GroupMonitorNotifier(this.arg);
+
   final String arg;
 
-  GroupMonitorNotifier(this.arg);
+  final _baselineLoop = RefreshLoopState();
+  final _boostLoop = RefreshLoopState();
+  final _random = math.Random();
+
+  Timer? _selectionRefreshDebounceTimer;
+  int _backoffDelay = 1;
+  bool _isFetchingBaseline = false;
+  bool _isBoostFetching = false;
+  bool _isFetchingGroups = false;
+  bool _hasBaseline = false;
+  DateTime? _boostStartedAt;
+  int _boostPollCount = 0;
+  bool _boostFirstSeenLogged = false;
+
+  @visibleForTesting
+  bool get hasActivePollingTimer => _baselineLoop.hasTimer;
+
+  bool get _isAnyFetchInFlight => _isFetchingBaseline || _isBoostFetching;
 
   bool _canPollForCurrentSession() {
     final session = ref.read(authSessionSnapshotProvider);
@@ -50,134 +74,37 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     return const GroupMonitorState(isLoading: true);
   }
 
-  void _listenForAuthChanges() {
-    ref.listen<AuthSessionSnapshot>(authSessionSnapshotProvider, (
-      previous,
-      next,
-    ) {
-      final wasEligible =
-          previous?.isAuthenticated == true && previous?.userId == arg;
-      final isEligible = next.isAuthenticated && next.userId == arg;
-
-      if (!isEligible) {
-        if (state.isMonitoring) {
-          stopMonitoring();
-        } else {
-          _reconcileBaselineLoop();
-          _reconcileBoostLoop();
-        }
-        return;
-      }
-
-      if (!wasEligible) {
-        Future.microtask(() {
-          if (!ref.mounted) {
-            return;
-          }
-          _reconcileMonitoringForSelectionState();
-        });
-        return;
-      }
-
-      _reconcileBaselineLoop();
-      _reconcileBoostLoop();
-    });
+  void _resetBoostRuntimeTracking({DateTime? startedAt}) {
+    _boostStartedAt = startedAt;
+    _boostPollCount = 0;
+    _boostFirstSeenLogged = false;
   }
 
-  Future<void> _loadBoostSettings() async {
-    try {
-      final settings = await GroupMonitorStorage.loadBoostSettings();
-      final resolved = resolveLoadedBoostSettings(
-        settings: settings,
-        now: DateTime.now(),
-      );
-
-      if (resolved.shouldClear) {
-        await _clearBoost(persist: true, logExpired: resolved.logExpired);
-        return;
-      }
-
-      if (resolved.boostedGroupId != null && resolved.boostExpiresAt != null) {
-        state = state.copyWith(
-          boostedGroupId: resolved.boostedGroupId,
-          boostExpiresAt: resolved.boostExpiresAt,
-        );
-        AppLogger.debug(
-          'Loaded active boost settings for ${resolved.boostedGroupId}',
-          subCategory: 'group_monitor',
-        );
-
-        if (state.isMonitoring) {
-          _requestBoostRefresh(immediate: true);
-        }
-      }
-    } catch (e) {
-      AppLogger.error(
-        'Failed to load boost settings',
-        subCategory: 'group_monitor',
-        error: e,
-      );
-    }
-  }
-
-  Future<void> _loadAutoInviteSetting() async {
-    try {
-      final enabled = await GroupMonitorStorage.loadAutoInviteEnabled();
-      state = state.copyWith(autoInviteEnabled: enabled);
-      AppLogger.debug(
-        'Loaded auto-invite setting: $enabled',
-        subCategory: 'group_monitor',
-      );
-    } catch (e) {
-      AppLogger.error(
-        'Failed to load auto-invite setting',
-        subCategory: 'group_monitor',
-        error: e,
-      );
-    }
-  }
-
-  Future<void> _loadSelectedGroups() async {
-    try {
-      final selectedIds = await GroupMonitorStorage.loadSelectedGroupIds();
-      final loadedSelection = selectedIds.toSet();
-      final shouldApplyLoadedSelection = state.selectedGroupIds.isEmpty;
-      if (shouldApplyLoadedSelection) {
-        state = state.copyWith(selectedGroupIds: loadedSelection);
-      } else {
-        AppLogger.debug(
-          'Skipping loaded selected groups because selection already changed in memory',
-          subCategory: 'group_monitor',
-        );
-      }
-      AppLogger.debug(
-        'Loaded ${selectedIds.length} selected groups from storage',
-        subCategory: 'group_monitor',
-      );
-      _reconcileMonitoringForSelectionState();
-    } catch (e) {
-      AppLogger.error(
-        'Failed to load selected groups',
-        subCategory: 'group_monitor',
-        error: e,
-      );
-    }
+  void _applyBoostState({
+    required String? groupId,
+    required DateTime? expiresAt,
+  }) {
+    state = state.copyWith(
+      boostedGroupId: groupId,
+      boostExpiresAt: expiresAt,
+      boostPollCount: 0,
+      lastBoostLatencyMs: null,
+      lastBoostFetchedAt: null,
+      boostFirstSeenAfter: null,
+    );
   }
 
   Future<void> toggleAutoInvite() async {
     final newValue = !state.autoInviteEnabled;
     state = state.copyWith(autoInviteEnabled: newValue);
-    try {
-      await GroupMonitorStorage.saveAutoInviteEnabled(newValue);
+    final didPersist = await _persistStorageWrite(
+      actionDescription: 'save auto-invite setting',
+      action: () => GroupMonitorStorage.saveAutoInviteEnabled(newValue),
+    );
+    if (didPersist) {
       AppLogger.info(
         'Auto-invite set to $newValue',
         subCategory: 'group_monitor',
-      );
-    } catch (e) {
-      AppLogger.error(
-        'Failed to save auto-invite setting',
-        subCategory: 'group_monitor',
-        error: e,
       );
     }
   }
@@ -209,20 +136,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       return;
     }
 
-    final expiresAt = DateTime.now().add(
+    final startedAt = DateTime.now();
+    final expiresAt = startedAt.add(
       const Duration(minutes: AppConstants.boostDurationMinutes),
     );
-    _boostStartedAt = DateTime.now();
-    _boostPollCount = 0;
-    _boostFirstSeenLogged = false;
-    state = state.copyWith(
-      boostedGroupId: groupId,
-      boostExpiresAt: expiresAt,
-      boostPollCount: 0,
-      lastBoostLatencyMs: null,
-      lastBoostFetchedAt: null,
-      boostFirstSeenAfter: null,
-    );
+    _resetBoostRuntimeTracking(startedAt: startedAt);
+    _applyBoostState(groupId: groupId, expiresAt: expiresAt);
     await _persistBoostSettings(groupId: groupId, boostExpiresAt: expiresAt);
     AppLogger.info(
       'Boosted group set to $groupId',
@@ -246,153 +165,6 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     }
   }
 
-  Future<void> _clearBoost({
-    required bool persist,
-    required bool logExpired,
-    bool requestBaselineRecovery = true,
-  }) async {
-    final hadBoost =
-        state.boostedGroupId != null || state.boostExpiresAt != null;
-    _boostLoop.cancelTimer();
-    _boostLoop.pendingRefresh = false;
-    _boostStartedAt = null;
-    _boostPollCount = 0;
-    _boostFirstSeenLogged = false;
-    state = state.copyWith(
-      boostedGroupId: null,
-      boostExpiresAt: null,
-      boostPollCount: 0,
-      lastBoostLatencyMs: null,
-      lastBoostFetchedAt: null,
-      boostFirstSeenAfter: null,
-    );
-
-    if (persist) {
-      await _persistBoostSettings(groupId: null, boostExpiresAt: null);
-    }
-
-    if (logExpired) {
-      AppLogger.info(
-        'Boost expired, reverting to normal polling',
-        subCategory: 'group_monitor',
-      );
-    }
-
-    if (requestBaselineRecovery &&
-        hadBoost &&
-        state.isMonitoring &&
-        state.selectedGroupIds.isNotEmpty) {
-      _requestBaselineRefresh(immediate: true);
-    }
-  }
-
-  Future<void> _persistBoostSettings({
-    required String? groupId,
-    required DateTime? boostExpiresAt,
-  }) async {
-    try {
-      await GroupMonitorStorage.saveBoostSettings(
-        groupId: groupId,
-        boostExpiresAt: boostExpiresAt,
-      );
-    } catch (e) {
-      AppLogger.error(
-        'Failed to persist boost settings',
-        subCategory: 'group_monitor',
-        error: e,
-      );
-    }
-  }
-
-  Future<void> _saveSelectedGroups() async {
-    try {
-      await GroupMonitorStorage.saveSelectedGroupIds(state.selectedGroupIds);
-    } catch (e) {
-      AppLogger.error(
-        'Failed to save selected groups',
-        subCategory: 'group_monitor',
-        error: e,
-      );
-    }
-  }
-
-  Future<void> fetchUserGroups() async {
-    if (_isFetchingGroups) {
-      AppLogger.debug(
-        'Group fetch already in progress, skipping duplicate call',
-        subCategory: 'group_monitor',
-      );
-      return;
-    }
-
-    _isFetchingGroups = true;
-    state = state.copyWith(isLoading: true, errorMessage: null);
-
-    try {
-      AppLogger.debug('Fetching groups for user', subCategory: 'group_monitor');
-
-      ref
-          .read(apiCallCounterProvider.notifier)
-          .incrementApiCall(lane: ApiRequestLane.userGroups);
-
-      final api = ref.read(vrchatApiProvider);
-      final response = await api.rawApi.getUsersApi().getUserGroups(
-        userId: arg,
-        extra: apiRequestLaneExtra(ApiRequestLane.userGroups),
-      );
-      final groups = response.data ?? [];
-
-      AppLogger.info(
-        'Fetched ${groups.length} groups',
-        subCategory: 'group_monitor',
-      );
-
-      state = state.copyWith(
-        allGroups: groups,
-        isLoading: false,
-        lastGroupsFetchTime: DateTime.now(),
-      );
-    } catch (e, s) {
-      AppLogger.error(
-        'Failed to fetch user groups',
-        subCategory: 'group_monitor',
-        error: e,
-        stackTrace: s,
-      );
-      state = state.copyWith(
-        isLoading: false,
-        errorMessage: 'Failed to fetch groups: ${e.toString()}',
-      );
-    } finally {
-      _isFetchingGroups = false;
-    }
-  }
-
-  Future<void> fetchUserGroupsIfNeeded({int minIntervalSeconds = 5}) async {
-    if (_isFetchingGroups) {
-      AppLogger.debug(
-        'Skipping fetch: group fetch already in progress',
-        subCategory: 'group_monitor',
-      );
-      return;
-    }
-
-    if (state.lastGroupsFetchTime != null) {
-      final timeSinceLastFetch = DateTime.now().difference(
-        state.lastGroupsFetchTime!,
-      );
-      if (timeSinceLastFetch.inSeconds < minIntervalSeconds) {
-        AppLogger.debug(
-          'Skipping fetch: last fetch was ${timeSinceLastFetch.inSeconds}s ago',
-          subCategory: 'group_monitor',
-        );
-        return;
-      }
-    }
-
-    await fetchUserGroups();
-  }
-
   void toggleGroupSelection(String groupId) {
     final wasMonitoring = state.isMonitoring;
     final newSelection = Set<String>.from(state.selectedGroupIds);
@@ -404,7 +176,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
     if (wasSelected) {
       newSelection.remove(groupId);
-      // Clear cached data for deselected group to free memory
+      // Clear cached data for deselected group to free memory.
       newGroupInstances.remove(groupId);
       newGroupErrors.remove(groupId);
       if (state.boostedGroupId == groupId) {
@@ -430,984 +202,41 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     );
   }
 
-  final _baselineLoop = RefreshLoopState();
-  final _boostLoop = RefreshLoopState();
-  Timer? _selectionRefreshDebounceTimer;
-  int _backoffDelay = 1;
-  bool _isFetchingBaseline = false;
-  bool _isBoostFetching = false;
-  bool _isFetchingGroups = false;
-  bool _hasBaseline = false;
-  DateTime? _boostStartedAt;
-  int _boostPollCount = 0;
-  bool _boostFirstSeenLogged = false;
-  final _random = math.Random();
+  Future<void> fetchUserGroups() => _fetchUserGroupsInternal();
 
-  @visibleForTesting
-  bool get hasActivePollingTimer => _baselineLoop.hasTimer;
-
-  bool get _isAnyFetchInFlight => _isFetchingBaseline || _isBoostFetching;
-
-  bool _baselineActive() {
-    return isLoopActive(
-      isEnabled: state.isMonitoring,
-      sessionEligible: _canPollForCurrentSession(),
-      selectionActive: isSelectionActive(state.selectedGroupIds),
+  Future<void> fetchUserGroupsIfNeeded({int minIntervalSeconds = 5}) {
+    return _fetchUserGroupsIfNeededInternal(
+      minIntervalSeconds: minIntervalSeconds,
     );
   }
 
-  bool _boostActive() {
-    return state.isMonitoring &&
-        state.isBoostActive &&
-        state.boostedGroupId != null &&
-        _canPollForCurrentSession();
-  }
-
-  void _recordBaselineAttempt([DateTime? at]) {
-    state = state.copyWith(
-      lastBaselineAttemptAt: at ?? DateTime.now(),
-      lastBaselineSkipReason: null,
-    );
-  }
-
-  void _recordBaselineSkip(String reason, [DateTime? at]) {
-    state = state.copyWith(
-      lastBaselineAttemptAt: at ?? DateTime.now(),
-      lastBaselineSkipReason: reason,
-    );
-  }
-
-  void _recordBaselineSuccess({
-    required int polledGroupCount,
-    required int totalInstances,
-    DateTime? at,
-  }) {
-    final timestamp = at ?? DateTime.now();
-    state = state.copyWith(
-      lastBaselineSuccessAt: timestamp,
-      lastBaselinePolledGroupCount: polledGroupCount,
-      lastBaselineTotalInstances: totalInstances,
-      lastBaselineSkipReason: null,
-    );
-  }
-
-  void _scheduleSelectionTriggeredBaselineRefresh() {
-    _selectionRefreshDebounceTimer?.cancel();
-    _baselineLoop.pendingRefresh = true;
-    _baselineLoop.pendingBypassRateLimit = false;
-    _selectionRefreshDebounceTimer = Timer(
-      AppConstants.selectionRefreshDebounceDuration,
-      () {
-        if (!ref.mounted) {
-          return;
-        }
-        _selectionRefreshDebounceTimer = null;
-        _baselineLoop.clearPending();
-        _requestBaselineRefresh(immediate: true);
-      },
-    );
-  }
-
-  void _reconcileMonitoringForSelectionState() {
-    if (state.selectedGroupIds.isEmpty) {
-      if (state.isMonitoring) {
-        stopMonitoring();
-      }
-      _reconcileBaselineLoop();
-      _reconcileBoostLoop();
-      return;
-    }
-
-    if (state.selectedGroupIds.isNotEmpty &&
-        !state.isMonitoring &&
-        _canPollForCurrentSession()) {
-      startMonitoring();
-    } else if (state.selectedGroupIds.isNotEmpty &&
-        !state.isMonitoring &&
-        !_canPollForCurrentSession()) {
-      AppLogger.debug(
-        'Selected groups changed but session is ineligible for monitoring',
-        subCategory: 'group_monitor',
-      );
-    }
-
-    _reconcileBaselineLoop();
-    _reconcileBoostLoop();
-  }
-
-  void _reconcileBaselineLoop() {
-    if (!state.isMonitoring) {
-      _baselineLoop.reset();
-      return;
-    }
-
-    if (state.selectedGroupIds.isEmpty) {
-      stopMonitoring();
-      return;
-    }
-
-    if (!_canPollForCurrentSession()) {
-      AppLogger.debug(
-        'Monitoring active but session is ineligible; stopping monitoring',
-        subCategory: 'group_monitor',
-      );
-      stopMonitoring();
-      return;
-    }
-
-    if (shouldScheduleNextTick(
-      isActive: true,
-      hasTimer: _baselineLoop.hasTimer,
-      isInFlight: _isAnyFetchInFlight,
-      hasPendingRefresh: _baselineLoop.pendingRefresh,
-    )) {
-      AppLogger.debug(
-        'Baseline polling timer missing while monitoring is active; rescheduling',
-        subCategory: 'group_monitor',
-      );
-      _requestBaselineRefresh(immediate: true);
-    }
-  }
-
-  void _reconcileBoostLoop() {
-    if (!_boostActive()) {
-      _boostLoop.reset();
-      return;
-    }
-
-    if (shouldScheduleNextTick(
-      isActive: true,
-      hasTimer: _boostLoop.hasTimer,
-      isInFlight: _isAnyFetchInFlight,
-      hasPendingRefresh: _boostLoop.pendingRefresh,
-    )) {
-      _requestBoostRefresh(immediate: true);
-    }
-  }
-
-  int _nextPollDelaySeconds() {
-    final base = AppConstants.pollingIntervalSeconds;
-    final jitter = AppConstants.pollingJitterSeconds;
-    if (jitter <= 0) {
-      return base;
-    }
-    final delta = _random.nextInt(jitter * 2 + 1) - jitter;
-    return math.max(1, base + delta);
-  }
-
-  int _nextBoostPollDelaySeconds() {
-    final base = AppConstants.boostPollingIntervalSeconds;
-    final jitter = AppConstants.boostPollingJitterSeconds;
-    if (jitter <= 0) {
-      return base;
-    }
-    final delta = _random.nextInt(jitter * 2 + 1) - jitter;
-    return math.max(1, base + delta);
-  }
-
-  void _scheduleNextBaselineTick({Duration? overrideDelay}) {
-    _baselineLoop.cancelTimer();
-
-    if (!_baselineActive()) {
-      _reconcileBaselineLoop();
-      return;
-    }
-
-    final delay = overrideDelay ?? Duration(seconds: _nextPollDelaySeconds());
-    _baselineLoop.timer = Timer(delay, () {
-      if (!ref.mounted) {
-        return;
-      }
-      _requestBaselineRefresh(immediate: true);
-    });
-  }
-
-  void _scheduleNextBoostTick({Duration? overrideDelay}) {
-    _boostLoop.cancelTimer();
-
-    if (!_boostActive()) {
-      _reconcileBoostLoop();
-      return;
-    }
-
-    final delay =
-        overrideDelay ?? Duration(seconds: _nextBoostPollDelaySeconds());
-    _boostLoop.timer = Timer(delay, () {
-      if (!ref.mounted) {
-        return;
-      }
-      _requestBoostRefresh(immediate: true);
-    });
-  }
-
-  void _requestBaselineRefresh({
-    bool immediate = true,
-    bool bypassRateLimit = false,
-  }) {
-    final dispatch = shouldRequestImmediateRefresh(
-      isActive: _baselineActive(),
-      isInFlight: _isAnyFetchInFlight,
-      immediate: immediate,
-    );
-    if (dispatch.shouldReconcile) {
-      _reconcileBaselineLoop();
-      return;
-    }
-
-    _baselineLoop.cancelTimer();
-
-    if (dispatch.shouldQueuePending) {
-      _baselineLoop.queuePending(bypassRateLimit: bypassRateLimit);
-      _recordBaselineSkip('in_flight_queue');
-      return;
-    }
-
-    if (dispatch.shouldRunNow) {
-      unawaited(fetchGroupInstances(bypassRateLimit: bypassRateLimit));
-      return;
-    }
-
-    if (dispatch.shouldScheduleTick) {
-      _scheduleNextBaselineTick();
-    }
-  }
-
-  void _requestBoostRefresh({
-    bool immediate = true,
-    bool bypassRateLimit = false,
-  }) {
-    final dispatch = shouldRequestImmediateRefresh(
-      isActive: _boostActive(),
-      isInFlight: _isAnyFetchInFlight,
-      immediate: immediate,
-    );
-    if (dispatch.shouldReconcile) {
-      _reconcileBoostLoop();
-      return;
-    }
-
-    _boostLoop.cancelTimer();
-
-    if (dispatch.shouldQueuePending) {
-      _boostLoop.queuePending(bypassRateLimit: bypassRateLimit);
-      return;
-    }
-
-    if (dispatch.shouldRunNow) {
-      unawaited(fetchBoostedGroupInstances(bypassRateLimit: bypassRateLimit));
-      return;
-    }
-
-    if (dispatch.shouldScheduleTick) {
-      _scheduleNextBoostTick();
-    }
-  }
-
-  void _drainPendingRefreshesOrScheduleTicks() {
-    if (!ref.mounted || _isAnyFetchInFlight) {
-      return;
-    }
-
-    final baselineActive = _baselineActive();
-    if (shouldDrainPendingRefresh(
-      isMounted: ref.mounted,
-      isInFlight: _isAnyFetchInFlight,
-      hasPendingRefresh: _baselineLoop.pendingRefresh,
-      isActive: baselineActive,
-    )) {
-      final pending = _baselineLoop.consumePending();
-      unawaited(fetchGroupInstances(bypassRateLimit: pending.bypassRateLimit));
-      return;
-    }
-
-    final boostActive = _boostActive();
-    if (shouldDrainPendingRefresh(
-      isMounted: ref.mounted,
-      isInFlight: _isAnyFetchInFlight,
-      hasPendingRefresh: _boostLoop.pendingRefresh,
-      isActive: boostActive,
-    )) {
-      final pending = _boostLoop.consumePending();
-      unawaited(
-        fetchBoostedGroupInstances(bypassRateLimit: pending.bypassRateLimit),
-      );
-      return;
-    }
-
-    if (shouldScheduleNextTick(
-      isActive: baselineActive,
-      hasTimer: _baselineLoop.hasTimer,
-      isInFlight: _isAnyFetchInFlight,
-      hasPendingRefresh: _baselineLoop.pendingRefresh,
-    )) {
-      _scheduleNextBaselineTick();
-    } else if (!baselineActive) {
-      _baselineLoop.reset();
-    }
-
-    if (shouldScheduleNextTick(
-      isActive: boostActive,
-      hasTimer: _boostLoop.hasTimer,
-      isInFlight: _isAnyFetchInFlight,
-      hasPendingRefresh: _boostLoop.pendingRefresh,
-    )) {
-      _scheduleNextBoostTick();
-    } else if (!boostActive) {
-      _boostLoop.reset();
-    }
-  }
-
-  Future<bool> _ensureBoostActive() async {
-    if (state.isBoostActive) {
-      return true;
-    }
-
-    if (state.boostedGroupId != null || state.boostExpiresAt != null) {
-      await _clearBoost(persist: true, logExpired: true);
-    }
-    return false;
-  }
-
-  GroupInstanceWithGroup? _selectInviteTarget(
-    List<Instance> instances,
-    String groupId,
-  ) {
-    if (instances.isEmpty) {
-      return null;
-    }
-
-    Instance? best;
-    for (final instance in instances) {
-      if (best == null || instance.nUsers > best.nUsers) {
-        best = instance;
-      }
-    }
-
-    if (best == null) {
-      return null;
-    }
-
-    if (!shouldAttemptSelfInviteForInstance(best)) {
-      final hasInvalidIdentifiers =
-          best.worldId.isEmpty || best.instanceId.isEmpty;
-      final skipReason = hasInvalidIdentifiers
-          ? 'invalid instance identifiers'
-          : 'instance metadata denies invite requests';
-      AppLogger.warning(
-        'Skipping invite: $skipReason for group $groupId',
-        subCategory: 'group_monitor',
-      );
-      return null;
-    }
-    return GroupInstanceWithGroup(instance: best, groupId: groupId);
-  }
-
-  /// Requests a baseline monitoring refresh through the queued single-flight
-  /// lifecycle so manual refreshes and automatic triggers share the same flow.
-  ///
-  /// When [immediate] is true, this starts a refresh now (or marks one as
-  /// pending if another fetch is already in-flight). When false, it schedules
-  /// the next baseline tick using the normal polling cadence.
   void requestRefresh({bool immediate = true}) {
-    _selectionRefreshDebounceTimer?.cancel();
-    _selectionRefreshDebounceTimer = null;
-    _baselineLoop.clearPending();
-    _requestBaselineRefresh(immediate: immediate, bypassRateLimit: true);
+    _requestRefreshInternal(immediate: immediate);
   }
 
   void startMonitoring() {
-    AppLogger.info('Starting monitoring', subCategory: 'group_monitor');
-
-    if (!_canPollForCurrentSession()) {
-      AppLogger.warning(
-        'Cannot start monitoring without an active matching session',
-        subCategory: 'group_monitor',
-      );
-      return;
-    }
-
-    if (state.selectedGroupIds.isEmpty) {
-      AppLogger.warning(
-        'Cannot start monitoring with no selected groups',
-        subCategory: 'group_monitor',
-      );
-      return;
-    }
-
-    if (state.isMonitoring) {
-      AppLogger.warning(
-        'Already monitoring, skipping start',
-        subCategory: 'group_monitor',
-      );
-      return;
-    }
-
-    _hasBaseline = false;
-    state = state.copyWith(isMonitoring: true);
-    AppLogger.info(
-      'Started monitoring ${state.selectedGroupIds.length} groups',
-      subCategory: 'group_monitor',
-    );
-
-    _requestBaselineRefresh(immediate: true);
-    _reconcileBoostLoop();
-    _reconcileBaselineLoop();
+    _startMonitoringInternal();
   }
 
   void stopMonitoring() {
-    if (!state.isMonitoring) return;
+    _stopMonitoringInternal();
+  }
 
-    _baselineLoop.reset();
-    _boostLoop.reset();
-    _selectionRefreshDebounceTimer?.cancel();
-    _selectionRefreshDebounceTimer = null;
-    unawaited(
-      _clearBoost(
-        persist: true,
-        logExpired: false,
-        requestBaselineRecovery: false,
-      ),
+  Future<void> fetchGroupInstances({bool bypassRateLimit = false}) {
+    return _fetchGroupInstancesInternal(bypassRateLimit: bypassRateLimit);
+  }
+
+  Future<void> fetchBoostedGroupInstances({bool bypassRateLimit = false}) {
+    return _fetchBoostedGroupInstancesInternal(
+      bypassRateLimit: bypassRateLimit,
     );
-    state = state.copyWith(isMonitoring: false);
-    _backoffDelay = 1;
-
-    AppLogger.info('Stopped monitoring', subCategory: 'group_monitor');
   }
 
-  Future<void> fetchGroupInstances({bool bypassRateLimit = false}) async {
-    AppLogger.debug(
-      'fetchGroupInstances() called',
-      subCategory: 'group_monitor',
-    );
-    final attemptAt = DateTime.now();
-    _recordBaselineAttempt(attemptAt);
-
-    if (!_baselineActive()) {
-      AppLogger.debug(
-        'Skipping instance fetch for inactive baseline loop',
-        subCategory: 'group_monitor',
-      );
-      _recordBaselineSkip('inactive', attemptAt);
-      _reconcileBaselineLoop();
-      return;
-    }
-
-    final decision = resolveRefreshRequestDecision(
-      isInFlight: _isAnyFetchInFlight,
-    );
-    if (decision.shouldQueuePending) {
-      _baselineLoop.queuePending(bypassRateLimit: bypassRateLimit);
-      AppLogger.debug(
-        'Fetch already in progress, queueing pending baseline refresh',
-        subCategory: 'group_monitor',
-      );
-      _recordBaselineSkip('in_flight_queue', attemptAt);
-      return;
-    }
-
-    _baselineLoop.cancelTimer();
-
-    final selectedGroupIdSet = state.selectedGroupIds;
-    final selectedGroupIds = selectedGroupIdSet.toList(growable: true);
-    if (state.isBoostActive && state.boostedGroupId != null) {
-      selectedGroupIds.remove(state.boostedGroupId);
-    }
-    selectedGroupIds.sort();
-    if (selectedGroupIds.isEmpty) {
-      AppLogger.debug(
-        'No non-boost groups selected, skipping baseline fetch',
-        subCategory: 'group_monitor',
-      );
-      _recordBaselineSkip('no_targets', attemptAt);
-      _scheduleNextBaselineTick();
-      return;
-    }
-
-    if (!bypassRateLimit) {
-      final coordinator = ref.read(apiRateLimitCoordinatorProvider);
-      final remaining = coordinator.remainingCooldown(
-        ApiRequestLane.groupBaseline,
-      );
-      if (remaining != null) {
-        AppLogger.debug(
-          'Baseline poll deferred due to cooldown'
-          ' (${remaining.inSeconds}s remaining)',
-          subCategory: 'group_monitor',
-        );
-        ref
-            .read(apiCallCounterProvider.notifier)
-            .incrementThrottledSkip(lane: ApiRequestLane.groupBaseline);
-        _recordBaselineSkip('cooldown', attemptAt);
-        _scheduleNextBaselineTick(
-          overrideDelay: resolveCooldownAwareDelay(
-            remainingCooldown: remaining,
-            fallbackDelay: Duration(seconds: _nextPollDelaySeconds()),
-          ),
-        );
-        return;
-      }
-    }
-
-    _isFetchingBaseline = true;
-    try {
-      AppLogger.debug(
-        'Fetching instances for ${selectedGroupIds.length} groups',
-        subCategory: 'group_monitor',
-      );
-
-      final api = ref.read(vrchatApiProvider);
-      final inviteService = ref.read(inviteServiceProvider);
-      final previousGroupInstances = state.groupInstances;
-      final previousGroupErrors = state.groupErrors;
-      final newInstances = <GroupInstanceWithGroup>[];
-      final inviteTargets = <GroupInstanceWithGroup>[];
-      final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
-      final newGroupErrors = <String, String>{};
-      GroupInstanceWithGroup? newestInstance;
-      final excludedGroupIds = selectedGroupIdSet.difference(
-        selectedGroupIds.toSet(),
-      );
-      for (final excludedGroupId in excludedGroupIds) {
-        final previousInstances = previousGroupInstances[excludedGroupId] ?? [];
-        newGroupInstances[excludedGroupId] = previousInstances;
-        for (final previous in previousInstances) {
-          newestInstance = pickNewestInstance(newestInstance, previous);
-        }
-
-        final previousError = previousGroupErrors[excludedGroupId];
-        if (previousError != null) {
-          newGroupErrors[excludedGroupId] = previousError;
-        }
-      }
-      var didInstancesChange = hasGroupInstanceKeyMismatch(
-        selectedGroupIds: selectedGroupIdSet,
-        groupInstances: previousGroupInstances,
-      );
-
-      final responses = await fetchGroupInstancesChunked(
-        orderedGroupIds: selectedGroupIds,
-        maxConcurrentRequests: AppConstants.groupInstancesMaxConcurrentRequests,
-        fetchGroupInstances: (groupId) async {
-          ref
-              .read(apiCallCounterProvider.notifier)
-              .incrementApiCall(lane: ApiRequestLane.groupBaseline);
-          try {
-            return await api.rawApi
-                .getUsersApi()
-                .getUserGroupInstancesForGroup(
-                  userId: arg,
-                  groupId: groupId,
-                  extra: apiRequestLaneExtra(ApiRequestLane.groupBaseline),
-                )
-                .timeout(
-                  const Duration(
-                    seconds: AppConstants.groupInstancesRequestTimeoutSeconds,
-                  ),
-                );
-          } catch (e, s) {
-            AppLogger.error(
-              'Failed to fetch instances for group $groupId',
-              subCategory: 'group_monitor',
-              error: e,
-              stackTrace: s,
-            );
-            return null;
-          }
-        },
-      );
-      if (!ref.mounted) {
-        return;
-      }
-
-      for (final groupResponse in responses) {
-        final groupId = groupResponse.groupId;
-        final response = groupResponse.response;
-        final previousInstances = previousGroupInstances[groupId] ?? [];
-
-        if (response == null) {
-          AppLogger.error(
-            'Failed to fetch instances for group',
-            subCategory: 'group_monitor',
-          );
-          newGroupErrors[groupId] = 'Failed to fetch instances';
-          newGroupInstances[groupId] = previousInstances;
-          for (final previous in previousInstances) {
-            newestInstance = pickNewestInstance(newestInstance, previous);
-          }
-          continue;
-        }
-
-        final instances = response.data?.instances ?? [];
-
-        AppLogger.debug(
-          'Group returned ${instances.length} instances',
-          subCategory: 'group_monitor',
-        );
-
-        if (_hasBaseline &&
-            state.isMonitoring &&
-            state.autoInviteEnabled &&
-            previousInstances.isEmpty &&
-            instances.isNotEmpty) {
-          final target = _selectInviteTarget(instances, groupId);
-          if (target != null) {
-            inviteTargets.add(target);
-          }
-        }
-
-        final merged = mergeFetchedGroupInstancesWithDiff(
-          groupId: groupId,
-          fetchedInstances: instances,
-          previousInstances: previousInstances,
-          detectedAt: attemptAt,
-        );
-        newInstances.addAll(merged.newInstances);
-        if (merged.didChange) {
-          didInstancesChange = true;
-        }
-        final effectiveInstances = merged.effectiveInstances;
-        newGroupInstances[groupId] = effectiveInstances;
-        for (final mergedInstance in effectiveInstances) {
-          newestInstance = pickNewestInstance(newestInstance, mergedInstance);
-        }
-      }
-
-      if (inviteTargets.isNotEmpty) {
-        for (final target in inviteTargets) {
-          await inviteService.inviteSelfToInstance(target.instance);
-        }
-      }
-
-      final nextNewestInstanceId = newestInstance?.instance.instanceId;
-      final nextGroupInstances = selectGroupInstancesForState(
-        didInstancesChange: didInstancesChange,
-        previousGroupInstances: previousGroupInstances,
-        nextGroupInstances: newGroupInstances,
-      );
-      final didErrorsChange = !collection_eq.areStringMapsEquivalent(
-        previousGroupErrors,
-        newGroupErrors,
-      );
-      final didNewestChange = state.newestInstanceId != nextNewestInstanceId;
-      final totalInstances = nextGroupInstances.values.fold<int>(
-        0,
-        (sum, instances) => sum + instances.length,
-      );
-
-      if (didInstancesChange || didErrorsChange || didNewestChange) {
-        state = state.copyWith(
-          groupInstances: nextGroupInstances,
-          newestInstanceId: nextNewestInstanceId,
-          groupErrors: didErrorsChange ? newGroupErrors : previousGroupErrors,
-        );
-      }
-
-      _hasBaseline = true;
-      _recordBaselineSuccess(
-        polledGroupCount: selectedGroupIds.length,
-        totalInstances: totalInstances,
-      );
-      // Reset backoff on successful fetch
-      _backoffDelay = 1;
-
-      if (newInstances.isNotEmpty) {
-        AppLogger.info(
-          'Found ${newInstances.length} new instances',
-          subCategory: 'group_monitor',
-        );
-      }
-    } catch (e, s) {
-      AppLogger.error(
-        'Failed to fetch group instances',
-        subCategory: 'group_monitor',
-        error: e,
-        stackTrace: s,
-      );
-      _recordBaselineSkip('error', attemptAt);
-      // Exponential backoff: delay before retry, doubling each time
-      // Prevents overwhelming the API on transient failures
-      await Future.delayed(Duration(seconds: _backoffDelay));
-      _backoffDelay = (_backoffDelay * 2).clamp(
-        1,
-        AppConstants.maxBackoffDelay,
-      );
-    } finally {
-      _isFetchingBaseline = false;
-      if (ref.mounted) {
-        _drainPendingRefreshesOrScheduleTicks();
-      }
-    }
+  Future<World?> fetchWorldDetails(String worldId) {
+    return _fetchWorldDetailsInternal(worldId);
   }
 
-  Future<void> fetchBoostedGroupInstances({
-    bool bypassRateLimit = false,
-  }) async {
-    if (!_boostActive()) {
-      _reconcileBoostLoop();
-      return;
-    }
-
-    final isActive = await _ensureBoostActive();
-    if (!isActive) {
-      _reconcileBoostLoop();
-      return;
-    }
-
-    final groupId = state.boostedGroupId;
-    if (groupId == null) {
-      return;
-    }
-
-    if (!state.selectedGroupIds.contains(groupId)) {
-      await _clearBoost(persist: true, logExpired: false);
-      return;
-    }
-
-    final decision = resolveRefreshRequestDecision(
-      isInFlight: _isAnyFetchInFlight,
-    );
-    if (decision.shouldQueuePending) {
-      _boostLoop.queuePending(bypassRateLimit: bypassRateLimit);
-      AppLogger.debug(
-        'Fetch already in progress, queueing pending boost refresh',
-        subCategory: 'group_monitor',
-      );
-      if (state.boostedGroupId != null) {
-        AppLogger.debug(
-          'Boost poll skipped due to in-flight fetch for ${state.boostedGroupId}',
-          subCategory: 'group_monitor',
-        );
-      }
-      return;
-    }
-
-    _boostLoop.cancelTimer();
-
-    if (!bypassRateLimit) {
-      final coordinator = ref.read(apiRateLimitCoordinatorProvider);
-      final remaining = coordinator.remainingCooldown(
-        ApiRequestLane.groupBoost,
-      );
-      if (remaining != null) {
-        AppLogger.debug(
-          'Boost poll deferred due to cooldown'
-          ' (${remaining.inSeconds}s remaining)',
-          subCategory: 'group_monitor',
-        );
-        ref
-            .read(apiCallCounterProvider.notifier)
-            .incrementThrottledSkip(lane: ApiRequestLane.groupBoost);
-        _scheduleNextBoostTick(
-          overrideDelay: resolveCooldownAwareDelay(
-            remainingCooldown: remaining,
-            fallbackDelay: Duration(seconds: _nextBoostPollDelaySeconds()),
-          ),
-        );
-        return;
-      }
-    }
-
-    _isBoostFetching = true;
-    try {
-      _boostPollCount += 1;
-      final pollStart = DateTime.now();
-      AppLogger.debug(
-        'Boost poll #$_boostPollCount started for $groupId',
-        subCategory: 'group_monitor',
-      );
-
-      ref
-          .read(apiCallCounterProvider.notifier)
-          .incrementApiCall(lane: ApiRequestLane.groupBoost);
-      final api = ref.read(vrchatApiProvider);
-      final inviteService = ref.read(inviteServiceProvider);
-      final response = await api.rawApi
-          .getUsersApi()
-          .getUserGroupInstancesForGroup(
-            userId: arg,
-            groupId: groupId,
-            extra: apiRequestLaneExtra(ApiRequestLane.groupBoost),
-          )
-          .timeout(
-            const Duration(
-              seconds: AppConstants.groupInstancesRequestTimeoutSeconds,
-            ),
-          );
-      if (!ref.mounted) {
-        return;
-      }
-
-      final instances = response.data?.instances ?? [];
-      final fetchedAt = response.data?.fetchedAt;
-      final latencyMs = DateTime.now().difference(pollStart).inMilliseconds;
-      AppLogger.debug(
-        'Boost poll #$_boostPollCount for $groupId latency=${latencyMs}ms '
-        'instances=${instances.length}'
-        '${fetchedAt != null ? ' fetchedAt=$fetchedAt' : ''}',
-        subCategory: 'group_monitor',
-      );
-      final previousInstances = state.groupInstances[groupId] ?? [];
-      final previousGroupInstances = state.groupInstances;
-      final previousGroupErrors = state.groupErrors;
-      Duration? nextBoostFirstSeenAfter = state.boostFirstSeenAfter;
-      var didBoostFirstSeenChange = false;
-
-      if (!_boostFirstSeenLogged && instances.isNotEmpty) {
-        final startedAt = _boostStartedAt;
-        final delta = startedAt == null
-            ? null
-            : pollStart.difference(startedAt);
-        AppLogger.info(
-          'Boost first-seen for $groupId after '
-          '${delta ?? Duration.zero} (instances=${instances.length})',
-          subCategory: 'group_monitor',
-        );
-        _boostFirstSeenLogged = true;
-        nextBoostFirstSeenAfter = delta;
-        didBoostFirstSeenChange = state.boostFirstSeenAfter != delta;
-      }
-
-      if (_hasBaseline &&
-          state.autoInviteEnabled &&
-          previousInstances.isEmpty &&
-          instances.isNotEmpty) {
-        final target = _selectInviteTarget(instances, groupId);
-        if (target != null) {
-          await inviteService.inviteSelfToInstance(target.instance);
-        }
-      }
-
-      final merged = mergeFetchedGroupInstancesWithDiff(
-        groupId: groupId,
-        fetchedInstances: instances,
-        previousInstances: previousInstances,
-        detectedAt: pollStart,
-      );
-      final newInstances = merged.newInstances;
-      final mergedInstances = merged.effectiveInstances;
-
-      var didGroupInstancesChange = false;
-      Map<String, List<GroupInstanceWithGroup>> nextGroupInstances =
-          previousGroupInstances;
-      if (!identical(mergedInstances, previousInstances)) {
-        didGroupInstancesChange = true;
-        nextGroupInstances = Map<String, List<GroupInstanceWithGroup>>.from(
-          previousGroupInstances,
-        );
-        nextGroupInstances[groupId] = mergedInstances;
-      }
-
-      var didGroupErrorsChange = false;
-      Map<String, String> nextGroupErrors = previousGroupErrors;
-      if (previousGroupErrors.containsKey(groupId)) {
-        didGroupErrorsChange = true;
-        nextGroupErrors = Map<String, String>.from(previousGroupErrors);
-        nextGroupErrors.remove(groupId);
-      }
-
-      final nextNewestInstanceId = didGroupInstancesChange
-          ? newestInstanceIdFromGroupInstances(nextGroupInstances)
-          : state.newestInstanceId;
-      final didNewestChange = nextNewestInstanceId != state.newestInstanceId;
-      final didBoostDiagnosticsChange =
-          state.boostPollCount != _boostPollCount ||
-          state.lastBoostLatencyMs != latencyMs ||
-          state.lastBoostFetchedAt != fetchedAt;
-
-      if (didGroupInstancesChange ||
-          didNewestChange ||
-          didGroupErrorsChange ||
-          didBoostDiagnosticsChange ||
-          didBoostFirstSeenChange) {
-        state = state.copyWith(
-          groupInstances: nextGroupInstances,
-          newestInstanceId: nextNewestInstanceId,
-          groupErrors: nextGroupErrors,
-          boostPollCount: _boostPollCount,
-          lastBoostLatencyMs: latencyMs,
-          lastBoostFetchedAt: fetchedAt,
-          boostFirstSeenAfter: nextBoostFirstSeenAfter,
-        );
-      }
-
-      _hasBaseline = true;
-
-      if (newInstances.isNotEmpty) {
-        AppLogger.info(
-          'Found ${newInstances.length} new instances for boosted group',
-          subCategory: 'group_monitor',
-        );
-      }
-    } catch (e, s) {
-      AppLogger.error(
-        'Failed to fetch boosted group instances',
-        subCategory: 'group_monitor',
-        error: e,
-        stackTrace: s,
-      );
-      const errorMessage = 'Failed to fetch instances';
-      if (state.groupErrors[groupId] != errorMessage) {
-        final updatedGroupErrors = Map<String, String>.from(state.groupErrors);
-        updatedGroupErrors[groupId] = errorMessage;
-        state = state.copyWith(groupErrors: updatedGroupErrors);
-      }
-    } finally {
-      _isBoostFetching = false;
-      if (ref.mounted) {
-        _drainPendingRefreshesOrScheduleTicks();
-      }
-    }
-  }
-
-  Future<World?> fetchWorldDetails(String worldId) async {
-    try {
-      final api = ref.read(vrchatApiProvider);
-      final response = await api.rawApi.getWorldsApi().getWorld(
-        worldId: worldId,
-      );
-      return response.data;
-    } catch (e, s) {
-      AppLogger.error(
-        'Failed to fetch world details',
-        subCategory: 'group_monitor',
-        error: e,
-        stackTrace: s,
-      );
-      return null;
-    }
-  }
-
-  Future<void> clearSelectedGroups() async {
-    try {
-      await GroupMonitorStorage.clearSelectedGroups();
-      await _clearBoost(
-        persist: true,
-        logExpired: false,
-        requestBaselineRecovery: false,
-      );
-
-      state = state.copyWith(
-        selectedGroupIds: {},
-        groupInstances: {},
-        newestInstanceId: null,
-        boostedGroupId: null,
-        boostExpiresAt: null,
-        groupErrors: {},
-      );
-      _reconcileMonitoringForSelectionState();
-
-      AppLogger.debug(
-        'Cleared all selected groups from storage',
-        subCategory: 'group_monitor',
-      );
-    } catch (e) {
-      AppLogger.error(
-        'Failed to clear selected groups',
-        subCategory: 'group_monitor',
-        error: e,
-      );
-    }
-  }
+  Future<void> clearSelectedGroups() => _clearSelectedGroupsInternal();
 }
 
 final inviteServiceProvider = Provider<InviteService>((ref) {

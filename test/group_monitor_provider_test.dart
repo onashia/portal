@@ -600,11 +600,9 @@ void main() {
           'grp_alpha': resolvedAlpha,
           'grp_beta': resolvedBeta,
         };
-        final selectedGroupInstances = selectGroupInstancesForState(
-          didInstancesChange: didInstancesChange,
-          previousGroupInstances: previousGroupInstances,
-          nextGroupInstances: nextGroupInstances,
-        );
+        final selectedGroupInstances = didInstancesChange
+            ? nextGroupInstances
+            : previousGroupInstances;
 
         expect(didInstancesChange, isFalse);
         expect(identical(resolvedAlpha, previousAlpha), isTrue);
@@ -681,11 +679,9 @@ void main() {
           'grp_alpha': resolvedAlpha,
           'grp_beta': resolvedBeta,
         };
-        final selectedGroupInstances = selectGroupInstancesForState(
-          didInstancesChange: didInstancesChange,
-          previousGroupInstances: previousGroupInstances,
-          nextGroupInstances: nextGroupInstances,
-        );
+        final selectedGroupInstances = didInstancesChange
+            ? nextGroupInstances
+            : previousGroupInstances;
 
         expect(didInstancesChange, isTrue);
         expect(

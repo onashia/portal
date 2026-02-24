@@ -281,14 +281,6 @@ bool hasGroupInstanceKeyMismatch({
   return false;
 }
 
-Map<String, List<GroupInstanceWithGroup>> selectGroupInstancesForState({
-  required bool didInstancesChange,
-  required Map<String, List<GroupInstanceWithGroup>> previousGroupInstances,
-  required Map<String, List<GroupInstanceWithGroup>> nextGroupInstances,
-}) {
-  return didInstancesChange ? nextGroupInstances : previousGroupInstances;
-}
-
 Future<List<({String groupId, T? response})>> fetchGroupInstancesChunked<T>({
   required List<String> orderedGroupIds,
   required Future<T?> Function(String groupId) fetchGroupInstances,
