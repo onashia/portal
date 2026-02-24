@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:portal/models/group_calendar_event.dart';
 import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/api_rate_limit_provider.dart';
@@ -9,19 +8,7 @@ import 'package:portal/providers/group_calendar_provider.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
-
-class _TestAuthNotifier extends AuthNotifier {
-  _TestAuthNotifier(this._initialState);
-
-  final AuthState _initialState;
-
-  @override
-  AuthState build() => _initialState;
-
-  void setData(AuthState next) {
-    state = AsyncData(next);
-  }
-}
+import 'test_helpers/auth_test_harness.dart';
 
 class _TestGroupMonitorNotifier extends GroupMonitorNotifier {
   _TestGroupMonitorNotifier(this._initialState) : super('usr_test');
@@ -36,12 +23,34 @@ class _TestGroupMonitorNotifier extends GroupMonitorNotifier {
   }
 }
 
-class _MockCurrentUser extends Mock implements CurrentUser {}
-
-CurrentUser _mockCurrentUser(String id) {
-  final user = _MockCurrentUser();
-  when(() => user.id).thenReturn(id);
-  return user;
+({
+  ProviderContainer container,
+  TestAuthNotifier authNotifier,
+  _TestGroupMonitorNotifier monitorNotifier,
+  NotifierProvider<GroupCalendarNotifier, GroupCalendarState> provider,
+  GroupCalendarNotifier notifier,
+})
+createCalendarHarness({
+  required AuthState initialAuthState,
+  required GroupMonitorState initialMonitorState,
+  String userId = 'usr_test',
+}) {
+  final monitorNotifier = _TestGroupMonitorNotifier(initialMonitorState);
+  final authHarness = createAuthHarness(
+    initialAuthState: initialAuthState,
+    overrides: [
+      groupMonitorProvider(userId).overrideWith(() => monitorNotifier),
+    ],
+  );
+  final provider = groupCalendarProvider(userId);
+  final notifier = authHarness.container.read(provider.notifier);
+  return (
+    container: authHarness.container,
+    authNotifier: authHarness.authNotifier,
+    monitorNotifier: monitorNotifier,
+    provider: provider,
+    notifier: notifier,
+  );
 }
 
 void main() {
@@ -260,53 +269,31 @@ void main() {
     test(
       'does not keep a timer when session is eligible but no groups selected',
       () {
-        final container = ProviderContainer(
-          overrides: [
-            authProvider.overrideWith(
-              () => _TestAuthNotifier(
-                AuthState(
-                  status: AuthStatus.authenticated,
-                  currentUser: _mockCurrentUser('usr_test'),
-                ),
-              ),
-            ),
-            groupMonitorProvider('usr_test').overrideWith(
-              () => _TestGroupMonitorNotifier(
-                const GroupMonitorState(selectedGroupIds: <String>{}),
-              ),
-            ),
-          ],
+        final harness = createCalendarHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          initialMonitorState: const GroupMonitorState(
+            selectedGroupIds: <String>{},
+          ),
         );
+        final notifier = harness.notifier;
+        final container = harness.container;
         addTearDown(container.dispose);
-
-        final notifier = container.read(
-          groupCalendarProvider('usr_test').notifier,
-        );
 
         expect(notifier.hasActiveRefreshTimer, isFalse);
       },
     );
 
     test('refresh does not issue API calls when unauthenticated', () async {
-      final container = ProviderContainer(
-        overrides: [
-          authProvider.overrideWith(
-            () => _TestAuthNotifier(
-              const AuthState(status: AuthStatus.unauthenticated),
-            ),
-          ),
-          groupMonitorProvider('usr_test').overrideWith(
-            () => _TestGroupMonitorNotifier(
-              const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
-            ),
-          ),
-        ],
+      final harness = createCalendarHarness(
+        initialAuthState: unauthenticatedAuthState(),
+        initialMonitorState: const GroupMonitorState(
+          selectedGroupIds: {'grp_alpha'},
+        ),
       );
+      final notifier = harness.notifier;
+      final container = harness.container;
       addTearDown(container.dispose);
 
-      final notifier = container.read(
-        groupCalendarProvider('usr_test').notifier,
-      );
       await notifier.refresh();
 
       expect(container.read(apiCallCounterProvider).totalCalls, 0);
@@ -315,34 +302,23 @@ void main() {
     test(
       'refresh does not issue API calls when authenticated user id mismatches',
       () async {
-        final container = ProviderContainer(
-          overrides: [
-            authProvider.overrideWith(
-              () => _TestAuthNotifier(
-                AuthState(
-                  status: AuthStatus.authenticated,
-                  currentUser: _mockCurrentUser('usr_other'),
-                ),
-              ),
-            ),
-            groupMonitorProvider('usr_test').overrideWith(
-              () => _TestGroupMonitorNotifier(
-                const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
-              ),
-            ),
-          ],
+        final harness = createCalendarHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_other'),
+          initialMonitorState: const GroupMonitorState(
+            selectedGroupIds: {'grp_alpha'},
+          ),
         );
+        final container = harness.container;
+        final notifier = harness.notifier;
+        final provider = harness.provider;
         addTearDown(container.dispose);
         final subscription = container.listen<GroupCalendarState>(
-          groupCalendarProvider('usr_test'),
+          provider,
           (_, next) {},
           fireImmediately: true,
         );
         addTearDown(subscription.close);
 
-        final notifier = container.read(
-          groupCalendarProvider('usr_test').notifier,
-        );
         await notifier.refresh();
 
         expect(container.read(apiCallCounterProvider).totalCalls, 0);
@@ -350,23 +326,13 @@ void main() {
     );
 
     test('automatic refresh is deferred during calendar cooldown', () async {
-      final container = ProviderContainer(
-        overrides: [
-          authProvider.overrideWith(
-            () => _TestAuthNotifier(
-              AuthState(
-                status: AuthStatus.authenticated,
-                currentUser: _mockCurrentUser('usr_test'),
-              ),
-            ),
-          ),
-          groupMonitorProvider('usr_test').overrideWith(
-            () => _TestGroupMonitorNotifier(
-              const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
-            ),
-          ),
-        ],
+      final harness = createCalendarHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        initialMonitorState: const GroupMonitorState(
+          selectedGroupIds: {'grp_alpha'},
+        ),
       );
+      final container = harness.container;
       addTearDown(container.dispose);
 
       container
@@ -376,7 +342,6 @@ void main() {
             retryAfter: const Duration(seconds: 60),
           );
 
-      container.read(groupCalendarProvider('usr_test').notifier);
       await Future<void>.delayed(const Duration(milliseconds: 40));
 
       expect(container.read(apiCallCounterProvider).totalCalls, 0);
@@ -387,23 +352,14 @@ void main() {
     });
 
     test('manual refresh bypasses calendar cooldown', () async {
-      final container = ProviderContainer(
-        overrides: [
-          authProvider.overrideWith(
-            () => _TestAuthNotifier(
-              AuthState(
-                status: AuthStatus.authenticated,
-                currentUser: _mockCurrentUser('usr_test'),
-              ),
-            ),
-          ),
-          groupMonitorProvider('usr_test').overrideWith(
-            () => _TestGroupMonitorNotifier(
-              const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
-            ),
-          ),
-        ],
+      final harness = createCalendarHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        initialMonitorState: const GroupMonitorState(
+          selectedGroupIds: {'grp_alpha'},
+        ),
       );
+      final container = harness.container;
+      final notifier = harness.notifier;
       addTearDown(container.dispose);
 
       container
@@ -413,32 +369,20 @@ void main() {
             retryAfter: const Duration(seconds: 60),
           );
 
-      final notifier = container.read(
-        groupCalendarProvider('usr_test').notifier,
-      );
       await notifier.refresh(bypassRateLimit: true);
 
       expect(container.read(apiCallCounterProvider).totalCalls, greaterThan(0));
     });
 
     test('selection refresh debounce collapses rapid bursts', () async {
-      final container = ProviderContainer(
-        overrides: [
-          authProvider.overrideWith(
-            () => _TestAuthNotifier(
-              AuthState(
-                status: AuthStatus.authenticated,
-                currentUser: _mockCurrentUser('usr_test'),
-              ),
-            ),
-          ),
-          groupMonitorProvider('usr_test').overrideWith(
-            () => _TestGroupMonitorNotifier(
-              const GroupMonitorState(selectedGroupIds: <String>{}),
-            ),
-          ),
-        ],
+      final harness = createCalendarHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        initialMonitorState: const GroupMonitorState(
+          selectedGroupIds: <String>{},
+        ),
       );
+      final container = harness.container;
+      final monitorNotifier = harness.monitorNotifier;
       addTearDown(container.dispose);
 
       container
@@ -447,11 +391,6 @@ void main() {
             ApiRequestLane.calendar,
             retryAfter: const Duration(seconds: 60),
           );
-
-      container.read(groupCalendarProvider('usr_test').notifier);
-      final monitorNotifier =
-          container.read(groupMonitorProvider('usr_test').notifier)
-              as _TestGroupMonitorNotifier;
 
       monitorNotifier.setData(
         const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
@@ -471,40 +410,23 @@ void main() {
     test(
       'refresh timer is cancelled when auth becomes unauthenticated',
       () async {
-        final container = ProviderContainer(
-          overrides: [
-            authProvider.overrideWith(
-              () => _TestAuthNotifier(
-                AuthState(
-                  status: AuthStatus.authenticated,
-                  currentUser: _mockCurrentUser('usr_test'),
-                ),
-              ),
-            ),
-            groupMonitorProvider('usr_test').overrideWith(
-              () => _TestGroupMonitorNotifier(
-                const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
-              ),
-            ),
-          ],
+        final harness = createCalendarHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          initialMonitorState: const GroupMonitorState(
+            selectedGroupIds: {'grp_alpha'},
+          ),
         );
+        final authNotifier = harness.authNotifier;
+        final container = harness.container;
+        final notifier = harness.notifier;
+        final provider = harness.provider;
         addTearDown(container.dispose);
-
-        final notifier = container.read(
-          groupCalendarProvider('usr_test').notifier,
-        );
-        final authNotifier =
-            container.read(authProvider.notifier) as _TestAuthNotifier;
         await Future<void>.delayed(Duration.zero);
         notifier.requestRefresh(immediate: false);
 
-        authNotifier.setData(
-          const AuthState(status: AuthStatus.unauthenticated),
-        );
+        authNotifier.setData(unauthenticatedAuthState());
         await Future<void>.delayed(const Duration(milliseconds: 20));
-        final latestNotifier = container.read(
-          groupCalendarProvider('usr_test').notifier,
-        );
+        final latestNotifier = container.read(provider.notifier);
         expect(latestNotifier.hasActiveRefreshTimer, isFalse);
       },
     );
@@ -512,27 +434,17 @@ void main() {
     test(
       'repeated empty-selection refreshes are a no-op after first clear',
       () async {
-        final container = ProviderContainer(
-          overrides: [
-            authProvider.overrideWith(
-              () => _TestAuthNotifier(
-                AuthState(
-                  status: AuthStatus.authenticated,
-                  currentUser: _mockCurrentUser('usr_test'),
-                ),
-              ),
-            ),
-            groupMonitorProvider('usr_test').overrideWith(
-              () => _TestGroupMonitorNotifier(
-                const GroupMonitorState(selectedGroupIds: <String>{}),
-              ),
-            ),
-          ],
+        final harness = createCalendarHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          initialMonitorState: const GroupMonitorState(
+            selectedGroupIds: <String>{},
+          ),
         );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
 
-        final provider = groupCalendarProvider('usr_test');
-        final notifier = container.read(provider.notifier);
         await notifier.refresh();
         final afterFirst = container.read(provider);
 
@@ -547,23 +459,14 @@ void main() {
     test(
       'manual refresh queued during in-flight fetch preserves bypass intent',
       () async {
-        final container = ProviderContainer(
-          overrides: [
-            authProvider.overrideWith(
-              () => _TestAuthNotifier(
-                AuthState(
-                  status: AuthStatus.authenticated,
-                  currentUser: _mockCurrentUser('usr_test'),
-                ),
-              ),
-            ),
-            groupMonitorProvider('usr_test').overrideWith(
-              () => _TestGroupMonitorNotifier(
-                const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
-              ),
-            ),
-          ],
+        final harness = createCalendarHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          initialMonitorState: const GroupMonitorState(
+            selectedGroupIds: {'grp_alpha'},
+          ),
         );
+        final container = harness.container;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
 
         container
@@ -572,10 +475,6 @@ void main() {
               ApiRequestLane.calendar,
               retryAfter: const Duration(seconds: 60),
             );
-
-        final notifier = container.read(
-          groupCalendarProvider('usr_test').notifier,
-        );
 
         final fetchFuture = notifier.refresh();
         await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -593,23 +492,14 @@ void main() {
     test(
       'direct refresh call during in-flight fetch preserves bypass intent',
       () async {
-        final container = ProviderContainer(
-          overrides: [
-            authProvider.overrideWith(
-              () => _TestAuthNotifier(
-                AuthState(
-                  status: AuthStatus.authenticated,
-                  currentUser: _mockCurrentUser('usr_test'),
-                ),
-              ),
-            ),
-            groupMonitorProvider('usr_test').overrideWith(
-              () => _TestGroupMonitorNotifier(
-                const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
-              ),
-            ),
-          ],
+        final harness = createCalendarHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          initialMonitorState: const GroupMonitorState(
+            selectedGroupIds: {'grp_alpha'},
+          ),
         );
+        final container = harness.container;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
 
         container
@@ -618,10 +508,6 @@ void main() {
               ApiRequestLane.calendar,
               retryAfter: const Duration(seconds: 60),
             );
-
-        final notifier = container.read(
-          groupCalendarProvider('usr_test').notifier,
-        );
 
         final fetchFuture = notifier.refresh();
         await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -639,23 +525,14 @@ void main() {
     test(
       'multiple queued refreshes accumulate bypass flag correctly',
       () async {
-        final container = ProviderContainer(
-          overrides: [
-            authProvider.overrideWith(
-              () => _TestAuthNotifier(
-                AuthState(
-                  status: AuthStatus.authenticated,
-                  currentUser: _mockCurrentUser('usr_test'),
-                ),
-              ),
-            ),
-            groupMonitorProvider('usr_test').overrideWith(
-              () => _TestGroupMonitorNotifier(
-                const GroupMonitorState(selectedGroupIds: {'grp_alpha'}),
-              ),
-            ),
-          ],
+        final harness = createCalendarHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          initialMonitorState: const GroupMonitorState(
+            selectedGroupIds: {'grp_alpha'},
+          ),
         );
+        final container = harness.container;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
 
         container
@@ -664,10 +541,6 @@ void main() {
               ApiRequestLane.calendar,
               retryAfter: const Duration(seconds: 60),
             );
-
-        final notifier = container.read(
-          groupCalendarProvider('usr_test').notifier,
-        );
 
         final fetchFuture = notifier.refresh();
         await Future<void>.delayed(const Duration(milliseconds: 50));
