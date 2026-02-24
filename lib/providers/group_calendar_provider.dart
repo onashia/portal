@@ -438,22 +438,15 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
         didDataChange: selectedData.didDataChange,
       );
       if (shouldEmitState) {
-        if (selectedData.didDataChange) {
-          state = state.copyWith(
-            eventsByGroup: selectedData.effectiveEventsByGroup,
-            todayEvents: selectedData.effectiveTodayEvents,
-            groupErrors: selectedData.effectiveGroupErrors,
-            isLoading: false,
-            lastDataChangedAt: DateTime.now(),
-          );
-        } else {
-          state = state.copyWith(
-            eventsByGroup: selectedData.effectiveEventsByGroup,
-            todayEvents: selectedData.effectiveTodayEvents,
-            groupErrors: selectedData.effectiveGroupErrors,
-            isLoading: false,
-          );
-        }
+        state = state.copyWith(
+          eventsByGroup: selectedData.effectiveEventsByGroup,
+          todayEvents: selectedData.effectiveTodayEvents,
+          groupErrors: selectedData.effectiveGroupErrors,
+          isLoading: false,
+          lastDataChangedAt: selectedData.didDataChange
+              ? DateTime.now()
+              : state.lastDataChangedAt,
+        );
       }
     } catch (e, s) {
       AppLogger.error(
