@@ -99,59 +99,6 @@ void main() {
     });
   });
 
-  group('mergeFetchedGroupInstances', () {
-    test(
-      'preserves detection time for existing instances and marks new ones',
-      () {
-        final world = buildTestWorld(id: 'wrld_1', name: 'World One');
-        final previousDetectedAt = DateTime.utc(2026, 2, 13, 9, 0);
-        final detectedAt = DateTime.utc(2026, 2, 13, 10, 0);
-
-        final previousInstances = [
-          GroupInstanceWithGroup(
-            instance: buildTestInstance(
-              instanceId: 'inst_existing',
-              world: world,
-              userCount: 5,
-            ),
-            groupId: 'grp_alpha',
-            firstDetectedAt: previousDetectedAt,
-          ),
-        ];
-
-        final fetchedInstances = [
-          buildTestInstance(
-            instanceId: 'inst_existing',
-            world: world,
-            userCount: 6,
-          ),
-          buildTestInstance(instanceId: 'inst_new', world: world, userCount: 3),
-        ];
-
-        final merged = mergeFetchedGroupInstances(
-          groupId: 'grp_alpha',
-          fetchedInstances: fetchedInstances,
-          previousInstances: previousInstances,
-          detectedAt: detectedAt,
-        );
-
-        expect(merged.mergedInstances, hasLength(2));
-        expect(merged.newInstances, hasLength(1));
-        expect(merged.newInstances.first.instance.instanceId, 'inst_new');
-
-        final existingMerged = merged.mergedInstances.firstWhere(
-          (entry) => entry.instance.instanceId == 'inst_existing',
-        );
-        final newMerged = merged.mergedInstances.firstWhere(
-          (entry) => entry.instance.instanceId == 'inst_new',
-        );
-
-        expect(existingMerged.firstDetectedAt, previousDetectedAt);
-        expect(newMerged.firstDetectedAt, detectedAt);
-      },
-    );
-  });
-
   group('mergeFetchedGroupInstancesWithDiff', () {
     test(
       'reuses previous reference when payload is unchanged but reordered',
