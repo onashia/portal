@@ -1,3 +1,6 @@
+/// Checks if two lists are equivalent using default or custom equality.
+///
+/// Uses default `==` equality unless [equals] is provided.
 bool areListsEquivalent<T>(
   List<T>? previous,
   List<T>? next, {
@@ -24,7 +27,9 @@ bool areListsEquivalent<T>(
 
 /// Checks if two maps are equivalent using default or custom equality.
 ///
-/// Note: If [V] is nullable, missing keys and null values are not distinguishable.
+/// Note: If [V] is nullable, function cannot correctly compare maps
+/// containing null values - it will return false when both maps have the same
+/// key with a null value.
 bool areMapsEquivalent<K, V>(
   Map<K, V> previous,
   Map<K, V> next, {
@@ -52,6 +57,7 @@ bool areMapsEquivalent<K, V>(
   return true;
 }
 
+/// Convenience wrapper for comparing maps with string keys and string values.
 bool areStringMapsEquivalent(
   Map<String, String> previous,
   Map<String, String> next,
