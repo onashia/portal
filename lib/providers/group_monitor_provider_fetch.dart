@@ -2,7 +2,337 @@
 
 part of 'group_monitor_provider.dart';
 
+typedef FetchContext = ({List<String> selectedGroupIds, DateTime attemptAt});
+
+typedef FetchExecutionResult = ({
+  dynamic api,
+  InviteService inviteService,
+  Map<String, List<GroupInstanceWithGroup>> previousGroupInstances,
+  Map<String, String> previousGroupErrors,
+  Map<String, List<GroupInstanceWithGroup>> newGroupInstances,
+  Map<String, String> newGroupErrors,
+  GroupInstanceWithGroup? newestInstance,
+  bool didInstancesChange,
+  List<({String groupId, dynamic response})> responses,
+  bool isMounted,
+});
+
+typedef FetchProcessingResult = ({
+  List<GroupInstanceWithGroup> newInstances,
+  Map<String, List<GroupInstanceWithGroup>> groupInstances,
+  GroupInstanceWithGroup? newestInstance,
+  bool didInstancesChange,
+});
+
 extension GroupMonitorFetchExtension on GroupMonitorNotifier {
+  String? _validateFetchPreconditions({
+    required DateTime attemptAt,
+    required bool bypassRateLimit,
+  }) {
+    if (!_baselineActive()) {
+      AppLogger.debug(
+        'Skipping instance fetch for inactive baseline loop',
+        subCategory: 'group_monitor',
+      );
+      _recordBaselineSkip('inactive', attemptAt);
+      _reconcileBaselineLoop();
+      return 'inactive';
+    }
+
+    final decision = resolveRefreshRequestDecision(
+      isInFlight: _isAnyFetchInFlight,
+    );
+    if (decision.shouldQueuePending) {
+      _baselineLoop.queuePending(bypassRateLimit: bypassRateLimit);
+      AppLogger.debug(
+        'Fetch already in progress, queueing pending baseline refresh',
+        subCategory: 'group_monitor',
+      );
+      _recordBaselineSkip('in_flight_queue', attemptAt);
+      return 'in_flight_queue';
+    }
+
+    return null;
+  }
+
+  FetchContext? _prepareFetchContext({
+    required DateTime attemptAt,
+    required bool bypassRateLimit,
+  }) {
+    final selectedGroupIdSet = state.selectedGroupIds;
+    final selectedGroupIds = selectedGroupIdSet.toList(growable: true);
+    if (state.isBoostActive && state.boostedGroupId != null) {
+      selectedGroupIds.remove(state.boostedGroupId);
+    }
+    selectedGroupIds.sort();
+    if (selectedGroupIds.isEmpty) {
+      AppLogger.debug(
+        'No non-boost groups selected, skipping baseline fetch',
+        subCategory: 'group_monitor',
+      );
+      _recordBaselineSkip('no_targets', attemptAt);
+      _scheduleNextBaselineTick();
+      return null;
+    }
+
+    if (RefreshCooldownHandler.shouldDeferForCooldown(
+      ref: ref,
+      bypassRateLimit: bypassRateLimit,
+      lane: ApiRequestLane.groupBaseline,
+      logContext: 'group_monitor',
+      fallbackDelay: Duration(seconds: _nextPollDelaySeconds()),
+      onDefer: (delay) {
+        _recordBaselineSkip('cooldown', attemptAt);
+        _scheduleNextBaselineTick(overrideDelay: delay);
+      },
+    )) {
+      return null;
+    }
+
+    return (selectedGroupIds: selectedGroupIds, attemptAt: attemptAt);
+  }
+
+  Future<FetchExecutionResult> _executeChunkedFetch(
+    FetchContext context,
+  ) async {
+    AppLogger.debug(
+      'Fetching instances for ${context.selectedGroupIds.length} groups',
+      subCategory: 'group_monitor',
+    );
+
+    final api = ref.read(vrchatApiProvider);
+    final inviteService = ref.read(inviteServiceProvider);
+    final previousGroupInstances = state.groupInstances;
+    final previousGroupErrors = state.groupErrors;
+    final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
+    final newGroupErrors = <String, String>{};
+    GroupInstanceWithGroup? newestInstance;
+    final selectedGroupIdSet = state.selectedGroupIds;
+    final excludedGroupIds = selectedGroupIdSet.difference(
+      context.selectedGroupIds.toSet(),
+    );
+    for (final excludedGroupId in excludedGroupIds) {
+      final previousInstances = previousGroupInstances[excludedGroupId] ?? [];
+      newGroupInstances[excludedGroupId] = previousInstances;
+      for (final previous in previousInstances) {
+        newestInstance = pickNewestInstance(newestInstance, previous);
+      }
+
+      final previousError = previousGroupErrors[excludedGroupId];
+      if (previousError != null) {
+        newGroupErrors[excludedGroupId] = previousError;
+      }
+    }
+    final didInstancesChange = hasGroupInstanceKeyMismatch(
+      selectedGroupIds: selectedGroupIdSet,
+      groupInstances: previousGroupInstances,
+    );
+
+    final responses = await fetchGroupInstancesChunked(
+      orderedGroupIds: context.selectedGroupIds,
+      maxConcurrentRequests: AppConstants.groupInstancesMaxConcurrentRequests,
+      fetchGroupInstances: (groupId) async {
+        ref
+            .read(apiCallCounterProvider.notifier)
+            .incrementApiCall(lane: ApiRequestLane.groupBaseline);
+        try {
+          return await api.rawApi
+              .getUsersApi()
+              .getUserGroupInstancesForGroup(
+                userId: arg,
+                groupId: groupId,
+                extra: apiRequestLaneExtra(ApiRequestLane.groupBaseline),
+              )
+              .timeout(
+                const Duration(
+                  seconds: AppConstants.groupInstancesRequestTimeoutSeconds,
+                ),
+              );
+        } catch (e, s) {
+          AppLogger.error(
+            'Failed to fetch instances for group $groupId',
+            subCategory: 'group_monitor',
+            error: e,
+            stackTrace: s,
+          );
+          return null;
+        }
+      },
+    );
+    if (!ref.mounted) {
+      return (
+        api: api,
+        inviteService: inviteService,
+        previousGroupInstances: previousGroupInstances,
+        previousGroupErrors: previousGroupErrors,
+        newGroupInstances: newGroupInstances,
+        newGroupErrors: newGroupErrors,
+        newestInstance: newestInstance,
+        didInstancesChange: didInstancesChange,
+        responses: responses,
+        isMounted: false,
+      );
+    }
+
+    return (
+      api: api,
+      inviteService: inviteService,
+      previousGroupInstances: previousGroupInstances,
+      previousGroupErrors: previousGroupErrors,
+      newGroupInstances: newGroupInstances,
+      newGroupErrors: newGroupErrors,
+      newestInstance: newestInstance,
+      didInstancesChange: didInstancesChange,
+      responses: responses,
+      isMounted: true,
+    );
+  }
+
+  Future<FetchProcessingResult> _processFetchResponses(
+    FetchExecutionResult executionResult,
+    FetchContext context,
+  ) async {
+    final responses = executionResult.responses;
+    final previousGroupInstances = executionResult.previousGroupInstances;
+    final newInstances = <GroupInstanceWithGroup>[];
+    final inviteTargets = <GroupInstanceWithGroup>[];
+    var newestInstance = executionResult.newestInstance;
+    var didInstancesChange = executionResult.didInstancesChange;
+    final newGroupInstances = executionResult.newGroupInstances;
+    final newGroupErrors = executionResult.newGroupErrors;
+
+    for (final groupResponse in responses) {
+      final groupId = groupResponse.groupId;
+      final response = groupResponse.response;
+      final previousInstances = previousGroupInstances[groupId] ?? [];
+
+      if (response == null) {
+        AppLogger.error(
+          'Failed to fetch instances for group $groupId',
+          subCategory: 'group_monitor',
+        );
+        newGroupErrors[groupId] = 'Failed to fetch instances';
+        newGroupInstances[groupId] = previousInstances;
+        for (final previous in previousInstances) {
+          newestInstance = pickNewestInstance(newestInstance, previous);
+        }
+        continue;
+      }
+
+      final instances = response.data?.instances ?? [];
+
+      AppLogger.debug(
+        'Group returned ${instances.length} instances',
+        subCategory: 'group_monitor',
+      );
+
+      if (_hasBaseline &&
+          state.isMonitoring &&
+          state.autoInviteEnabled &&
+          previousInstances.isEmpty &&
+          instances.isNotEmpty) {
+        final target = _selectInviteTarget(instances, groupId);
+        if (target != null) {
+          inviteTargets.add(target);
+        }
+      }
+
+      final merged = mergeFetchedGroupInstancesWithDiff(
+        groupId: groupId,
+        fetchedInstances: instances,
+        previousInstances: previousInstances,
+        detectedAt: context.attemptAt,
+      );
+      newInstances.addAll(merged.newInstances);
+      if (merged.didChange) {
+        didInstancesChange = true;
+      }
+      final effectiveInstances = merged.effectiveInstances;
+      newGroupInstances[groupId] = effectiveInstances;
+      for (final mergedInstance in effectiveInstances) {
+        newestInstance = pickNewestInstance(newestInstance, mergedInstance);
+      }
+    }
+
+    if (inviteTargets.isNotEmpty) {
+      for (final target in inviteTargets) {
+        await executionResult.inviteService.inviteSelfToInstance(
+          target.instance,
+        );
+      }
+    }
+
+    return (
+      newInstances: newInstances,
+      groupInstances: newGroupInstances,
+      newestInstance: newestInstance,
+      didInstancesChange: didInstancesChange,
+    );
+  }
+
+  void _finalizeFetch(
+    FetchProcessingResult processingResult,
+    FetchExecutionResult executionResult,
+    FetchContext context,
+  ) {
+    final nextNewestInstanceId =
+        processingResult.newestInstance?.instance.instanceId;
+    final nextGroupInstances = processingResult.didInstancesChange
+        ? processingResult.groupInstances
+        : executionResult.previousGroupInstances;
+    final didErrorsChange = !collection_eq.areStringMapsEquivalent(
+      executionResult.previousGroupErrors,
+      executionResult.newGroupErrors,
+    );
+    final didNewestChange = state.newestInstanceId != nextNewestInstanceId;
+    final totalInstances = nextGroupInstances.values.fold<int>(
+      0,
+      (sum, instances) => sum + instances.length,
+    );
+
+    if (processingResult.didInstancesChange ||
+        didErrorsChange ||
+        didNewestChange) {
+      state = state.copyWith(
+        groupInstances: nextGroupInstances,
+        newestInstanceId: nextNewestInstanceId,
+        groupErrors: didErrorsChange
+            ? executionResult.newGroupErrors
+            : executionResult.previousGroupErrors,
+      );
+    }
+
+    _hasBaseline = true;
+    _recordBaselineSuccess(
+      polledGroupCount: context.selectedGroupIds.length,
+      totalInstances: totalInstances,
+    );
+    _backoffDelay = 1;
+
+    if (processingResult.newInstances.isNotEmpty) {
+      AppLogger.info(
+        'Found ${processingResult.newInstances.length} new instances',
+        subCategory: 'group_monitor',
+      );
+    }
+  }
+
+  Future<void> _handleFetchError(
+    Object e,
+    StackTrace s,
+    DateTime attemptAt,
+  ) async {
+    AppLogger.error(
+      'Failed to fetch group instances',
+      subCategory: 'group_monitor',
+      error: e,
+      stackTrace: s,
+    );
+    _recordBaselineSkip('error', attemptAt);
+    await Future.delayed(Duration(seconds: _backoffDelay));
+    _backoffDelay = (_backoffDelay * 2).clamp(1, AppConstants.maxBackoffDelay);
+  }
+
   Future<void> _fetchUserGroupsInternal() async {
     if (_isFetchingGroups) {
       AppLogger.debug(
@@ -137,242 +467,37 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     final attemptAt = DateTime.now();
     _recordBaselineAttempt(attemptAt);
 
-    if (!_baselineActive()) {
-      AppLogger.debug(
-        'Skipping instance fetch for inactive baseline loop',
-        subCategory: 'group_monitor',
-      );
-      _recordBaselineSkip('inactive', attemptAt);
-      _reconcileBaselineLoop();
-      return;
-    }
-
-    final decision = resolveRefreshRequestDecision(
-      isInFlight: _isAnyFetchInFlight,
-    );
-    if (decision.shouldQueuePending) {
-      _baselineLoop.queuePending(bypassRateLimit: bypassRateLimit);
-      AppLogger.debug(
-        'Fetch already in progress, queueing pending baseline refresh',
-        subCategory: 'group_monitor',
-      );
-      _recordBaselineSkip('in_flight_queue', attemptAt);
+    if (_validateFetchPreconditions(
+          attemptAt: attemptAt,
+          bypassRateLimit: bypassRateLimit,
+        ) !=
+        null) {
       return;
     }
 
     _baselineLoop.cancelTimer();
 
-    final selectedGroupIdSet = state.selectedGroupIds;
-    final selectedGroupIds = selectedGroupIdSet.toList(growable: true);
-    if (state.isBoostActive && state.boostedGroupId != null) {
-      selectedGroupIds.remove(state.boostedGroupId);
-    }
-    selectedGroupIds.sort();
-    if (selectedGroupIds.isEmpty) {
-      AppLogger.debug(
-        'No non-boost groups selected, skipping baseline fetch',
-        subCategory: 'group_monitor',
-      );
-      _recordBaselineSkip('no_targets', attemptAt);
-      _scheduleNextBaselineTick();
-      return;
-    }
-
-    if (RefreshCooldownHandler.shouldDeferForCooldown(
-      ref: ref,
+    final context = _prepareFetchContext(
+      attemptAt: attemptAt,
       bypassRateLimit: bypassRateLimit,
-      lane: ApiRequestLane.groupBaseline,
-      logContext: 'group_monitor',
-      fallbackDelay: Duration(seconds: _nextPollDelaySeconds()),
-      onDefer: (delay) {
-        _recordBaselineSkip('cooldown', attemptAt);
-        _scheduleNextBaselineTick(overrideDelay: delay);
-      },
-    )) {
+    );
+    if (context == null) {
       return;
     }
 
     _isFetchingBaseline = true;
     try {
-      AppLogger.debug(
-        'Fetching instances for ${selectedGroupIds.length} groups',
-        subCategory: 'group_monitor',
-      );
-
-      final api = ref.read(vrchatApiProvider);
-      final inviteService = ref.read(inviteServiceProvider);
-      final previousGroupInstances = state.groupInstances;
-      final previousGroupErrors = state.groupErrors;
-      final newInstances = <GroupInstanceWithGroup>[];
-      final inviteTargets = <GroupInstanceWithGroup>[];
-      final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
-      final newGroupErrors = <String, String>{};
-      GroupInstanceWithGroup? newestInstance;
-      final excludedGroupIds = selectedGroupIdSet.difference(
-        selectedGroupIds.toSet(),
-      );
-      for (final excludedGroupId in excludedGroupIds) {
-        final previousInstances = previousGroupInstances[excludedGroupId] ?? [];
-        newGroupInstances[excludedGroupId] = previousInstances;
-        for (final previous in previousInstances) {
-          newestInstance = pickNewestInstance(newestInstance, previous);
-        }
-
-        final previousError = previousGroupErrors[excludedGroupId];
-        if (previousError != null) {
-          newGroupErrors[excludedGroupId] = previousError;
-        }
-      }
-      var didInstancesChange = hasGroupInstanceKeyMismatch(
-        selectedGroupIds: selectedGroupIdSet,
-        groupInstances: previousGroupInstances,
-      );
-
-      final responses = await fetchGroupInstancesChunked(
-        orderedGroupIds: selectedGroupIds,
-        maxConcurrentRequests: AppConstants.groupInstancesMaxConcurrentRequests,
-        fetchGroupInstances: (groupId) async {
-          ref
-              .read(apiCallCounterProvider.notifier)
-              .incrementApiCall(lane: ApiRequestLane.groupBaseline);
-          try {
-            return await api.rawApi
-                .getUsersApi()
-                .getUserGroupInstancesForGroup(
-                  userId: arg,
-                  groupId: groupId,
-                  extra: apiRequestLaneExtra(ApiRequestLane.groupBaseline),
-                )
-                .timeout(
-                  const Duration(
-                    seconds: AppConstants.groupInstancesRequestTimeoutSeconds,
-                  ),
-                );
-          } catch (e, s) {
-            AppLogger.error(
-              'Failed to fetch instances for group $groupId',
-              subCategory: 'group_monitor',
-              error: e,
-              stackTrace: s,
-            );
-            return null;
-          }
-        },
-      );
-      if (!ref.mounted) {
+      final executionResult = await _executeChunkedFetch(context);
+      if (!executionResult.isMounted) {
         return;
       }
-
-      for (final groupResponse in responses) {
-        final groupId = groupResponse.groupId;
-        final response = groupResponse.response;
-        final previousInstances = previousGroupInstances[groupId] ?? [];
-
-        if (response == null) {
-          AppLogger.error(
-            'Failed to fetch instances for group',
-            subCategory: 'group_monitor',
-          );
-          newGroupErrors[groupId] = 'Failed to fetch instances';
-          newGroupInstances[groupId] = previousInstances;
-          for (final previous in previousInstances) {
-            newestInstance = pickNewestInstance(newestInstance, previous);
-          }
-          continue;
-        }
-
-        final instances = response.data?.instances ?? [];
-
-        AppLogger.debug(
-          'Group returned ${instances.length} instances',
-          subCategory: 'group_monitor',
-        );
-
-        if (_hasBaseline &&
-            state.isMonitoring &&
-            state.autoInviteEnabled &&
-            previousInstances.isEmpty &&
-            instances.isNotEmpty) {
-          final target = _selectInviteTarget(instances, groupId);
-          if (target != null) {
-            inviteTargets.add(target);
-          }
-        }
-
-        final merged = mergeFetchedGroupInstancesWithDiff(
-          groupId: groupId,
-          fetchedInstances: instances,
-          previousInstances: previousInstances,
-          detectedAt: attemptAt,
-        );
-        newInstances.addAll(merged.newInstances);
-        if (merged.didChange) {
-          didInstancesChange = true;
-        }
-        final effectiveInstances = merged.effectiveInstances;
-        newGroupInstances[groupId] = effectiveInstances;
-        for (final mergedInstance in effectiveInstances) {
-          newestInstance = pickNewestInstance(newestInstance, mergedInstance);
-        }
-      }
-
-      if (inviteTargets.isNotEmpty) {
-        for (final target in inviteTargets) {
-          await inviteService.inviteSelfToInstance(target.instance);
-        }
-      }
-
-      final nextNewestInstanceId = newestInstance?.instance.instanceId;
-      final nextGroupInstances = didInstancesChange
-          ? newGroupInstances
-          : previousGroupInstances;
-      final didErrorsChange = !collection_eq.areStringMapsEquivalent(
-        previousGroupErrors,
-        newGroupErrors,
+      final processingResult = await _processFetchResponses(
+        executionResult,
+        context,
       );
-      final didNewestChange = state.newestInstanceId != nextNewestInstanceId;
-      final totalInstances = nextGroupInstances.values.fold<int>(
-        0,
-        (sum, instances) => sum + instances.length,
-      );
-
-      if (didInstancesChange || didErrorsChange || didNewestChange) {
-        state = state.copyWith(
-          groupInstances: nextGroupInstances,
-          newestInstanceId: nextNewestInstanceId,
-          groupErrors: didErrorsChange ? newGroupErrors : previousGroupErrors,
-        );
-      }
-
-      _hasBaseline = true;
-      _recordBaselineSuccess(
-        polledGroupCount: selectedGroupIds.length,
-        totalInstances: totalInstances,
-      );
-      // Reset backoff on successful fetch.
-      _backoffDelay = 1;
-
-      if (newInstances.isNotEmpty) {
-        AppLogger.info(
-          'Found ${newInstances.length} new instances',
-          subCategory: 'group_monitor',
-        );
-      }
+      _finalizeFetch(processingResult, executionResult, context);
     } catch (e, s) {
-      AppLogger.error(
-        'Failed to fetch group instances',
-        subCategory: 'group_monitor',
-        error: e,
-        stackTrace: s,
-      );
-      _recordBaselineSkip('error', attemptAt);
-      // Exponential backoff: delay before retry, doubling each time.
-      // Prevents overwhelming the API on transient failures.
-      await Future.delayed(Duration(seconds: _backoffDelay));
-      _backoffDelay = (_backoffDelay * 2).clamp(
-        1,
-        AppConstants.maxBackoffDelay,
-      );
+      await _handleFetchError(e, s, attemptAt);
     } finally {
       _isFetchingBaseline = false;
       if (ref.mounted) {
