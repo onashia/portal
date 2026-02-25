@@ -178,29 +178,18 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       return;
     }
 
-    if (!bypassRateLimit) {
-      final coordinator = ref.read(apiRateLimitCoordinatorProvider);
-      final remaining = coordinator.remainingCooldown(
-        ApiRequestLane.groupBaseline,
-      );
-      if (remaining != null) {
-        AppLogger.debug(
-          'Baseline poll deferred due to cooldown'
-          ' (${remaining.inSeconds}s remaining)',
-          subCategory: 'group_monitor',
-        );
-        ref
-            .read(apiCallCounterProvider.notifier)
-            .incrementThrottledSkip(lane: ApiRequestLane.groupBaseline);
+    if (RefreshCooldownHandler.shouldDeferForCooldown(
+      ref: ref,
+      bypassRateLimit: bypassRateLimit,
+      lane: ApiRequestLane.groupBaseline,
+      logContext: 'group_monitor',
+      fallbackDelay: Duration(seconds: _nextPollDelaySeconds()),
+      onDefer: (delay) {
         _recordBaselineSkip('cooldown', attemptAt);
-        _scheduleNextBaselineTick(
-          overrideDelay: resolveCooldownAwareDelay(
-            remainingCooldown: remaining,
-            fallbackDelay: Duration(seconds: _nextPollDelaySeconds()),
-          ),
-        );
-        return;
-      }
+        _scheduleNextBaselineTick(overrideDelay: delay);
+      },
+    )) {
+      return;
     }
 
     _isFetchingBaseline = true;
@@ -436,28 +425,15 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
 
     _boostLoop.cancelTimer();
 
-    if (!bypassRateLimit) {
-      final coordinator = ref.read(apiRateLimitCoordinatorProvider);
-      final remaining = coordinator.remainingCooldown(
-        ApiRequestLane.groupBoost,
-      );
-      if (remaining != null) {
-        AppLogger.debug(
-          'Boost poll deferred due to cooldown'
-          ' (${remaining.inSeconds}s remaining)',
-          subCategory: 'group_monitor',
-        );
-        ref
-            .read(apiCallCounterProvider.notifier)
-            .incrementThrottledSkip(lane: ApiRequestLane.groupBoost);
-        _scheduleNextBoostTick(
-          overrideDelay: resolveCooldownAwareDelay(
-            remainingCooldown: remaining,
-            fallbackDelay: Duration(seconds: _nextBoostPollDelaySeconds()),
-          ),
-        );
-        return;
-      }
+    if (RefreshCooldownHandler.shouldDeferForCooldown(
+      ref: ref,
+      bypassRateLimit: bypassRateLimit,
+      lane: ApiRequestLane.groupBoost,
+      logContext: 'group_monitor',
+      fallbackDelay: Duration(seconds: _nextBoostPollDelaySeconds()),
+      onDefer: (delay) => _scheduleNextBoostTick(overrideDelay: delay),
+    )) {
+      return;
     }
 
     _isBoostFetching = true;

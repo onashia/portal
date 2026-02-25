@@ -11,7 +11,6 @@ import '../services/invite_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/collection_equivalence.dart' as collection_eq;
 import 'api_call_counter.dart';
-import 'api_rate_limit_provider.dart';
 import 'auth_provider.dart';
 import 'group_instance_merging.dart';
 import 'group_instance_selection.dart';
@@ -20,6 +19,7 @@ import 'group_monitor_fetching.dart';
 import 'group_monitor_state.dart';
 import 'group_monitor_storage.dart';
 import 'polling_lifecycle.dart';
+import 'refresh_cooldown_handler.dart';
 import '../utils/timing_utils.dart';
 
 export 'group_instance_merging.dart';

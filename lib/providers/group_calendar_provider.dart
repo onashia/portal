@@ -7,13 +7,13 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../models/group_calendar_event.dart';
 import '../providers/api_call_counter.dart';
-import '../providers/api_rate_limit_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import '../providers/polling_lifecycle.dart';
 import '../services/api_rate_limit_coordinator.dart';
 import '../utils/app_logger.dart';
 import '../utils/calendar_event_utils.dart';
+import 'refresh_cooldown_handler.dart';
 import 'group_calendar_algorithms.dart';
 import 'group_calendar_state.dart';
 
@@ -348,26 +348,15 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       return;
     }
 
-    if (!bypassRateLimit) {
-      final coordinator = ref.read(apiRateLimitCoordinatorProvider);
-      final remaining = coordinator.remainingCooldown(ApiRequestLane.calendar);
-      if (remaining != null) {
-        AppLogger.debug(
-          'Calendar refresh deferred due to cooldown'
-          ' (${remaining.inSeconds}s remaining)',
-          subCategory: 'calendar',
-        );
-        ref
-            .read(apiCallCounterProvider.notifier)
-            .incrementThrottledSkip(lane: ApiRequestLane.calendar);
-        _scheduleNextCalendarTick(
-          overrideDelay: resolveCooldownAwareDelay(
-            remainingCooldown: remaining,
-            fallbackDelay: const Duration(minutes: _refreshMinutes),
-          ),
-        );
-        return;
-      }
+    if (RefreshCooldownHandler.shouldDeferForCooldown(
+      ref: ref,
+      bypassRateLimit: bypassRateLimit,
+      lane: ApiRequestLane.calendar,
+      logContext: 'calendar',
+      fallbackDelay: const Duration(minutes: _refreshMinutes),
+      onDefer: (delay) => _scheduleNextCalendarTick(overrideDelay: delay),
+    )) {
+      return;
     }
 
     _isFetching = true;

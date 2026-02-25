@@ -14,6 +14,7 @@ import '../utils/timing_utils.dart';
 import '../constants/app_constants.dart';
 import '../utils/app_logger.dart';
 import 'polling_lifecycle.dart';
+import 'refresh_cooldown_handler.dart';
 
 @immutable
 class VrchatStatusState {
@@ -130,26 +131,15 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
       return;
     }
 
-    if (!bypassRateLimit) {
-      final coordinator = ref.read(apiRateLimitCoordinatorProvider);
-      final remaining = coordinator.remainingCooldown(ApiRequestLane.status);
-      if (remaining != null) {
-        AppLogger.debug(
-          'Status refresh deferred due to cooldown'
-          ' (${remaining.inSeconds}s remaining)',
-          subCategory: 'vrchat_status',
-        );
-        ref
-            .read(apiCallCounterProvider.notifier)
-            .incrementThrottledSkip(lane: ApiRequestLane.status);
-        _scheduleNextRefresh(
-          overrideDelay: resolveCooldownAwareDelay(
-            remainingCooldown: remaining,
-            fallbackDelay: _statusPollingDelay(),
-          ),
-        );
-        return;
-      }
+    if (RefreshCooldownHandler.shouldDeferForCooldown(
+      ref: ref,
+      bypassRateLimit: bypassRateLimit,
+      lane: ApiRequestLane.status,
+      logContext: 'vrchat_status',
+      fallbackDelay: _statusPollingDelay(),
+      onDefer: (delay) => _scheduleNextRefresh(overrideDelay: delay),
+    )) {
+      return;
     }
 
     _isRefreshing = true;
