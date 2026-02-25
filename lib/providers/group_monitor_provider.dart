@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +20,7 @@ import 'group_monitor_fetching.dart';
 import 'group_monitor_state.dart';
 import 'group_monitor_storage.dart';
 import 'polling_lifecycle.dart';
+import '../utils/timing_utils.dart';
 
 export 'group_instance_merging.dart';
 export 'group_instance_selection.dart';
@@ -39,7 +39,6 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   final _baselineLoop = RefreshLoopState();
   final _boostLoop = RefreshLoopState();
-  final _random = math.Random();
 
   Timer? _selectionRefreshDebounceTimer;
   int _backoffDelay = 1;

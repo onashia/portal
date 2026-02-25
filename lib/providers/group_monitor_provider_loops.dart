@@ -140,25 +140,15 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
     }
   }
 
-  int _nextPollDelaySeconds() {
-    final base = AppConstants.pollingIntervalSeconds;
-    final jitter = AppConstants.pollingJitterSeconds;
-    if (jitter <= 0) {
-      return base;
-    }
-    final delta = _random.nextInt(jitter * 2 + 1) - jitter;
-    return math.max(1, base + delta);
-  }
+  int _nextPollDelaySeconds() => TimingUtils.secondsWithJitter(
+    baseSeconds: AppConstants.pollingIntervalSeconds,
+    jitterSeconds: AppConstants.pollingJitterSeconds,
+  );
 
-  int _nextBoostPollDelaySeconds() {
-    final base = AppConstants.boostPollingIntervalSeconds;
-    final jitter = AppConstants.boostPollingJitterSeconds;
-    if (jitter <= 0) {
-      return base;
-    }
-    final delta = _random.nextInt(jitter * 2 + 1) - jitter;
-    return math.max(1, base + delta);
-  }
+  int _nextBoostPollDelaySeconds() => TimingUtils.secondsWithJitter(
+    baseSeconds: AppConstants.boostPollingIntervalSeconds,
+    jitterSeconds: AppConstants.boostPollingJitterSeconds,
+  );
 
   void _scheduleNextBaselineTick({Duration? overrideDelay}) {
     _baselineLoop.cancelTimer();
