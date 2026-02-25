@@ -14,12 +14,18 @@ import '../utils/collection_equivalence.dart' as collection_eq;
 import 'api_call_counter.dart';
 import 'api_rate_limit_provider.dart';
 import 'auth_provider.dart';
-import 'group_monitor_algorithms.dart';
+import 'group_instance_merging.dart';
+import 'group_instance_selection.dart';
+import 'group_invite_and_boost.dart';
+import 'group_monitor_fetching.dart';
 import 'group_monitor_state.dart';
 import 'group_monitor_storage.dart';
 import 'polling_lifecycle.dart';
 
-export 'group_monitor_algorithms.dart';
+export 'group_instance_merging.dart';
+export 'group_instance_selection.dart';
+export 'group_invite_and_boost.dart';
+export 'group_monitor_fetching.dart';
 export 'group_monitor_state.dart';
 
 part 'group_monitor_provider_fetch.dart';
