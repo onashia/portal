@@ -22,6 +22,9 @@ bool areListsEquivalent<T>(
   return true;
 }
 
+/// Checks if two maps are equivalent using default or custom equality.
+///
+/// Note: If [V] is nullable, missing keys and null values are not distinguishable.
 bool areMapsEquivalent<K, V>(
   Map<K, V> previous,
   Map<K, V> next, {
