@@ -150,39 +150,50 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
     jitterSeconds: AppConstants.boostPollingJitterSeconds,
   );
 
-  void _scheduleNextBaselineTick({Duration? overrideDelay}) {
-    _baselineLoop.cancelTimer();
+  void _scheduleNextTick({
+    required RefreshLoopState loop,
+    required bool Function() isActive,
+    required void Function() reconcile,
+    required int Function() calculateDelaySeconds,
+    required void Function() requestRefresh,
+    Duration? overrideDelay,
+  }) {
+    loop.cancelTimer();
 
-    if (!_baselineActive()) {
-      _reconcileBaselineLoop();
+    if (!isActive()) {
+      reconcile();
       return;
     }
 
-    final delay = overrideDelay ?? Duration(seconds: _nextPollDelaySeconds());
-    _baselineLoop.timer = Timer(delay, () {
+    final delay = overrideDelay ?? Duration(seconds: calculateDelaySeconds());
+    loop.timer = Timer(delay, () {
       if (!ref.mounted) {
         return;
       }
-      _requestBaselineRefresh(immediate: true);
+      requestRefresh();
     });
   }
 
+  void _scheduleNextBaselineTick({Duration? overrideDelay}) {
+    _scheduleNextTick(
+      loop: _baselineLoop,
+      isActive: _baselineActive,
+      reconcile: _reconcileBaselineLoop,
+      calculateDelaySeconds: _nextPollDelaySeconds,
+      requestRefresh: () => _requestBaselineRefresh(immediate: true),
+      overrideDelay: overrideDelay,
+    );
+  }
+
   void _scheduleNextBoostTick({Duration? overrideDelay}) {
-    _boostLoop.cancelTimer();
-
-    if (!_boostActive()) {
-      _reconcileBoostLoop();
-      return;
-    }
-
-    final delay =
-        overrideDelay ?? Duration(seconds: _nextBoostPollDelaySeconds());
-    _boostLoop.timer = Timer(delay, () {
-      if (!ref.mounted) {
-        return;
-      }
-      _requestBoostRefresh(immediate: true);
-    });
+    _scheduleNextTick(
+      loop: _boostLoop,
+      isActive: _boostActive,
+      reconcile: _reconcileBoostLoop,
+      calculateDelaySeconds: _nextBoostPollDelaySeconds,
+      requestRefresh: () => _requestBoostRefresh(immediate: true),
+      overrideDelay: overrideDelay,
+    );
   }
 
   void _requestBaselineRefresh({
