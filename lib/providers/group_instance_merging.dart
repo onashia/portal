@@ -49,29 +49,6 @@ bool areGroupInstanceListsEquivalent(
   return true;
 }
 
-bool areGroupInstancesByGroupEquivalent(
-  Map<String, List<GroupInstanceWithGroup>> previous,
-  Map<String, List<GroupInstanceWithGroup>> next,
-) {
-  if (identical(previous, next)) {
-    return true;
-  }
-
-  if (previous.length != next.length) {
-    return false;
-  }
-
-  for (final entry in previous.entries) {
-    final nextGroupInstances = next[entry.key];
-    if (nextGroupInstances == null ||
-        !areGroupInstanceListsEquivalent(entry.value, nextGroupInstances)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 bool hasGroupInstanceKeyMismatch({
   required Set<String> selectedGroupIds,
   required Map<String, List<GroupInstanceWithGroup>> groupInstances,

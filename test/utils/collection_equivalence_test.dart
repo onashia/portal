@@ -46,4 +46,84 @@ void main() {
       );
     });
   });
+
+  group('areMapsEquivalent', () {
+    test('returns true for identical maps', () {
+      final map = {'a': 1, 'b': 2};
+      expect(areMapsEquivalent(map, map), isTrue);
+    });
+
+    test('returns true for equivalent maps using default equality', () {
+      expect(
+        areMapsEquivalent(const {'a': 1, 'b': 2}, const {'b': 2, 'a': 1}),
+        isTrue,
+      );
+    });
+
+    test('returns false when keys differ', () {
+      expect(areMapsEquivalent(const {'a': 1}, const {'b': 1}), isFalse);
+    });
+
+    test('returns false when values differ', () {
+      expect(areMapsEquivalent(const {'a': 1}, const {'a': 2}), isFalse);
+    });
+
+    test('returns false when map lengths differ', () {
+      expect(areMapsEquivalent(const {'a': 1}, const {}), isFalse);
+    });
+
+    test('supports custom value equality', () {
+      expect(
+        areMapsEquivalent(
+          const {'a': 'A', 'b': 'B'},
+          const {'a': 'a', 'b': 'b'},
+          valueEquals: (left, right) =>
+              left.toLowerCase() == right.toLowerCase(),
+        ),
+        isTrue,
+      );
+
+      expect(
+        areMapsEquivalent(
+          const {'a': 'A', 'b': 'C'},
+          const {'a': 'a', 'b': 'b'},
+          valueEquals: (left, right) =>
+              left.toLowerCase() == right.toLowerCase(),
+        ),
+        isFalse,
+      );
+    });
+
+    test('handles maps with list values and custom comparators', () {
+      expect(
+        areMapsEquivalent(
+          {
+            'a': [1, 2],
+            'b': [3, 4],
+          },
+          {
+            'a': [1, 2],
+            'b': [3, 4],
+          },
+          valueEquals: areListsEquivalent,
+        ),
+        isTrue,
+      );
+
+      expect(
+        areMapsEquivalent(
+          {
+            'a': [1, 2],
+            'b': [3, 4],
+          },
+          {
+            'a': [1, 2],
+            'b': [3, 5],
+          },
+          valueEquals: areListsEquivalent,
+        ),
+        isFalse,
+      );
+    });
+  });
 }

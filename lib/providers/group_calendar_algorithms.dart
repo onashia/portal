@@ -99,22 +99,11 @@ bool areEventsByGroupEquivalent(
   Map<String, List<CalendarEvent>> previous,
   Map<String, List<CalendarEvent>> next,
 ) {
-  if (identical(previous, next)) {
-    return true;
-  }
-  if (previous.length != next.length) {
-    return false;
-  }
-
-  for (final entry in previous.entries) {
-    final nextEvents = next[entry.key];
-    if (nextEvents == null ||
-        !areCalendarEventListsEquivalent(entry.value, nextEvents)) {
-      return false;
-    }
-  }
-
-  return true;
+  return collection_eq.areMapsEquivalent(
+    previous,
+    next,
+    valueEquals: areCalendarEventListsEquivalent,
+  );
 }
 
 bool areTodayEventsEquivalent(

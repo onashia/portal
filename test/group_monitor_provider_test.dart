@@ -411,53 +411,6 @@ void main() {
     );
   });
 
-  group('areGroupInstancesByGroupEquivalent', () {
-    test('returns false when one group payload changes', () {
-      final world = buildTestWorld(id: 'wrld_1', name: 'World One');
-
-      final previous = {
-        'grp_alpha': [
-          GroupInstanceWithGroup(
-            instance: buildTestInstance(
-              instanceId: 'inst_alpha',
-              world: world,
-              userCount: 3,
-            ),
-            groupId: 'grp_alpha',
-            firstDetectedAt: DateTime.utc(2026, 2, 13, 8, 0),
-          ),
-        ],
-        'grp_beta': [
-          GroupInstanceWithGroup(
-            instance: buildTestInstance(
-              instanceId: 'inst_beta',
-              world: world,
-              userCount: 4,
-            ),
-            groupId: 'grp_beta',
-            firstDetectedAt: DateTime.utc(2026, 2, 13, 9, 0),
-          ),
-        ],
-      };
-      final next = {
-        'grp_alpha': previous['grp_alpha']!,
-        'grp_beta': [
-          GroupInstanceWithGroup(
-            instance: buildTestInstance(
-              instanceId: 'inst_beta',
-              world: world,
-              userCount: 8,
-            ),
-            groupId: 'grp_beta',
-            firstDetectedAt: DateTime.utc(2026, 2, 13, 9, 0),
-          ),
-        ],
-      };
-
-      expect(areGroupInstancesByGroupEquivalent(previous, next), isFalse);
-    });
-  });
-
   group('group instance change tracking', () {
     test('treats key-set mismatch as changed', () {
       final world = buildTestWorld(id: 'wrld_1', name: 'World One');

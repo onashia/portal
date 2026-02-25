@@ -22,10 +22,11 @@ bool areListsEquivalent<T>(
   return true;
 }
 
-bool areStringMapsEquivalent(
-  Map<String, String> previous,
-  Map<String, String> next,
-) {
+bool areMapsEquivalent<K, V>(
+  Map<K, V> previous,
+  Map<K, V> next, {
+  bool Function(V previous, V next)? valueEquals,
+}) {
   if (identical(previous, next)) {
     return true;
   }
@@ -34,10 +35,23 @@ bool areStringMapsEquivalent(
   }
 
   for (final entry in previous.entries) {
-    if (next[entry.key] != entry.value) {
+    final nextValue = next[entry.key];
+    if (nextValue == null) {
+      return false;
+    }
+
+    final equals = valueEquals ?? (V a, V b) => a == b;
+    if (!equals(entry.value, nextValue)) {
       return false;
     }
   }
 
   return true;
+}
+
+bool areStringMapsEquivalent(
+  Map<String, String> previous,
+  Map<String, String> next,
+) {
+  return areMapsEquivalent(previous, next);
 }
