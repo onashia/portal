@@ -7,7 +7,7 @@ import '../providers/group_monitor_provider.dart';
 import '../theme/side_sheet_theme.dart';
 import 'group_selection/group_avatar.dart';
 import 'group_selection/groups_empty_state.dart';
-import 'group_selection/groups_loading_state.dart';
+import 'common/loading_state.dart';
 import 'inputs/app_text_field.dart';
 
 class GroupSelectionSideSheet extends ConsumerStatefulWidget {
@@ -172,7 +172,10 @@ class _GroupSelectionSideSheetState
     required bool isSearching,
   }) {
     if (isLoading) {
-      return const GroupsLoadingState();
+      return const LoadingState(
+        semanticLabel: 'Loading available groups',
+        message: 'Loading available groups...',
+      );
     }
 
     if (filteredGroups.isEmpty) {
