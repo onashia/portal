@@ -98,6 +98,7 @@ class _VrchatStatusCompactView extends StatelessWidget {
     if (state == null || state!.isLoading) {
       return Row(
         mainAxisSize: MainAxisSize.min,
+        spacing: m3e.spacing.md,
         children: [
           SizedBox(
             width: UiConstants.vrchatCompactLoaderSize,
@@ -106,7 +107,6 @@ class _VrchatStatusCompactView extends StatelessWidget {
               strokeWidth: UiConstants.vrchatCompactLoaderStrokeWidth,
             ),
           ),
-          SizedBox(width: m3e.spacing.md),
           Text('Loading...', style: textTheme.bodySmall),
         ],
       );
@@ -115,9 +115,9 @@ class _VrchatStatusCompactView extends StatelessWidget {
     if (state!.errorMessage != null) {
       return Row(
         mainAxisSize: MainAxisSize.min,
+        spacing: m3e.spacing.md,
         children: [
           Icon(Icons.error_outline, size: IconSizes.xxs, color: scheme.error),
-          SizedBox(width: m3e.spacing.md),
           Text(
             'Error',
             style: textTheme.bodySmall?.copyWith(color: scheme.error),
@@ -219,13 +219,13 @@ class _VrchatStatusDialogContent extends StatelessWidget {
         border: Border.all(color: statusColor.withValues(alpha: 0.3)),
       ),
       child: Row(
+        spacing: m3e.spacing.md,
         children: [
           Icon(
             _statusIconForIndicator(status.indicator),
             color: statusColor,
             size: IconSizes.sm,
           ),
-          SizedBox(width: m3e.spacing.md),
           Expanded(
             child: Text(
               status.description,
@@ -368,13 +368,13 @@ class _VrchatStatusDialogContent extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              spacing: m3e.spacing.md,
               children: [
                 Icon(
                   _incidentStatusIcon(incident.status),
                   size: IconSizes.xxs,
                   color: incidentColor,
                 ),
-                SizedBox(width: m3e.spacing.md),
                 Expanded(
                   child: Text(
                     incident.name,

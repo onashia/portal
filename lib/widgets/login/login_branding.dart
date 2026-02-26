@@ -22,13 +22,13 @@ class LoginBranding extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
+                spacing: context.m3e.spacing.md,
                 children: [
                   Icon(
                     Icons.tonality,
                     size: 48,
                     color: Theme.of(context).colorScheme.primary,
                   ),
-                  SizedBox(width: context.m3e.spacing.md),
                   Text(
                     'portal.',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(

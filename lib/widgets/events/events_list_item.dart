@@ -35,6 +35,7 @@ class EventsListItem extends StatelessWidget {
       children: [
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
+          spacing: context.m3e.spacing.sm,
           children: [
             TimelineRail(
               label: DateTimeUtils.formatLocalJm(event.event.startsAt),
@@ -42,13 +43,11 @@ class EventsListItem extends StatelessWidget {
               isFirst: isFirst,
               isLast: isLast,
             ),
-            SizedBox(width: context.m3e.spacing.sm),
             GroupAvatar(
               group: group ?? LimitedUserGroups(),
               size: UiConstants.groupAvatarLg,
               borderRadius: context.m3e.shapes.square.sm,
             ),
-            SizedBox(width: context.m3e.spacing.sm),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,7 +72,6 @@ class EventsListItem extends StatelessWidget {
                 ],
               ),
             ),
-            SizedBox(width: context.m3e.spacing.sm),
             Flexible(
               fit: FlexFit.loose,
               child: ConstrainedBox(
