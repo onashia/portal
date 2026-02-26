@@ -35,6 +35,9 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
       groupMonitorSelectedGroupsProvider(userId),
     );
     final instanceCount = ref.watch(groupMonitorInstanceCountProvider(userId));
+    final labelStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
 
     return DashboardSectionCard(
       child: Column(
@@ -50,9 +53,7 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
               SizedBox(height: context.m3e.spacing.xs),
               Text(
                 '$instanceCount active instance${instanceCount == 1 ? '' : 's'}',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+                style: labelStyle,
               ),
             ],
           ),
@@ -67,26 +68,11 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
           SizedBox(height: context.m3e.spacing.sm),
           Row(
             children: [
-              Text(
-                'Selected Groups',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
+              Text('Selected Groups', style: labelStyle),
               SizedBox(width: context.m3e.spacing.sm),
-              Text(
-                '\u2022',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
+              Text('\u2022', style: labelStyle),
               SizedBox(width: context.m3e.spacing.sm),
-              Text(
-                selectedGroups.length.toString(),
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
+              Text(selectedGroups.length.toString(), style: labelStyle),
             ],
           ),
           if (selectedGroups.isNotEmpty) ...[
