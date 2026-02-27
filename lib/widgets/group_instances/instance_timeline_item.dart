@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
-import '../../constants/ui_constants.dart';
+
 import '../../models/group_instance_with_group.dart';
 import '../../utils/date_time_utils.dart';
-import '../group_selection/group_avatar.dart';
-import '../events/timeline_widgets.dart';
+import '../events/timeline_list_item.dart';
 import 'member_count_badge.dart';
 
 class InstanceTimelineItem extends StatelessWidget {
@@ -33,79 +32,38 @@ class InstanceTimelineItem extends StatelessWidget {
         ? DateTimeUtils.formatLocalJm(detectedTime)
         : '—';
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            TimelineRail(
-              label: timeLabel,
-              height: UiConstants.groupAvatarLg,
-              isFirst: isFirst,
-              isLast: isLast,
-            ),
-            SizedBox(width: context.m3e.spacing.sm),
-            GroupAvatar(
-              group: group,
-              size: UiConstants.groupAvatarLg,
-              borderRadius: context.m3e.shapes.square.sm,
-            ),
-            SizedBox(width: context.m3e.spacing.sm),
-            Expanded(
-              child: SizedBox(
-                height: UiConstants.groupAvatarLg,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      group.name ?? 'Unknown Group',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                    SizedBox(height: context.m3e.spacing.xs),
-                    Text(
-                      world.name,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                  ],
+    return TimelineListItem(
+      timeLabel: timeLabel,
+      group: group,
+      groupName: group.name ?? 'Unknown Group',
+      subtitle: world.name,
+      isFirst: isFirst,
+      isLast: isLast,
+      trailing: Row(
+        spacing: context.m3e.spacing.sm,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MemberCountBadge(userCount: instance.nUsers),
+          if (isNewest)
+            Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: context.m3e.spacing.sm,
+                vertical: context.m3e.spacing.sm,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                borderRadius: context.m3e.shapes.round.xs,
+              ),
+              child: Text(
+                'New',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onPrimary,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
-            SizedBox(width: context.m3e.spacing.sm),
-            MemberCountBadge(userCount: instance.nUsers),
-            if (isNewest) ...[
-              SizedBox(width: context.m3e.spacing.sm),
-              Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: context.m3e.spacing.sm,
-                  vertical: context.m3e.spacing.sm,
-                ),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
-                  borderRadius: context.m3e.shapes.round.xs,
-                ),
-                child: Text(
-                  'New',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-        if (!isLast) TimelineConnector(height: context.m3e.spacing.sm),
-      ],
+        ],
+      ),
     );
   }
 }
