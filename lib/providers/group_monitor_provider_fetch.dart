@@ -580,10 +580,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         didBoostFirstSeenChange = state.boostFirstSeenAfter != delta;
       }
 
-      if (_hasBaseline &&
-          state.autoInviteEnabled &&
-          previousInstances.isEmpty &&
-          instances.isNotEmpty) {
+      if (previousInstances.isEmpty && instances.isNotEmpty) {
         try {
           await _autoInviteService.attemptAutoInvite(
             instances: instances,

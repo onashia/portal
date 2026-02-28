@@ -5,18 +5,34 @@ import 'invite_service.dart';
 import '../models/group_instance_with_group.dart';
 import '../providers/group_invite_and_boost.dart';
 
+/// Encapsulates the result of an auto-invite operation.
 class AutoInviteResult {
+  /// The target instance the user was invited to.
   final GroupInstanceWithGroup target;
+
+  /// The time in milliseconds the invite operation took.
   final int latencyMs;
 
   const AutoInviteResult({required this.target, required this.latencyMs});
 }
 
+/// Service for automatically inviting users to group instances.
+///
+/// Handles selection of the most populated instance and tracks invite latency.
+/// This is used when a group becomes active during monitoring to automatically
+/// join the best available instance.
 class AutoInviteService {
   AutoInviteService(this.inviteService);
 
   final InviteService inviteService;
 
+  /// Attempts to automatically invite to the best instance in a group.
+  ///
+  /// Only invites if [enabled] and [hasBaseline] are true. Selects the instance
+  /// with the most users and tracks operation latency.
+  ///
+  /// Returns [AutoInviteResult] if invite was attempted, null if conditions
+  /// not met or no valid instance found.
   Future<AutoInviteResult?> attemptAutoInvite({
     required List<Instance> instances,
     required String groupId,
