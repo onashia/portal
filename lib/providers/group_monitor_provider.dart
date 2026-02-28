@@ -7,6 +7,7 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 import '../constants/app_constants.dart';
 import '../models/group_instance_with_group.dart';
 import '../services/api_rate_limit_coordinator.dart';
+import '../services/auto_invite_service.dart';
 import '../services/invite_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/collection_equivalence.dart' as collection_eq;
@@ -49,6 +50,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   DateTime? _boostStartedAt;
   int _boostPollCount = 0;
   bool _boostFirstSeenLogged = false;
+  late final AutoInviteService _autoInviteService;
 
   @visibleForTesting
   bool get hasActivePollingTimer => _baselineLoop.hasTimer;
@@ -66,6 +68,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   @override
   GroupMonitorState build() {
+    _autoInviteService = AutoInviteService(ref.read(inviteServiceProvider));
+
     _listenForAuthChanges();
     ref.onDispose(() {
       _baselineLoop.reset();

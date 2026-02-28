@@ -6,7 +6,6 @@ typedef FetchContext = ({List<String> selectedGroupIds, DateTime attemptAt});
 
 typedef FetchExecutionResult = ({
   dynamic api,
-  InviteService inviteService,
   Map<String, List<GroupInstanceWithGroup>> previousGroupInstances,
   Map<String, String> previousGroupErrors,
   Map<String, List<GroupInstanceWithGroup>> newGroupInstances,
@@ -101,7 +100,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     );
 
     final api = ref.read(vrchatApiProvider);
-    final inviteService = ref.read(inviteServiceProvider);
     final previousGroupInstances = state.groupInstances;
     final previousGroupErrors = state.groupErrors;
     final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
@@ -162,7 +160,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     if (!ref.mounted) {
       return (
         api: api,
-        inviteService: inviteService,
         previousGroupInstances: previousGroupInstances,
         previousGroupErrors: previousGroupErrors,
         newGroupInstances: newGroupInstances,
@@ -176,7 +173,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
 
     return (
       api: api,
-      inviteService: inviteService,
       previousGroupInstances: previousGroupInstances,
       previousGroupErrors: previousGroupErrors,
       newGroupInstances: newGroupInstances,
@@ -195,7 +191,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     final responses = executionResult.responses;
     final previousGroupInstances = executionResult.previousGroupInstances;
     final newInstances = <GroupInstanceWithGroup>[];
-    final inviteTargets = <GroupInstanceWithGroup>[];
     var newestInstance = executionResult.newestInstance;
     var didInstancesChange = executionResult.didInstancesChange;
     final newGroupInstances = executionResult.newGroupInstances;
@@ -226,14 +221,21 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         subCategory: 'group_monitor',
       );
 
-      if (_hasBaseline &&
-          state.isMonitoring &&
-          state.autoInviteEnabled &&
-          previousInstances.isEmpty &&
-          instances.isNotEmpty) {
-        final target = _selectInviteTarget(instances, groupId);
-        if (target != null) {
-          inviteTargets.add(target);
+      if (previousInstances.isEmpty && instances.isNotEmpty) {
+        try {
+          await _autoInviteService.attemptAutoInvite(
+            instances: instances,
+            groupId: groupId,
+            enabled: state.autoInviteEnabled && state.isMonitoring,
+            hasBaseline: _hasBaseline,
+          );
+        } catch (e, s) {
+          AppLogger.error(
+            'Failed to auto-invite for group $groupId',
+            subCategory: 'group_monitor',
+            error: e,
+            stackTrace: s,
+          );
         }
       }
 
@@ -251,14 +253,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       newGroupInstances[groupId] = effectiveInstances;
       for (final mergedInstance in effectiveInstances) {
         newestInstance = pickNewestInstance(newestInstance, mergedInstance);
-      }
-    }
-
-    if (inviteTargets.isNotEmpty) {
-      for (final target in inviteTargets) {
-        await executionResult.inviteService.inviteSelfToInstance(
-          target.instance,
-        );
       }
     }
 
@@ -423,40 +417,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     return false;
   }
 
-  GroupInstanceWithGroup? _selectInviteTarget(
-    List<Instance> instances,
-    String groupId,
-  ) {
-    if (instances.isEmpty) {
-      return null;
-    }
-
-    Instance? best;
-    for (final instance in instances) {
-      if (best == null || instance.nUsers > best.nUsers) {
-        best = instance;
-      }
-    }
-
-    if (best == null) {
-      return null;
-    }
-
-    if (!shouldAttemptSelfInviteForInstance(best)) {
-      final hasInvalidIdentifiers =
-          best.worldId.isEmpty || best.instanceId.isEmpty;
-      final skipReason = hasInvalidIdentifiers
-          ? 'invalid instance identifiers'
-          : 'instance metadata denies invite requests';
-      AppLogger.warning(
-        'Skipping invite: $skipReason for group $groupId',
-        subCategory: 'group_monitor',
-      );
-      return null;
-    }
-    return GroupInstanceWithGroup(instance: best, groupId: groupId);
-  }
-
   Future<void> _fetchGroupInstancesInternal({
     bool bypassRateLimit = false,
   }) async {
@@ -574,7 +534,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
           .read(apiCallCounterProvider.notifier)
           .incrementApiCall(lane: ApiRequestLane.groupBoost);
       final api = ref.read(vrchatApiProvider);
-      final inviteService = ref.read(inviteServiceProvider);
       final response = await api.rawApi
           .getUsersApi()
           .getUserGroupInstancesForGroup(
@@ -625,9 +584,20 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
           state.autoInviteEnabled &&
           previousInstances.isEmpty &&
           instances.isNotEmpty) {
-        final target = _selectInviteTarget(instances, groupId);
-        if (target != null) {
-          await inviteService.inviteSelfToInstance(target.instance);
+        try {
+          await _autoInviteService.attemptAutoInvite(
+            instances: instances,
+            groupId: groupId,
+            enabled: state.autoInviteEnabled && state.isMonitoring,
+            hasBaseline: _hasBaseline,
+          );
+        } catch (e, s) {
+          AppLogger.error(
+            'Failed to auto-invite for boosted group $groupId',
+            subCategory: 'group_monitor',
+            error: e,
+            stackTrace: s,
+          );
         }
       }
 
