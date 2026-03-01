@@ -26,11 +26,7 @@ bool areListsEquivalent<T>(
 }
 
 /// Checks if two maps are equivalent using default or custom equality.
-///
-/// Note: If [V] is nullable, function cannot correctly compare maps
-/// containing null values - it will return false when both maps have the same
-/// key with a null value.
-bool areMapsEquivalent<K, V>(
+bool areMapsEquivalent<K, V extends Object>(
   Map<K, V> previous,
   Map<K, V> next, {
   bool Function(V previous, V next)? valueEquals,

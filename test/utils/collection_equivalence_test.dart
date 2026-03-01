@@ -69,7 +69,10 @@ void main() {
     });
 
     test('returns false when map lengths differ', () {
-      expect(areMapsEquivalent(const {'a': 1}, const {}), isFalse);
+      expect(
+        areMapsEquivalent(const {'a': 1, 'b': 2}, const {'a': 1}),
+        isFalse,
+      );
     });
 
     test('supports custom value equality', () {
