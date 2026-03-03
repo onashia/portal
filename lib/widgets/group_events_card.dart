@@ -7,6 +7,7 @@ import '../providers/group_monitor_provider.dart';
 import '../utils/date_time_utils.dart';
 import 'common/empty_state.dart';
 import 'common/loading_state.dart';
+import 'dashboard/dashboard_section_card.dart';
 import 'events/events_card_header.dart';
 import 'events/events_list_item.dart';
 
@@ -23,40 +24,27 @@ class GroupEventsCard extends ConsumerWidget {
         userId,
       ).select((state) => state.selectedGroupIds.isNotEmpty),
     );
-    final scheme = Theme.of(context).colorScheme;
-    final cardTheme = Theme.of(context).cardTheme;
-    final baseShape =
-        cardTheme.shape as RoundedRectangleBorder? ??
-        RoundedRectangleBorder(borderRadius: context.m3e.shapes.round.md);
-    final outlineColor = scheme.outlineVariant.withValues(alpha: 0.4);
     final todayLabel = DateTimeUtils.formatLocalDate(DateTime.now());
 
-    return Card(
-      color: scheme.surfaceContainerLow,
-      elevation: 0,
-      shadowColor: Colors.transparent,
-      shape: baseShape.copyWith(side: BorderSide(color: outlineColor)),
-      child: Padding(
-        padding: EdgeInsets.all(context.m3e.spacing.xl),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            EventsCardHeader(todayLabel: todayLabel),
-            SizedBox(height: context.m3e.spacing.lg),
-            Expanded(
-              child: _buildContent(context, calendarState, hasSelectedGroups),
-            ),
-            if (calendarState.groupErrors.isNotEmpty) ...[
-              SizedBox(height: context.m3e.spacing.sm),
-              Text(
-                'Some groups failed to load (${calendarState.groupErrors.length})',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.error,
-                ),
+    return DashboardSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          EventsCardHeader(todayLabel: todayLabel),
+          SizedBox(height: context.m3e.spacing.lg),
+          Expanded(
+            child: _buildContent(context, calendarState, hasSelectedGroups),
+          ),
+          if (calendarState.groupErrors.isNotEmpty) ...[
+            SizedBox(height: context.m3e.spacing.sm),
+            Text(
+              'Some groups failed to load (${calendarState.groupErrors.length})',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.error,
               ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

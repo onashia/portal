@@ -19,13 +19,13 @@ class MemberCountBadge extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        spacing: context.m3e.spacing.xs,
         children: [
           Icon(
             Icons.people,
             size: 16,
             color: Theme.of(context).colorScheme.onSecondaryContainer,
           ),
-          SizedBox(width: context.m3e.spacing.xs),
           Text(
             userCount.toString(),
             style: Theme.of(context).textTheme.labelMedium?.copyWith(

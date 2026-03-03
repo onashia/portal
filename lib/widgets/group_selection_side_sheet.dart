@@ -7,18 +7,18 @@ import '../providers/group_monitor_provider.dart';
 import '../theme/side_sheet_theme.dart';
 import 'group_selection/group_avatar.dart';
 import 'group_selection/groups_empty_state.dart';
-import 'group_selection/groups_loading_state.dart';
+import 'common/loading_state.dart';
 import 'inputs/app_text_field.dart';
 
 class GroupSelectionSideSheet extends ConsumerStatefulWidget {
-  final String userId;
-  final VoidCallback onClose;
-
   const GroupSelectionSideSheet({
     super.key,
     required this.userId,
     required this.onClose,
   });
+
+  final String userId;
+  final VoidCallback onClose;
 
   @override
   ConsumerState<GroupSelectionSideSheet> createState() =>
@@ -28,8 +28,8 @@ class GroupSelectionSideSheet extends ConsumerStatefulWidget {
 class _GroupSelectionSideSheetState
     extends ConsumerState<GroupSelectionSideSheet> {
   final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
   final ScrollController _scrollController = ScrollController();
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -52,23 +52,38 @@ class _GroupSelectionSideSheetState
 
   void _onSearchChanged() {
     final query = _searchController.text.toLowerCase();
-    if (query != _searchQuery) {
-      setState(() {
-        _searchQuery = query;
-      });
+    if (query == _searchQuery) {
+      return;
     }
+
+    setState(() {
+      _searchQuery = query;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return _buildSheetBody(context);
+    final selectionData = _watchSelectionData();
+    return _buildSheetBody(context, selectionData);
   }
 
-  Widget _buildSheetBody(BuildContext context) {
+  _GroupSelectionData _watchSelectionData() {
+    final provider = groupMonitorProvider(widget.userId);
+    return _GroupSelectionData(
+      allGroups: ref.watch(provider.select((state) => state.allGroups)),
+      selectedIds: ref.watch(
+        provider.select((state) => state.selectedGroupIds),
+      ),
+      isLoading: ref.watch(provider.select((state) => state.isLoading)),
+    );
+  }
+
+  Widget _buildSheetBody(BuildContext context, _GroupSelectionData data) {
     final sideSheetTheme = Theme.of(context).extension<SideSheetTheme>()!;
     final sideSheetShape = RoundedRectangleBorder(
       borderRadius: context.m3e.shapes.round.md,
     ).copyWith(side: BorderSide(color: sideSheetTheme.outlineColor));
+
     return Card(
       margin: EdgeInsets.zero,
       color: sideSheetTheme.containerColor,
@@ -80,11 +95,10 @@ class _GroupSelectionSideSheetState
         height: double.infinity,
         child: SafeArea(
           child: Column(
-            mainAxisSize: MainAxisSize.max,
             children: [
               _buildHeaderSection(context),
               SizedBox(height: context.m3e.spacing.md),
-              Expanded(child: _buildAvailableGroupsSection(context)),
+              Expanded(child: _buildAvailableGroupsSection(context, data)),
             ],
           ),
         ),
@@ -93,12 +107,14 @@ class _GroupSelectionSideSheetState
   }
 
   Widget _buildHeaderSection(BuildContext context) {
+    final m3e = context.m3e;
     final textTheme = Theme.of(context).textTheme;
+
     return Padding(
       padding: EdgeInsets.only(
-        left: context.m3e.spacing.xl,
-        right: context.m3e.spacing.xl,
-        top: context.m3e.spacing.lg,
+        left: m3e.spacing.xl,
+        right: m3e.spacing.xl,
+        top: m3e.spacing.lg,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -113,60 +129,68 @@ class _GroupSelectionSideSheetState
                 size: IconButtonM3ESize.sm,
                 shape: IconButtonM3EShapeVariant.round,
               ),
-              SizedBox(width: context.m3e.spacing.sm),
+              SizedBox(width: m3e.spacing.sm),
               Text('Manage Groups', style: textTheme.titleLarge),
               const Spacer(),
             ],
           ),
-          SizedBox(height: context.m3e.spacing.lg),
-          _buildSearchBar(context),
+          SizedBox(height: m3e.spacing.lg),
+          AppTextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            decoration: const InputDecoration(
+              hintText: 'Search or select groups',
+              prefixIcon: Icon(Icons.search),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildSearchBar(BuildContext context) {
-    return AppTextField(
-      controller: _searchController,
-      textInputAction: TextInputAction.search,
-      decoration: InputDecoration(
-        hintText: 'Search or select groups',
-        prefixIcon: const Icon(Icons.search),
-      ),
+  Widget _buildAvailableGroupsSection(
+    BuildContext context,
+    _GroupSelectionData data,
+  ) {
+    final filteredGroups = _filterGroups(data.allGroups);
+    return _buildGroupsContent(
+      filteredGroups: filteredGroups,
+      selectedIds: data.selectedIds,
+      hasAnyGroups: data.allGroups.isNotEmpty,
+      isLoading: data.isLoading,
+      isSearching: _searchQuery.isNotEmpty,
+      context: context,
     );
   }
 
-  Widget _buildAvailableGroupsSection(BuildContext context) {
-    final allGroups = ref.watch(
-      groupMonitorProvider(widget.userId).select((state) => state.allGroups),
-    );
-    final selectedIds = ref.watch(
-      groupMonitorProvider(
-        widget.userId,
-      ).select((state) => state.selectedGroupIds),
-    );
-    final isLoading = ref.watch(
-      groupMonitorProvider(widget.userId).select((state) => state.isLoading),
-    );
-    final filteredGroups = _filterGroups(allGroups);
-    final hasAnyGroups = allGroups.isNotEmpty;
-    final isSearching = _searchQuery.isNotEmpty;
+  Widget _buildGroupsContent({
+    required BuildContext context,
+    required List<LimitedUserGroups> filteredGroups,
+    required Set<String> selectedIds,
+    required bool hasAnyGroups,
+    required bool isLoading,
+    required bool isSearching,
+  }) {
+    if (isLoading) {
+      return const LoadingState(
+        semanticLabel: 'Loading available groups',
+        message: 'Loading available groups...',
+      );
+    }
 
-    final content = isLoading
-        ? const GroupsLoadingState()
-        : filteredGroups.isEmpty
-        ? GroupsEmptyState(
-            hasAnyGroups: hasAnyGroups,
-            isSearching: isSearching,
-            searchQuery: _searchQuery,
-          )
-        : _buildAvailableGroupsList(context, filteredGroups, selectedIds);
+    if (filteredGroups.isEmpty) {
+      return GroupsEmptyState(
+        hasAnyGroups: hasAnyGroups,
+        isSearching: isSearching,
+        searchQuery: _searchQuery,
+      );
+    }
 
-    return Column(children: [Expanded(child: content)]);
+    return _buildAvailableGroupsList(context, filteredGroups, selectedIds);
   }
 
   List<LimitedUserGroups> _filterGroups(List<LimitedUserGroups> allGroups) {
-    final query = _searchQuery.toLowerCase();
+    final query = _searchQuery;
     if (query.isEmpty) {
       return allGroups;
     }
@@ -201,9 +225,12 @@ class _GroupSelectionSideSheetState
     LimitedUserGroups group,
     bool isSelected,
   ) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final m3e = context.m3e;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
     final memberCount = group.memberCount ?? 0;
+
     final titleStyle = textTheme.titleMedium?.copyWith(
       color: isSelected ? scheme.onPrimaryContainer : scheme.onSurface,
     );
@@ -215,16 +242,10 @@ class _GroupSelectionSideSheetState
 
     return Material(
       color: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: context.m3e.shapes.square.lg),
+      shape: RoundedRectangleBorder(borderRadius: m3e.shapes.square.lg),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
-        onTap: () {
-          if (group.groupId != null) {
-            ref
-                .read(groupMonitorProvider(widget.userId).notifier)
-                .toggleGroupSelection(group.groupId!);
-          }
-        },
+        onTap: () => _toggleGroupSelection(group.groupId),
         selected: isSelected,
         leading: GroupAvatar(group: group),
         title: Text(
@@ -236,8 +257,8 @@ class _GroupSelectionSideSheetState
         titleTextStyle: titleStyle,
         subtitleTextStyle: subtitleStyle,
         contentPadding: EdgeInsets.symmetric(
-          horizontal: context.m3e.spacing.md,
-          vertical: context.m3e.spacing.xs,
+          horizontal: m3e.spacing.md,
+          vertical: m3e.spacing.xs,
         ),
         trailing: isSelected
             ? Icon(
@@ -252,4 +273,26 @@ class _GroupSelectionSideSheetState
       ),
     );
   }
+
+  void _toggleGroupSelection(String? groupId) {
+    if (groupId == null) {
+      return;
+    }
+
+    ref
+        .read(groupMonitorProvider(widget.userId).notifier)
+        .toggleGroupSelection(groupId);
+  }
+}
+
+class _GroupSelectionData {
+  const _GroupSelectionData({
+    required this.allGroups,
+    required this.selectedIds,
+    required this.isLoading,
+  });
+
+  final List<LimitedUserGroups> allGroups;
+  final Set<String> selectedIds;
+  final bool isLoading;
 }

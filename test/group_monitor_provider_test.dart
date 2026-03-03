@@ -2,38 +2,43 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:portal/models/group_instance_with_group.dart';
 import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/api_rate_limit_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/providers/group_monitor_storage.dart';
+import 'package:portal/providers/polling_lifecycle.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
+import 'test_helpers/auth_test_harness.dart';
 import 'test_helpers/fake_vrchat_models.dart';
 
-class _TestAuthNotifier extends AuthNotifier {
-  _TestAuthNotifier(this._initialState);
-
-  final AuthState _initialState;
-
-  @override
-  AuthState build() => _initialState;
-
-  void setData(AuthState next) {
-    state = AsyncData(next);
-  }
-}
-
-class _MockCurrentUser extends Mock implements CurrentUser {}
-
-CurrentUser _mockCurrentUser(String id) {
-  final user = _MockCurrentUser();
-  when(() => user.id).thenReturn(id);
-  return user;
+({
+  ProviderContainer container,
+  TestAuthNotifier authNotifier,
+  NotifierProvider<GroupMonitorNotifier, GroupMonitorState> provider,
+  GroupMonitorNotifier notifier,
+})
+createGroupMonitorHarness({
+  required AuthState initialAuthState,
+  String userId = 'usr_test',
+  List<dynamic> overrides = const <dynamic>[],
+}) {
+  final authHarness = createAuthHarness(
+    initialAuthState: initialAuthState,
+    overrides: overrides,
+  );
+  final provider = groupMonitorProvider(userId);
+  final notifier = authHarness.container.read(provider.notifier);
+  return (
+    container: authHarness.container,
+    authNotifier: authHarness.authNotifier,
+    provider: provider,
+    notifier: notifier,
+  );
 }
 
 void main() {
@@ -94,60 +99,7 @@ void main() {
     });
   });
 
-  group('mergeFetchedGroupInstances', () {
-    test(
-      'preserves detection time for existing instances and marks new ones',
-      () {
-        final world = buildTestWorld(id: 'wrld_1', name: 'World One');
-        final previousDetectedAt = DateTime.utc(2026, 2, 13, 9, 0);
-        final detectedAt = DateTime.utc(2026, 2, 13, 10, 0);
-
-        final previousInstances = [
-          GroupInstanceWithGroup(
-            instance: buildTestInstance(
-              instanceId: 'inst_existing',
-              world: world,
-              userCount: 5,
-            ),
-            groupId: 'grp_alpha',
-            firstDetectedAt: previousDetectedAt,
-          ),
-        ];
-
-        final fetchedInstances = [
-          buildTestInstance(
-            instanceId: 'inst_existing',
-            world: world,
-            userCount: 6,
-          ),
-          buildTestInstance(instanceId: 'inst_new', world: world, userCount: 3),
-        ];
-
-        final merged = mergeFetchedGroupInstances(
-          groupId: 'grp_alpha',
-          fetchedInstances: fetchedInstances,
-          previousInstances: previousInstances,
-          detectedAt: detectedAt,
-        );
-
-        expect(merged.mergedInstances, hasLength(2));
-        expect(merged.newInstances, hasLength(1));
-        expect(merged.newInstances.first.instance.instanceId, 'inst_new');
-
-        final existingMerged = merged.mergedInstances.firstWhere(
-          (entry) => entry.instance.instanceId == 'inst_existing',
-        );
-        final newMerged = merged.mergedInstances.firstWhere(
-          (entry) => entry.instance.instanceId == 'inst_new',
-        );
-
-        expect(existingMerged.firstDetectedAt, previousDetectedAt);
-        expect(newMerged.firstDetectedAt, detectedAt);
-      },
-    );
-  });
-
-  group('mergeFetchedGroupInstancesWithDiffForTesting', () {
+  group('mergeFetchedGroupInstancesWithDiff', () {
     test(
       'reuses previous reference when payload is unchanged but reordered',
       () {
@@ -181,7 +133,7 @@ void main() {
           previousInstances[0].instance,
         ];
 
-        final merged = mergeFetchedGroupInstancesWithDiffForTesting(
+        final merged = mergeFetchedGroupInstancesWithDiff(
           groupId: 'grp_alpha',
           fetchedInstances: fetchedInstances,
           previousInstances: previousInstances,
@@ -229,7 +181,7 @@ void main() {
           buildTestInstance(instanceId: 'inst_c', world: worldC, userCount: 8),
         ];
 
-        final merged = mergeFetchedGroupInstancesWithDiffForTesting(
+        final merged = mergeFetchedGroupInstancesWithDiff(
           groupId: 'grp_alpha',
           fetchedInstances: fetchedInstances,
           previousInstances: previousInstances,
@@ -273,7 +225,7 @@ void main() {
         buildTestInstance(instanceId: 'inst_a', world: world, userCount: 9),
       ];
 
-      final merged = mergeFetchedGroupInstancesWithDiffForTesting(
+      final merged = mergeFetchedGroupInstancesWithDiff(
         groupId: 'grp_alpha',
         fetchedInstances: fetchedInstances,
         previousInstances: previousInstances,
@@ -316,7 +268,7 @@ void main() {
         buildTestInstance(instanceId: 'inst_a', world: world, userCount: 5),
       ];
 
-      final merged = mergeFetchedGroupInstancesWithDiffForTesting(
+      final merged = mergeFetchedGroupInstancesWithDiff(
         groupId: 'grp_alpha',
         fetchedInstances: fetchedInstances,
         previousInstances: previousInstances,
@@ -459,53 +411,6 @@ void main() {
     );
   });
 
-  group('areGroupInstancesByGroupEquivalent', () {
-    test('returns false when one group payload changes', () {
-      final world = buildTestWorld(id: 'wrld_1', name: 'World One');
-
-      final previous = {
-        'grp_alpha': [
-          GroupInstanceWithGroup(
-            instance: buildTestInstance(
-              instanceId: 'inst_alpha',
-              world: world,
-              userCount: 3,
-            ),
-            groupId: 'grp_alpha',
-            firstDetectedAt: DateTime.utc(2026, 2, 13, 8, 0),
-          ),
-        ],
-        'grp_beta': [
-          GroupInstanceWithGroup(
-            instance: buildTestInstance(
-              instanceId: 'inst_beta',
-              world: world,
-              userCount: 4,
-            ),
-            groupId: 'grp_beta',
-            firstDetectedAt: DateTime.utc(2026, 2, 13, 9, 0),
-          ),
-        ],
-      };
-      final next = {
-        'grp_alpha': previous['grp_alpha']!,
-        'grp_beta': [
-          GroupInstanceWithGroup(
-            instance: buildTestInstance(
-              instanceId: 'inst_beta',
-              world: world,
-              userCount: 8,
-            ),
-            groupId: 'grp_beta',
-            firstDetectedAt: DateTime.utc(2026, 2, 13, 9, 0),
-          ),
-        ],
-      };
-
-      expect(areGroupInstancesByGroupEquivalent(previous, next), isFalse);
-    });
-  });
-
   group('group instance change tracking', () {
     test('treats key-set mismatch as changed', () {
       final world = buildTestWorld(id: 'wrld_1', name: 'World One');
@@ -576,38 +481,32 @@ void main() {
           selectedGroupIds: {'grp_alpha', 'grp_beta'},
           groupInstances: previousGroupInstances,
         );
-        final resolvedAlpha = resolveGroupInstancesForGroup(
-          previousInstances: previousAlpha,
-          mergedInstances: [previousAlpha.first],
+        final mergedAlpha = [previousAlpha.first];
+        final alphaDidChange = !areGroupInstanceListsEquivalent(
+          previousAlpha,
+          mergedAlpha,
         );
-        final resolvedBeta = resolveGroupInstancesForGroup(
-          previousInstances: previousBeta,
-          mergedInstances: [previousBeta.first],
+        final resolvedAlpha = alphaDidChange ? mergedAlpha : previousAlpha;
+        final mergedBeta = [previousBeta.first];
+        final betaDidChange = !areGroupInstanceListsEquivalent(
+          previousBeta,
+          mergedBeta,
         );
+        final resolvedBeta = betaDidChange ? mergedBeta : previousBeta;
         didInstancesChange =
-            didInstancesChange ||
-            resolvedAlpha.didChange ||
-            resolvedBeta.didChange;
+            didInstancesChange || alphaDidChange || betaDidChange;
 
         final nextGroupInstances = <String, List<GroupInstanceWithGroup>>{
-          'grp_alpha': resolvedAlpha.effectiveInstances,
-          'grp_beta': resolvedBeta.effectiveInstances,
+          'grp_alpha': resolvedAlpha,
+          'grp_beta': resolvedBeta,
         };
-        final selectedGroupInstances = selectGroupInstancesForState(
-          didInstancesChange: didInstancesChange,
-          previousGroupInstances: previousGroupInstances,
-          nextGroupInstances: nextGroupInstances,
-        );
+        final selectedGroupInstances = didInstancesChange
+            ? nextGroupInstances
+            : previousGroupInstances;
 
         expect(didInstancesChange, isFalse);
-        expect(
-          identical(resolvedAlpha.effectiveInstances, previousAlpha),
-          isTrue,
-        );
-        expect(
-          identical(resolvedBeta.effectiveInstances, previousBeta),
-          isTrue,
-        );
+        expect(identical(resolvedAlpha, previousAlpha), isTrue);
+        expect(identical(resolvedBeta, previousBeta), isTrue);
         expect(
           identical(selectedGroupInstances, previousGroupInstances),
           isTrue,
@@ -651,38 +550,38 @@ void main() {
           selectedGroupIds: {'grp_alpha', 'grp_beta'},
           groupInstances: previousGroupInstances,
         );
-        final resolvedAlpha = resolveGroupInstancesForGroup(
-          previousInstances: previousAlpha,
-          mergedInstances: [
-            GroupInstanceWithGroup(
-              instance: buildTestInstance(
-                instanceId: 'inst_alpha',
-                world: world,
-                userCount: 8,
-              ),
-              groupId: 'grp_alpha',
-              firstDetectedAt: detectedAt,
+        final mergedAlpha = <GroupInstanceWithGroup>[
+          GroupInstanceWithGroup(
+            instance: buildTestInstance(
+              instanceId: 'inst_alpha',
+              world: world,
+              userCount: 8,
             ),
-          ],
+            groupId: 'grp_alpha',
+            firstDetectedAt: detectedAt,
+          ),
+        ];
+        final alphaDidChange = !areGroupInstanceListsEquivalent(
+          previousAlpha,
+          mergedAlpha,
         );
-        final resolvedBeta = resolveGroupInstancesForGroup(
-          previousInstances: previousBeta,
-          mergedInstances: [previousBeta.first],
+        final resolvedAlpha = alphaDidChange ? mergedAlpha : previousAlpha;
+        final mergedBeta = [previousBeta.first];
+        final betaDidChange = !areGroupInstanceListsEquivalent(
+          previousBeta,
+          mergedBeta,
         );
+        final resolvedBeta = betaDidChange ? mergedBeta : previousBeta;
         didInstancesChange =
-            didInstancesChange ||
-            resolvedAlpha.didChange ||
-            resolvedBeta.didChange;
+            didInstancesChange || alphaDidChange || betaDidChange;
 
         final nextGroupInstances = <String, List<GroupInstanceWithGroup>>{
-          'grp_alpha': resolvedAlpha.effectiveInstances,
-          'grp_beta': resolvedBeta.effectiveInstances,
+          'grp_alpha': resolvedAlpha,
+          'grp_beta': resolvedBeta,
         };
-        final selectedGroupInstances = selectGroupInstancesForState(
-          didInstancesChange: didInstancesChange,
-          previousGroupInstances: previousGroupInstances,
-          nextGroupInstances: nextGroupInstances,
-        );
+        final selectedGroupInstances = didInstancesChange
+            ? nextGroupInstances
+            : previousGroupInstances;
 
         expect(didInstancesChange, isTrue);
         expect(
@@ -872,79 +771,153 @@ void main() {
     });
   });
 
-  group('pending boost poll decisions', () {
-    test(
-      'queues pending boost poll only when boost is active and fetching',
-      () {
-        expect(
-          shouldQueuePendingBoostPoll(
-            isFetching: true,
-            isMonitoring: true,
-            isBoostActive: true,
-          ),
-          isTrue,
-        );
-        expect(
-          shouldQueuePendingBoostPoll(
-            isFetching: false,
-            isMonitoring: true,
-            isBoostActive: true,
-          ),
-          isFalse,
-        );
-        expect(
-          shouldQueuePendingBoostPoll(
-            isFetching: true,
-            isMonitoring: false,
-            isBoostActive: true,
-          ),
-          isFalse,
-        );
-        expect(
-          shouldQueuePendingBoostPoll(
-            isFetching: true,
-            isMonitoring: true,
-            isBoostActive: false,
-          ),
-          isFalse,
-        );
-      },
-    );
+  group('shouldAttemptSelfInviteForInstance', () {
+    Instance buildInstance({
+      required String worldId,
+      required String instanceId,
+      required bool? canRequestInvite,
+    }) {
+      final world = buildTestWorld(
+        id: worldId.isEmpty ? 'wrld_fallback' : worldId,
+        name: 'World',
+      );
+      return Instance(
+        canRequestInvite: canRequestInvite,
+        clientNumber: 'unknown',
+        id: 'inst_${instanceId.isEmpty ? 'fallback' : instanceId}',
+        instanceId: instanceId,
+        location: '$worldId:$instanceId',
+        nUsers: 5,
+        name: 'Instance $instanceId',
+        photonRegion: Region.us,
+        platforms: InstancePlatforms(android: 0, standalonewindows: 5),
+        queueEnabled: false,
+        queueSize: 0,
+        recommendedCapacity: 16,
+        region: InstanceRegion.us,
+        secureName: 'secure-${instanceId.isEmpty ? 'fallback' : instanceId}',
+        strict: false,
+        tags: const [],
+        type: InstanceType.group,
+        userCount: 5,
+        world: world,
+        worldId: worldId,
+      );
+    }
+
+    test('returns false when canRequestInvite is explicitly false', () {
+      final instance = buildInstance(
+        worldId: 'wrld_alpha',
+        instanceId: 'inst_alpha',
+        canRequestInvite: false,
+      );
+
+      expect(shouldAttemptSelfInviteForInstance(instance), isFalse);
+    });
+
+    test('returns true when canRequestInvite is true', () {
+      final instance = buildInstance(
+        worldId: 'wrld_alpha',
+        instanceId: 'inst_alpha',
+        canRequestInvite: true,
+      );
+
+      expect(shouldAttemptSelfInviteForInstance(instance), isTrue);
+    });
+
+    test('returns true when canRequestInvite is null', () {
+      final instance = buildInstance(
+        worldId: 'wrld_alpha',
+        instanceId: 'inst_alpha',
+        canRequestInvite: null,
+      );
+
+      expect(shouldAttemptSelfInviteForInstance(instance), isTrue);
+    });
+
+    test('returns false when worldId or instanceId is invalid', () {
+      final missingWorld = buildInstance(
+        worldId: '',
+        instanceId: 'inst_alpha',
+        canRequestInvite: true,
+      );
+      final missingInstance = buildInstance(
+        worldId: 'wrld_alpha',
+        instanceId: '',
+        canRequestInvite: true,
+      );
+
+      expect(shouldAttemptSelfInviteForInstance(missingWorld), isFalse);
+      expect(shouldAttemptSelfInviteForInstance(missingInstance), isFalse);
+    });
+  });
+
+  group('pending refresh decisions', () {
+    test('queues pending refresh only when active and in-flight', () {
+      final queueWhenActive = shouldRequestImmediateRefresh(
+        isActive: true,
+        isInFlight: true,
+        immediate: true,
+      );
+      expect(queueWhenActive.shouldQueuePending, isTrue);
+
+      final noQueueWhenIdle = shouldRequestImmediateRefresh(
+        isActive: true,
+        isInFlight: false,
+        immediate: true,
+      );
+      expect(noQueueWhenIdle.shouldQueuePending, isFalse);
+
+      final noQueueWhenInactive = shouldRequestImmediateRefresh(
+        isActive: false,
+        isInFlight: true,
+        immediate: true,
+      );
+      expect(noQueueWhenInactive.shouldQueuePending, isFalse);
+    });
 
     test('drains only when pending and not currently fetching', () {
-      expect(
-        shouldDrainPendingBoostPoll(
-          pendingBoostPoll: true,
-          isMonitoring: true,
-          isBoostActive: true,
-          isFetching: false,
-        ),
-        isTrue,
+      final drainsWhenEligible = shouldDrainPendingRefresh(
+        isMounted: true,
+        isInFlight: false,
+        hasPendingRefresh: true,
+        isActive: true,
       );
+      expect(drainsWhenEligible, isTrue);
+
       expect(
-        shouldDrainPendingBoostPoll(
-          pendingBoostPoll: true,
-          isMonitoring: true,
-          isBoostActive: true,
-          isFetching: true,
-        ),
-        isFalse,
-      );
-      expect(
-        shouldDrainPendingBoostPoll(
-          pendingBoostPoll: true,
-          isMonitoring: true,
-          isBoostActive: false,
-          isFetching: false,
+        shouldDrainPendingRefresh(
+          isMounted: true,
+          isInFlight: true,
+          hasPendingRefresh: true,
+          isActive: true,
         ),
         isFalse,
       );
       expect(
-        shouldDrainPendingBoostPoll(
-          pendingBoostPoll: false,
-          isMonitoring: true,
-          isBoostActive: true,
-          isFetching: false,
+        shouldDrainPendingRefresh(
+          isMounted: true,
+          isInFlight: false,
+          hasPendingRefresh: true,
+          isActive: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldDrainPendingRefresh(
+          isMounted: true,
+          isInFlight: false,
+          hasPendingRefresh: false,
+          isActive: true,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldDrainPendingRefresh(
+          isMounted: false,
+          isInFlight: false,
+          hasPendingRefresh: true,
+          isActive: true,
         ),
         isFalse,
       );
@@ -952,9 +925,9 @@ void main() {
   });
 
   group('auth session polling guards', () {
-    test('canPollForUserSession requires auth and matching user id', () {
+    test('isSessionEligible requires auth and matching user id', () {
       expect(
-        canPollForUserSession(
+        isSessionEligible(
           isAuthenticated: true,
           authenticatedUserId: 'usr_test',
           expectedUserId: 'usr_test',
@@ -962,7 +935,7 @@ void main() {
         isTrue,
       );
       expect(
-        canPollForUserSession(
+        isSessionEligible(
           isAuthenticated: false,
           authenticatedUserId: 'usr_test',
           expectedUserId: 'usr_test',
@@ -970,7 +943,7 @@ void main() {
         isFalse,
       );
       expect(
-        canPollForUserSession(
+        isSessionEligible(
           isAuthenticated: true,
           authenticatedUserId: 'usr_other',
           expectedUserId: 'usr_test',
@@ -982,27 +955,20 @@ void main() {
     test(
       'stops monitoring when auth transitions away from authenticated',
       () async {
-        final authNotifier = _TestAuthNotifier(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_test'),
-          ),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final authNotifier = harness.authNotifier;
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
-
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
         notifier.state = const GroupMonitorState(
           selectedGroupIds: {'grp_alpha'},
           isMonitoring: true,
         );
 
-        authNotifier.setData(
-          const AuthState(status: AuthStatus.unauthenticated),
-        );
+        authNotifier.setData(unauthenticatedAuthState());
         await Future<void>.delayed(Duration.zero);
 
         expect(container.read(provider).isMonitoring, isFalse);
@@ -1012,19 +978,12 @@ void main() {
     test(
       'fetchGroupInstances is skipped when authenticated user id mismatches',
       () async {
-        final authNotifier = _TestAuthNotifier(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_other'),
-          ),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_other'),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final container = harness.container;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
-
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
         notifier.state = const GroupMonitorState(
           selectedGroupIds: {'grp_alpha'},
           isMonitoring: true,
@@ -1039,19 +998,14 @@ void main() {
     test(
       'timer-driven fetch remains guarded when auth user changes after scheduling',
       () async {
-        final authNotifier = _TestAuthNotifier(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_test'),
-          ),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final authNotifier = harness.authNotifier;
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
-
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
         notifier.state = const GroupMonitorState(
           selectedGroupIds: {'grp_alpha'},
         );
@@ -1061,12 +1015,7 @@ void main() {
             .read(apiCallCounterProvider)
             .totalCalls;
 
-        authNotifier.setData(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_other'),
-          ),
-        );
+        authNotifier.setData(authenticatedAuthState(userId: 'usr_other'));
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         expect(
@@ -1080,24 +1029,17 @@ void main() {
     test(
       'auth transition does not start monitoring with empty selection',
       () async {
-        final authNotifier = _TestAuthNotifier(
-          const AuthState(status: AuthStatus.unauthenticated),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: unauthenticatedAuthState(),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final authNotifier = harness.authNotifier;
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
 
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
-
         notifier.state = const GroupMonitorState(selectedGroupIds: <String>{});
-        authNotifier.setData(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_test'),
-          ),
-        );
+        authNotifier.setData(authenticatedAuthState(userId: 'usr_test'));
         expect(container.read(provider).isMonitoring, isFalse);
       },
     );
@@ -1105,26 +1047,19 @@ void main() {
     test(
       'auth transition starts monitoring when selected groups exist',
       () async {
-        final authNotifier = _TestAuthNotifier(
-          const AuthState(status: AuthStatus.unauthenticated),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: unauthenticatedAuthState(),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final authNotifier = harness.authNotifier;
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
-
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
 
         notifier.state = const GroupMonitorState(
           selectedGroupIds: {'grp_alpha'},
         );
-        authNotifier.setData(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_test'),
-          ),
-        );
+        authNotifier.setData(authenticatedAuthState(userId: 'usr_test'));
         await Future<void>.delayed(Duration.zero);
         expect(container.read(provider).isMonitoring, isTrue);
         notifier.stopMonitoring();
@@ -1134,19 +1069,13 @@ void main() {
     test(
       'toggleGroupSelection starts monitoring when first group is selected',
       () async {
-        final authNotifier = _TestAuthNotifier(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_test'),
-          ),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
-
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
         notifier.state = const GroupMonitorState();
 
         notifier.toggleGroupSelection('grp_alpha');
@@ -1161,19 +1090,13 @@ void main() {
     test(
       'toggleGroupSelection restarts monitoring after deselect/reselect',
       () {
-        final authNotifier = _TestAuthNotifier(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_test'),
-          ),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
-
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
         notifier.state = const GroupMonitorState();
 
         notifier.toggleGroupSelection('grp_alpha');
@@ -1191,19 +1114,13 @@ void main() {
     test(
       'toggleGroupSelection debounces refresh when adding a group while already monitoring',
       () async {
-        final authNotifier = _TestAuthNotifier(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_test'),
-          ),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
-
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
         notifier.state = const GroupMonitorState(
           selectedGroupIds: {'grp_alpha'},
           isMonitoring: true,
@@ -1226,19 +1143,13 @@ void main() {
     test(
       'toggleGroupSelection does not immediately refresh on removal while still monitoring',
       () async {
-        final authNotifier = _TestAuthNotifier(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_test'),
-          ),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
-
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
         notifier.state = const GroupMonitorState(
           selectedGroupIds: {'grp_alpha', 'grp_beta'},
           isMonitoring: true,
@@ -1262,16 +1173,13 @@ void main() {
     test(
       'toggleGroupSelection does not start monitoring for ineligible session',
       () {
-        final authNotifier = _TestAuthNotifier(
-          const AuthState(status: AuthStatus.unauthenticated),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: unauthenticatedAuthState(),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
-
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
         notifier.state = const GroupMonitorState();
 
         notifier.toggleGroupSelection('grp_alpha');
@@ -1287,19 +1195,12 @@ void main() {
     test(
       'creates a baseline polling timer when refresh is requested non-immediately',
       () {
-        final authNotifier = _TestAuthNotifier(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_test'),
-          ),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final container = harness.container;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
-
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
         notifier.state = const GroupMonitorState(
           selectedGroupIds: {'grp_alpha'},
           isMonitoring: true,
@@ -1313,16 +1214,13 @@ void main() {
     );
 
     test('forces monitoring off when active monitoring becomes ineligible', () {
-      final authNotifier = _TestAuthNotifier(
-        const AuthState(status: AuthStatus.unauthenticated),
+      final harness = createGroupMonitorHarness(
+        initialAuthState: unauthenticatedAuthState(),
       );
-      final container = ProviderContainer(
-        overrides: [authProvider.overrideWith(() => authNotifier)],
-      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
       addTearDown(container.dispose);
-
-      final provider = groupMonitorProvider('usr_test');
-      final notifier = container.read(provider.notifier);
       notifier.state = const GroupMonitorState(
         selectedGroupIds: {'grp_alpha'},
         isMonitoring: true,
@@ -1339,19 +1237,12 @@ void main() {
     test(
       'baseline polling excludes boosted group to avoid duplicate calls',
       () async {
-        final authNotifier = _TestAuthNotifier(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_test'),
-          ),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final container = harness.container;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
-
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
         await Future<void>.delayed(Duration.zero);
         await Future<void>.delayed(Duration.zero);
         notifier.state = GroupMonitorState(
@@ -1369,19 +1260,12 @@ void main() {
     );
 
     test('clearing boost triggers baseline recovery refresh', () async {
-      final authNotifier = _TestAuthNotifier(
-        AuthState(
-          status: AuthStatus.authenticated,
-          currentUser: _mockCurrentUser('usr_test'),
-        ),
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
       );
-      final container = ProviderContainer(
-        overrides: [authProvider.overrideWith(() => authNotifier)],
-      );
+      final container = harness.container;
+      final notifier = harness.notifier;
       addTearDown(container.dispose);
-
-      final provider = groupMonitorProvider('usr_test');
-      final notifier = container.read(provider.notifier);
       notifier.state = GroupMonitorState(
         selectedGroupIds: const {'grp_alpha'},
         isMonitoring: true,
@@ -1396,15 +1280,12 @@ void main() {
     });
 
     test('automatic baseline poll is deferred during cooldown', () async {
-      final authNotifier = _TestAuthNotifier(
-        AuthState(
-          status: AuthStatus.authenticated,
-          currentUser: _mockCurrentUser('usr_test'),
-        ),
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
       );
-      final container = ProviderContainer(
-        overrides: [authProvider.overrideWith(() => authNotifier)],
-      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
       addTearDown(container.dispose);
 
       container
@@ -1414,8 +1295,6 @@ void main() {
             retryAfter: const Duration(seconds: 60),
           );
 
-      final provider = groupMonitorProvider('usr_test');
-      final notifier = container.read(provider.notifier);
       notifier.state = const GroupMonitorState(
         selectedGroupIds: {'grp_alpha'},
         isMonitoring: true,
@@ -1429,15 +1308,12 @@ void main() {
     });
 
     test('automatic boost poll is deferred during cooldown', () async {
-      final authNotifier = _TestAuthNotifier(
-        AuthState(
-          status: AuthStatus.authenticated,
-          currentUser: _mockCurrentUser('usr_test'),
-        ),
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
       );
-      final container = ProviderContainer(
-        overrides: [authProvider.overrideWith(() => authNotifier)],
-      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
       addTearDown(container.dispose);
 
       container
@@ -1447,8 +1323,6 @@ void main() {
             retryAfter: const Duration(seconds: 60),
           );
 
-      final provider = groupMonitorProvider('usr_test');
-      final notifier = container.read(provider.notifier);
       notifier.state = GroupMonitorState(
         selectedGroupIds: const {'grp_alpha'},
         isMonitoring: true,
@@ -1464,15 +1338,11 @@ void main() {
     });
 
     test('manual refresh bypasses baseline cooldown', () async {
-      final authNotifier = _TestAuthNotifier(
-        AuthState(
-          status: AuthStatus.authenticated,
-          currentUser: _mockCurrentUser('usr_test'),
-        ),
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
       );
-      final container = ProviderContainer(
-        overrides: [authProvider.overrideWith(() => authNotifier)],
-      );
+      final container = harness.container;
+      final notifier = harness.notifier;
       addTearDown(container.dispose);
 
       container
@@ -1482,8 +1352,6 @@ void main() {
             retryAfter: const Duration(seconds: 60),
           );
 
-      final provider = groupMonitorProvider('usr_test');
-      final notifier = container.read(provider.notifier);
       notifier.state = const GroupMonitorState(
         selectedGroupIds: {'grp_alpha'},
         isMonitoring: true,
@@ -1498,15 +1366,11 @@ void main() {
     test(
       'queued manual refresh preserves bypass intent during cooldown',
       () async {
-        final authNotifier = _TestAuthNotifier(
-          AuthState(
-            status: AuthStatus.authenticated,
-            currentUser: _mockCurrentUser('usr_test'),
-          ),
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
         );
-        final container = ProviderContainer(
-          overrides: [authProvider.overrideWith(() => authNotifier)],
-        );
+        final container = harness.container;
+        final notifier = harness.notifier;
         addTearDown(container.dispose);
 
         container
@@ -1516,8 +1380,6 @@ void main() {
               retryAfter: const Duration(seconds: 60),
             );
 
-        final provider = groupMonitorProvider('usr_test');
-        final notifier = container.read(provider.notifier);
         notifier.state = const GroupMonitorState(
           selectedGroupIds: {'grp_alpha'},
           isMonitoring: true,
@@ -1537,15 +1399,12 @@ void main() {
     );
 
     test('records baseline diagnostics for cooldown skip', () async {
-      final authNotifier = _TestAuthNotifier(
-        AuthState(
-          status: AuthStatus.authenticated,
-          currentUser: _mockCurrentUser('usr_test'),
-        ),
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
       );
-      final container = ProviderContainer(
-        overrides: [authProvider.overrideWith(() => authNotifier)],
-      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
       addTearDown(container.dispose);
 
       container
@@ -1555,8 +1414,6 @@ void main() {
             retryAfter: const Duration(seconds: 60),
           );
 
-      final provider = groupMonitorProvider('usr_test');
-      final notifier = container.read(provider.notifier);
       notifier.state = const GroupMonitorState(
         selectedGroupIds: {'grp_alpha'},
         isMonitoring: true,
@@ -1571,19 +1428,13 @@ void main() {
     });
 
     test('records baseline diagnostics for completed cycle', () async {
-      final authNotifier = _TestAuthNotifier(
-        AuthState(
-          status: AuthStatus.authenticated,
-          currentUser: _mockCurrentUser('usr_test'),
-        ),
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
       );
-      final container = ProviderContainer(
-        overrides: [authProvider.overrideWith(() => authNotifier)],
-      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
       addTearDown(container.dispose);
-
-      final provider = groupMonitorProvider('usr_test');
-      final notifier = container.read(provider.notifier);
       notifier.state = const GroupMonitorState(
         selectedGroupIds: {'grp_alpha'},
         isMonitoring: true,
@@ -1600,19 +1451,13 @@ void main() {
     });
 
     test('startMonitoring records a baseline attempt', () async {
-      final authNotifier = _TestAuthNotifier(
-        AuthState(
-          status: AuthStatus.authenticated,
-          currentUser: _mockCurrentUser('usr_test'),
-        ),
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
       );
-      final container = ProviderContainer(
-        overrides: [authProvider.overrideWith(() => authNotifier)],
-      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
       addTearDown(container.dispose);
-
-      final provider = groupMonitorProvider('usr_test');
-      final notifier = container.read(provider.notifier);
       notifier.state = const GroupMonitorState(selectedGroupIds: {'grp_alpha'});
 
       notifier.startMonitoring();

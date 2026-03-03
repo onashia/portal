@@ -12,9 +12,9 @@ class UserStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      spacing: context.m3e.spacing.sm,
       children: [
         Icon(status.icon, size: IconSizes.xxs, color: status.getColor(context)),
-        SizedBox(width: context.m3e.spacing.sm),
         Text(
           status.text,
           style: Theme.of(

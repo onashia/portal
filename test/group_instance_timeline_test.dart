@@ -63,10 +63,7 @@ void main() {
           home: Scaffold(
             body: SizedBox(
               height: 400,
-              child: GroupInstanceTimeline(
-                userId: 'usr_test',
-                onRefresh: () {},
-              ),
+              child: GroupInstanceTimeline(userId: 'usr_test'),
             ),
           ),
         ),
@@ -106,10 +103,7 @@ void main() {
           home: Scaffold(
             body: SizedBox(
               height: 300,
-              child: GroupInstanceTimeline(
-                userId: 'usr_test',
-                onRefresh: () {},
-              ),
+              child: GroupInstanceTimeline(userId: 'usr_test'),
             ),
           ),
         ),
@@ -142,10 +136,7 @@ void main() {
           home: Scaffold(
             body: SizedBox(
               height: 300,
-              child: GroupInstanceTimeline(
-                userId: 'usr_test',
-                onRefresh: () {},
-              ),
+              child: GroupInstanceTimeline(userId: 'usr_test'),
             ),
           ),
         ),
@@ -178,10 +169,7 @@ void main() {
           home: Scaffold(
             body: SizedBox(
               height: 300,
-              child: GroupInstanceTimeline(
-                userId: 'usr_test',
-                onRefresh: () {},
-              ),
+              child: GroupInstanceTimeline(userId: 'usr_test'),
             ),
           ),
         ),

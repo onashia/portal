@@ -23,12 +23,12 @@ class DashboardCards extends ConsumerWidget {
     if (canShowSideBySide) {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: spacing,
         children: [
           Expanded(
             flex: 3,
             child: DashboardGroupMonitoringSection(userId: userId),
           ),
-          SizedBox(width: spacing),
           Expanded(flex: 2, child: GroupEventsCard(userId: userId)),
         ],
       );

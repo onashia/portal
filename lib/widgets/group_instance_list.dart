@@ -5,13 +5,8 @@ import 'group_instance_timeline.dart';
 
 class GroupInstanceList extends ConsumerWidget {
   final String userId;
-  final VoidCallback onRefresh;
 
-  const GroupInstanceList({
-    super.key,
-    required this.userId,
-    required this.onRefresh,
-  });
+  const GroupInstanceList({super.key, required this.userId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -23,6 +18,6 @@ class GroupInstanceList extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
-    return GroupInstanceTimeline(userId: userId, onRefresh: onRefresh);
+    return GroupInstanceTimeline(userId: userId);
   }
 }

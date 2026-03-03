@@ -49,40 +49,36 @@ class AuthService {
 
         final (success, failure) = loginResponse;
 
-        if (success != null) {
-          final authResponse = success.data;
-
-          if (authResponse.requiresTwoFactorAuth == true) {
-            AppLogger.info(
-              '2FA is required based on login response',
-              subCategory: 'auth',
-            );
-            return AuthResult(status: AuthResultStatus.requires2FA);
-          }
-        } else {
+        if (success == null) {
           AppLogger.error('Login response failed', subCategory: 'auth');
           AppLogger.error(
             'Login failure details: ${failure.toString()}',
             subCategory: 'auth',
           );
           final failureMessage = failure.toString().split('\n').first.trim();
-          final requiresEmailVerification =
-              failureMessage.contains('Check your email') ||
-              failureMessage.contains('logging in from somewhere new');
-
           final errorMessage = formatApiError('Login failed', failure);
 
-          if (requiresEmailVerification) {
+          if (failureMessage.contains('Check your email') ||
+              failureMessage.contains('logging in from somewhere new')) {
             return AuthResult(
               status: AuthResultStatus.requiresEmailVerification,
               errorMessage: errorMessage,
             );
-          } else {
-            return AuthResult(
-              status: AuthResultStatus.failure,
-              errorMessage: errorMessage,
-            );
           }
+
+          return AuthResult(
+            status: AuthResultStatus.failure,
+            errorMessage: errorMessage,
+          );
+        }
+
+        final authResponse = success.data;
+        if (authResponse.requiresTwoFactorAuth == true) {
+          AppLogger.info(
+            '2FA is required based on login response',
+            subCategory: 'auth',
+          );
+          return AuthResult(status: AuthResultStatus.requires2FA);
         }
 
         AppLogger.error(

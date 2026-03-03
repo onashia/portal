@@ -7,18 +7,18 @@ import 'package:motor/motor.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../constants/icon_sizes.dart';
+import '../constants/ui_constants.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import '../providers/group_monitor_storage.dart';
-import '../providers/theme_provider.dart';
 import '../services/notification_service.dart';
 import '../utils/animation_constants.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_utils.dart';
 import '../widgets/common/empty_state.dart';
-import '../constants/icon_sizes.dart';
+import '../widgets/common/theme_mode_toggle_button.dart';
 import '../widgets/custom_title_bar.dart';
-import '../constants/ui_constants.dart';
 import '../widgets/dashboard/dashboard_action_area.dart';
 import '../widgets/dashboard/dashboard_cards.dart';
 import '../widgets/dashboard/dashboard_side_sheet_layout.dart';
@@ -56,6 +56,11 @@ DashboardAuthViewState resolveDashboardAuthViewState({
   return DashboardAuthViewState.ready;
 }
 
+@visibleForTesting
+Widget buildDashboardHandoffScaffold() {
+  return const Scaffold(body: SizedBox.expand());
+}
+
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
 
@@ -65,35 +70,6 @@ class DashboardPage extends ConsumerStatefulWidget {
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
   bool _isSideSheetOpen = false;
-
-  void _openSideSheet() {
-    if (!_isSideSheetOpen) {
-      setState(() {
-        _isSideSheetOpen = true;
-      });
-    }
-  }
-
-  void _openSideSheetForUser(String userId) {
-    _openSideSheet();
-    ref.read(groupMonitorProvider(userId).notifier).fetchUserGroupsIfNeeded();
-  }
-
-  void _closeSideSheet() {
-    if (_isSideSheetOpen) {
-      setState(() {
-        _isSideSheetOpen = false;
-      });
-    }
-  }
-
-  void _toggleSideSheetForUser(String userId) {
-    if (_isSideSheetOpen) {
-      _closeSideSheet();
-    } else {
-      _openSideSheetForUser(userId);
-    }
-  }
 
   @override
   void initState() {
@@ -107,7 +83,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final authMeta = ref.watch(authAsyncMetaProvider);
     final authStatus = ref.watch(authStatusProvider);
     final currentUser = ref.watch(authCurrentUserProvider);
-    final themeMode = ref.watch(themeProvider);
     final authViewState = resolveDashboardAuthViewState(
       authMeta: authMeta,
       authStatus: authStatus,
@@ -115,194 +90,268 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
 
     if (authViewState == DashboardAuthViewState.loading) {
-      return Scaffold(
-        body: Center(
-          child: Transform.scale(
-            scale: UiConstants.dashboardLoadingScale,
-            child: const LoadingIndicatorM3E(
-              variant: LoadingIndicatorM3EVariant.defaultStyle,
-              semanticLabel: 'Loading portal',
-            ),
-          ),
-        ),
-      );
+      return _buildLoadingScaffold();
     }
 
     if (authViewState == DashboardAuthViewState.error) {
-      final scheme = Theme.of(context).colorScheme;
-      return Scaffold(
-        appBar: CustomTitleBar(
-          title: 'portal.',
-          icon: Icons.tonality,
-          actions: [
-            IconButton(
-              icon: Icon(
-                themeMode == ThemeMode.dark
-                    ? Icons.light_mode_outlined
-                    : Icons.dark_mode_outlined,
-                size: IconSizes.xs,
-              ),
-              tooltip: themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
-              onPressed: () {
-                ref.read(themeProvider.notifier).toggleTheme();
-              },
-            ),
-          ],
-        ),
-        body: EmptyState(
-          icon: Icons.error_outline,
-          title: 'An error occurred',
-          message: formatUiErrorMessage(authMeta.error),
-          iconColor: scheme.error,
-        ),
-      );
+      return _buildErrorScaffold(context, authMeta);
     }
 
     if (authViewState == DashboardAuthViewState.handoff) {
-      return const SizedBox.shrink();
+      return buildDashboardHandoffScaffold();
     }
 
-    final userId = currentUser!.id;
+    return _buildReadyScaffold(context, currentUser!);
+  }
+
+  Scaffold _buildLoadingScaffold() {
+    return Scaffold(
+      body: Center(
+        child: Transform.scale(
+          scale: UiConstants.dashboardLoadingScale,
+          child: const LoadingIndicatorM3E(
+            variant: LoadingIndicatorM3EVariant.defaultStyle,
+            semanticLabel: 'Loading portal',
+          ),
+        ),
+      ),
+    );
+  }
+
+  Scaffold _buildErrorScaffold(BuildContext context, AuthAsyncMeta authMeta) {
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: CustomTitleBar(
         title: 'portal.',
         icon: Icons.tonality,
-        actions: [
-          IconButton(
-            icon: Icon(
-              themeMode == ThemeMode.dark
-                  ? Icons.light_mode_outlined
-                  : Icons.dark_mode_outlined,
-              size: IconSizes.xs,
-            ),
-            tooltip: themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
-            onPressed: () {
-              ref.read(themeProvider.notifier).toggleTheme();
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout, size: IconSizes.xs),
-            tooltip: 'Logout',
-            onPressed: () async {
-              ref.read(groupMonitorProvider(userId).notifier).stopMonitoring();
-              try {
-                await GroupMonitorStorage.clearAll();
-              } catch (e, s) {
-                AppLogger.error(
-                  'Failed to clear group monitor storage on logout',
-                  subCategory: 'group_monitor',
-                  error: e,
-                  stackTrace: s,
-                );
-              }
-              await ref.read(authProvider.notifier).logout();
-              ref.invalidate(groupMonitorProvider(userId));
-            },
-          ),
-        ],
+        actions: const [ThemeModeToggleButton()],
       ),
-      body: DragToResizeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final totalWidth = constraints.maxWidth;
-            final effectiveSheetWidth =
-                totalWidth < UiConstants.dashboardSheetTargetWidth
-                ? totalWidth
-                : UiConstants.dashboardSheetTargetWidth;
-            final horizontalPadding = context.m3e.spacing.xxl * 2;
-            final maxWidth = math.max(
-              0.0,
-              math.min(
-                UiConstants.dashboardMaxContentWidth,
-                constraints.maxWidth - (horizontalPadding * 2),
-              ),
-            );
-            final canShowSideBySide =
-                maxWidth >=
-                (UiConstants.dashboardMinGroupCardWidth +
-                    UiConstants.dashboardMinEventsCardWidth +
-                    context.m3e.spacing.lg);
-            final sideBySideBottomPadding = context.m3e.spacing.xxl * 3;
-            final stackedBottomPadding = context.m3e.spacing.xl;
-            final contentBottomPadding = canShowSideBySide
-                ? sideBySideBottomPadding
-                : stackedBottomPadding;
-            final sideSheet = KeyedSubtree(
-              key: const ValueKey('groupSideSheet'),
-              child: GroupSelectionSideSheet(
-                userId: userId,
-                onClose: _closeSideSheet,
-              ),
-            );
-
-            final content = SizedBox.expand(
-              child: Stack(
-                children: [
-                  SafeArea(
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                        left: horizontalPadding,
-                        right: horizontalPadding,
-                        top: context.m3e.spacing.xl,
-                        bottom: contentBottomPadding,
-                      ),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(maxWidth: maxWidth),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              DashboardUserCard(currentUser: currentUser),
-                              SizedBox(height: context.m3e.spacing.lg),
-                              Expanded(
-                                child: DashboardCards(
-                                  userId: userId,
-                                  canShowSideBySide: canShowSideBySide,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-
-            return SingleMotionBuilder(
-              motion: AnimationConstants.expressiveSpatialDefault,
-              value: _isSideSheetOpen ? 1.0 : 0.0,
-              from: 0.0,
-              builder: (context, value, _) {
-                final progress = value.clamp(0.0, 1.0);
-                return Stack(
-                  children: [
-                    DashboardSideSheetLayout(
-                      content: content,
-                      sideSheet: sideSheet,
-                      sheetWidth: effectiveSheetWidth,
-                      progress: progress,
-                      onClose: _closeSideSheet,
-                    ),
-                    Positioned(
-                      bottom: context.m3e.spacing.xl,
-                      right: context.m3e.spacing.xl,
-                      child: DashboardActionArea(
-                        userId: userId,
-                        onManageGroups: () => _toggleSideSheetForUser(userId),
-                        sheetWidth: effectiveSheetWidth,
-                        progress: progress,
-                      ),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        ),
+      body: EmptyState(
+        icon: Icons.error_outline,
+        title: 'An error occurred',
+        message: formatUiErrorMessage(authMeta.error),
+        iconColor: scheme.error,
       ),
     );
   }
+
+  Scaffold _buildReadyScaffold(BuildContext context, CurrentUser currentUser) {
+    final userId = currentUser.id;
+
+    return Scaffold(
+      appBar: CustomTitleBar(
+        title: 'portal.',
+        icon: Icons.tonality,
+        actions: [const ThemeModeToggleButton(), _buildLogoutAction(userId)],
+      ),
+      body: _buildDashboardBody(context, currentUser, userId),
+    );
+  }
+
+  Widget _buildDashboardBody(
+    BuildContext context,
+    CurrentUser currentUser,
+    String userId,
+  ) {
+    return DragToResizeArea(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final layoutData = _resolveLayoutData(context, constraints);
+          final sideSheet = KeyedSubtree(
+            key: const ValueKey('groupSideSheet'),
+            child: GroupSelectionSideSheet(
+              userId: userId,
+              onClose: _closeSideSheet,
+            ),
+          );
+          final content = _buildDashboardContent(
+            context,
+            currentUser,
+            userId,
+            layoutData,
+          );
+
+          return SingleMotionBuilder(
+            motion: AnimationConstants.expressiveSpatialDefault,
+            value: _isSideSheetOpen ? 1.0 : 0.0,
+            from: 0.0,
+            builder: (context, value, _) {
+              final progress = value.clamp(0.0, 1.0);
+              return Stack(
+                children: [
+                  DashboardSideSheetLayout(
+                    content: content,
+                    sideSheet: sideSheet,
+                    sheetWidth: layoutData.effectiveSheetWidth,
+                    progress: progress,
+                    onClose: _closeSideSheet,
+                  ),
+                  Positioned(
+                    bottom: context.m3e.spacing.xl,
+                    right: context.m3e.spacing.xl,
+                    child: DashboardActionArea(
+                      userId: userId,
+                      onManageGroups: () => _toggleSideSheetForUser(userId),
+                      sheetWidth: layoutData.effectiveSheetWidth,
+                      progress: progress,
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDashboardContent(
+    BuildContext context,
+    CurrentUser currentUser,
+    String userId,
+    _DashboardLayoutData layoutData,
+  ) {
+    return SizedBox.expand(
+      child: Stack(
+        children: [
+          SafeArea(
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: layoutData.horizontalPadding,
+                right: layoutData.horizontalPadding,
+                top: context.m3e.spacing.xl,
+                bottom: layoutData.contentBottomPadding,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: layoutData.maxWidth),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      DashboardUserCard(currentUser: currentUser),
+                      SizedBox(height: context.m3e.spacing.lg),
+                      Expanded(
+                        child: DashboardCards(
+                          userId: userId,
+                          canShowSideBySide: layoutData.canShowSideBySide,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  _DashboardLayoutData _resolveLayoutData(
+    BuildContext context,
+    BoxConstraints constraints,
+  ) {
+    final spacing = context.m3e.spacing;
+    final totalWidth = constraints.maxWidth;
+    final effectiveSheetWidth =
+        totalWidth < UiConstants.dashboardSheetTargetWidth
+        ? totalWidth
+        : UiConstants.dashboardSheetTargetWidth;
+    final horizontalPadding = spacing.xxl * 2;
+    final maxWidth = math.max(
+      0.0,
+      math.min(
+        UiConstants.dashboardMaxContentWidth,
+        constraints.maxWidth - (horizontalPadding * 2),
+      ),
+    );
+    final canShowSideBySide =
+        maxWidth >=
+        (UiConstants.dashboardMinGroupCardWidth +
+            UiConstants.dashboardMinEventsCardWidth +
+            spacing.lg);
+    final contentBottomPadding = canShowSideBySide
+        ? spacing.xxl * 3
+        : spacing.xl;
+
+    return _DashboardLayoutData(
+      effectiveSheetWidth: effectiveSheetWidth,
+      horizontalPadding: horizontalPadding,
+      maxWidth: maxWidth,
+      canShowSideBySide: canShowSideBySide,
+      contentBottomPadding: contentBottomPadding,
+    );
+  }
+
+  Widget _buildLogoutAction(String userId) {
+    return IconButton(
+      icon: const Icon(Icons.logout, size: IconSizes.xs),
+      tooltip: 'Logout',
+      onPressed: () => _logout(userId),
+    );
+  }
+
+  Future<void> _logout(String userId) async {
+    ref.read(groupMonitorProvider(userId).notifier).stopMonitoring();
+    try {
+      await GroupMonitorStorage.clearAll();
+    } catch (e, s) {
+      AppLogger.error(
+        'Failed to clear group monitor storage on logout',
+        subCategory: 'group_monitor',
+        error: e,
+        stackTrace: s,
+      );
+    }
+    await ref.read(authProvider.notifier).logout();
+    ref.invalidate(groupMonitorProvider(userId));
+  }
+
+  void _openSideSheet() {
+    if (_isSideSheetOpen) {
+      return;
+    }
+    setState(() {
+      _isSideSheetOpen = true;
+    });
+  }
+
+  void _openSideSheetForUser(String userId) {
+    _openSideSheet();
+    ref.read(groupMonitorProvider(userId).notifier).fetchUserGroupsIfNeeded();
+  }
+
+  void _closeSideSheet() {
+    if (!_isSideSheetOpen) {
+      return;
+    }
+    setState(() {
+      _isSideSheetOpen = false;
+    });
+  }
+
+  void _toggleSideSheetForUser(String userId) {
+    if (_isSideSheetOpen) {
+      _closeSideSheet();
+      return;
+    }
+    _openSideSheetForUser(userId);
+  }
+}
+
+class _DashboardLayoutData {
+  const _DashboardLayoutData({
+    required this.effectiveSheetWidth,
+    required this.horizontalPadding,
+    required this.maxWidth,
+    required this.canShowSideBySide,
+    required this.contentBottomPadding,
+  });
+
+  final double effectiveSheetWidth;
+  final double horizontalPadding;
+  final double maxWidth;
+  final bool canShowSideBySide;
+  final double contentBottomPadding;
 }

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import '../constants/app_constants.dart';
@@ -8,304 +7,18 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../models/group_calendar_event.dart';
 import '../providers/api_call_counter.dart';
-import '../providers/api_rate_limit_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import '../providers/polling_lifecycle.dart';
 import '../services/api_rate_limit_coordinator.dart';
 import '../utils/app_logger.dart';
 import '../utils/calendar_event_utils.dart';
+import 'refresh_cooldown_handler.dart';
+import 'group_calendar_algorithms.dart';
+import 'group_calendar_state.dart';
 
-@immutable
-class GroupCalendarState {
-  static const _unset = Object();
-
-  final Map<String, List<CalendarEvent>> eventsByGroup;
-  final List<GroupCalendarEvent> todayEvents;
-  final Map<String, String> groupErrors;
-  final bool isLoading;
-  final DateTime? lastDataChangedAt;
-
-  const GroupCalendarState({
-    this.eventsByGroup = const {},
-    this.todayEvents = const [],
-    this.groupErrors = const {},
-    this.isLoading = false,
-    this.lastDataChangedAt,
-  });
-
-  GroupCalendarState copyWith({
-    Map<String, List<CalendarEvent>>? eventsByGroup,
-    List<GroupCalendarEvent>? todayEvents,
-    Map<String, String>? groupErrors,
-    bool? isLoading,
-    Object? lastDataChangedAt = _unset,
-  }) {
-    return GroupCalendarState(
-      eventsByGroup: eventsByGroup ?? this.eventsByGroup,
-      todayEvents: todayEvents ?? this.todayEvents,
-      groupErrors: groupErrors ?? this.groupErrors,
-      isLoading: isLoading ?? this.isLoading,
-      lastDataChangedAt: lastDataChangedAt == _unset
-          ? this.lastDataChangedAt
-          : lastDataChangedAt as DateTime?,
-    );
-  }
-}
-
-@visibleForTesting
-Future<
-  ({
-    Map<String, List<CalendarEvent>> eventsByGroup,
-    Map<String, String> groupErrors,
-  })
->
-fetchGroupCalendarEventsChunked({
-  required List<String> orderedGroupIds,
-  required Map<String, List<CalendarEvent>> previousEventsByGroup,
-  required Future<List<CalendarEvent>> Function(String groupId) fetchEvents,
-  int maxConcurrentRequests = 4,
-  void Function(String groupId, Object error, StackTrace stackTrace)?
-  onFetchError,
-}) async {
-  if (maxConcurrentRequests < 1) {
-    throw ArgumentError.value(
-      maxConcurrentRequests,
-      'maxConcurrentRequests',
-      'must be at least 1',
-    );
-  }
-
-  final eventsByGroup = <String, List<CalendarEvent>>{};
-  final groupErrors = <String, String>{};
-
-  for (
-    int start = 0;
-    start < orderedGroupIds.length;
-    start += maxConcurrentRequests
-  ) {
-    final end = math.min(start + maxConcurrentRequests, orderedGroupIds.length);
-    final chunk = orderedGroupIds.sublist(start, end);
-
-    final chunkResults = await Future.wait(
-      chunk.map((groupId) async {
-        try {
-          final events = await fetchEvents(groupId);
-          return (groupId: groupId, events: events, failed: false);
-        } catch (e, s) {
-          onFetchError?.call(groupId, e, s);
-          final previousEvents = previousEventsByGroup[groupId];
-          return (groupId: groupId, events: previousEvents, failed: true);
-        }
-      }),
-    );
-
-    for (final result in chunkResults) {
-      if (result.events != null) {
-        eventsByGroup[result.groupId] = result.events!;
-      }
-      if (result.failed) {
-        groupErrors[result.groupId] = 'Failed to fetch events';
-      }
-    }
-  }
-
-  return (eventsByGroup: eventsByGroup, groupErrors: groupErrors);
-}
-
-bool _areListsEquivalent<T>(
-  List<T>? previous,
-  List<T>? next, {
-  bool Function(T previous, T next)? equals,
-}) {
-  if (identical(previous, next)) {
-    return true;
-  }
-  if (previous == null || next == null) {
-    return previous == null && next == null;
-  }
-  if (previous.length != next.length) {
-    return false;
-  }
-
-  final itemEquals = equals ?? (T a, T b) => a == b;
-  for (int i = 0; i < previous.length; i++) {
-    if (!itemEquals(previous[i], next[i])) {
-      return false;
-    }
-  }
-  return true;
-}
-
-@visibleForTesting
-bool areCalendarEventsEquivalent(CalendarEvent previous, CalendarEvent next) {
-  return previous.accessType == next.accessType &&
-      previous.category == next.category &&
-      previous.closeInstanceAfterEndMinutes ==
-          next.closeInstanceAfterEndMinutes &&
-      previous.createdAt == next.createdAt &&
-      previous.deletedAt == next.deletedAt &&
-      previous.description == next.description &&
-      previous.durationInMs == next.durationInMs &&
-      previous.endsAt == next.endsAt &&
-      previous.featured == next.featured &&
-      previous.guestEarlyJoinMinutes == next.guestEarlyJoinMinutes &&
-      previous.hostEarlyJoinMinutes == next.hostEarlyJoinMinutes &&
-      previous.id == next.id &&
-      previous.imageId == next.imageId &&
-      previous.imageUrl == next.imageUrl &&
-      previous.interestedUserCount == next.interestedUserCount &&
-      previous.isDraft == next.isDraft &&
-      _areListsEquivalent(previous.languages, next.languages) &&
-      previous.ownerId == next.ownerId &&
-      _areListsEquivalent(previous.platforms, next.platforms) &&
-      _areListsEquivalent(previous.roleIds, next.roleIds) &&
-      previous.startsAt == next.startsAt &&
-      _areListsEquivalent(previous.tags, next.tags) &&
-      previous.title == next.title &&
-      previous.type == next.type &&
-      previous.updatedAt == next.updatedAt &&
-      previous.userInterest == next.userInterest &&
-      previous.usesInstanceOverflow == next.usesInstanceOverflow;
-}
-
-@visibleForTesting
-bool areCalendarEventListsEquivalent(
-  List<CalendarEvent> previous,
-  List<CalendarEvent> next,
-) {
-  return _areListsEquivalent(
-    previous,
-    next,
-    equals: areCalendarEventsEquivalent,
-  );
-}
-
-@visibleForTesting
-bool areEventsByGroupEquivalent(
-  Map<String, List<CalendarEvent>> previous,
-  Map<String, List<CalendarEvent>> next,
-) {
-  if (identical(previous, next)) {
-    return true;
-  }
-  if (previous.length != next.length) {
-    return false;
-  }
-
-  for (final entry in previous.entries) {
-    final nextEvents = next[entry.key];
-    if (nextEvents == null ||
-        !areCalendarEventListsEquivalent(entry.value, nextEvents)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-@visibleForTesting
-bool areStringMapsEquivalent(
-  Map<String, String> previous,
-  Map<String, String> next,
-) {
-  if (identical(previous, next)) {
-    return true;
-  }
-  if (previous.length != next.length) {
-    return false;
-  }
-
-  for (final entry in previous.entries) {
-    if (next[entry.key] != entry.value) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-@visibleForTesting
-bool areTodayEventsEquivalent(
-  List<GroupCalendarEvent> previous,
-  List<GroupCalendarEvent> next,
-) {
-  if (identical(previous, next)) {
-    return true;
-  }
-  if (previous.length != next.length) {
-    return false;
-  }
-
-  for (int i = 0; i < previous.length; i++) {
-    final previousEvent = previous[i];
-    final nextEvent = next[i];
-    if (previousEvent.groupId != nextEvent.groupId ||
-        previousEvent.group != nextEvent.group ||
-        !areCalendarEventsEquivalent(previousEvent.event, nextEvent.event)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-@visibleForTesting
-({
-  Map<String, List<CalendarEvent>> effectiveEventsByGroup,
-  List<GroupCalendarEvent> effectiveTodayEvents,
-  Map<String, String> effectiveGroupErrors,
-  bool didDataChange,
-})
-selectCalendarDataForState({
-  required GroupCalendarState previousState,
-  required Map<String, List<CalendarEvent>> nextEventsByGroup,
-  required List<GroupCalendarEvent> nextTodayEvents,
-  required Map<String, String> nextGroupErrors,
-}) {
-  final didEventsByGroupChange = !areEventsByGroupEquivalent(
-    previousState.eventsByGroup,
-    nextEventsByGroup,
-  );
-  final didTodayEventsChange = !areTodayEventsEquivalent(
-    previousState.todayEvents,
-    nextTodayEvents,
-  );
-  final didGroupErrorsChange = !areStringMapsEquivalent(
-    previousState.groupErrors,
-    nextGroupErrors,
-  );
-  final didDataChange =
-      didEventsByGroupChange || didTodayEventsChange || didGroupErrorsChange;
-
-  return (
-    effectiveEventsByGroup: didEventsByGroupChange
-        ? nextEventsByGroup
-        : previousState.eventsByGroup,
-    effectiveTodayEvents: didTodayEventsChange
-        ? nextTodayEvents
-        : previousState.todayEvents,
-    effectiveGroupErrors: didGroupErrorsChange
-        ? nextGroupErrors
-        : previousState.groupErrors,
-    didDataChange: didDataChange,
-  );
-}
-
-@visibleForTesting
-bool shouldEnterForegroundCalendarLoading(GroupCalendarState currentState) {
-  return currentState.eventsByGroup.isEmpty &&
-      currentState.todayEvents.isEmpty &&
-      currentState.groupErrors.isEmpty;
-}
-
-@visibleForTesting
-bool shouldEmitCalendarRefreshStateUpdate({
-  required GroupCalendarState currentState,
-  required bool didDataChange,
-}) {
-  return didDataChange || currentState.isLoading;
-}
+export 'group_calendar_algorithms.dart';
+export 'group_calendar_state.dart';
 
 class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   static const _refreshMinutes = 30;
@@ -316,18 +29,16 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
 
   GroupCalendarNotifier(this.userId);
 
-  Timer? _refreshTimer;
+  final _calendarLoop = RefreshLoopState();
   Timer? _selectionRefreshDebounceTimer;
   bool _isFetching = false;
-  bool _pendingRefresh = false;
-  bool _pendingBypassRateLimit = false;
 
   @visibleForTesting
-  bool get hasActiveRefreshTimer => _refreshTimer != null;
+  bool get hasActiveRefreshTimer => _calendarLoop.hasTimer;
 
   bool _canRefreshForCurrentSession() {
     final session = ref.read(authSessionSnapshotProvider);
-    return canPollForUserSession(
+    return isSessionEligible(
       isAuthenticated: session.isAuthenticated,
       authenticatedUserId: session.userId,
       expectedUserId: userId,
@@ -377,8 +88,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       _disposeTimer();
       _selectionRefreshDebounceTimer?.cancel();
       _selectionRefreshDebounceTimer = null;
-      _pendingRefresh = false;
-      _pendingBypassRateLimit = false;
+      _calendarLoop.clearPending();
     });
 
     final shouldRefresh = _calendarActive();
@@ -424,8 +134,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     _disposeTimer();
     _selectionRefreshDebounceTimer?.cancel();
     _selectionRefreshDebounceTimer = null;
-    _pendingRefresh = false;
-    _pendingBypassRateLimit = false;
+    _calendarLoop.clearPending();
     if (state.isLoading) {
       state = state.copyWith(isLoading: false);
     }
@@ -483,32 +192,35 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     bool immediate = true,
     bool bypassRateLimit = false,
   }) {
-    if (!_calendarActive()) {
+    final dispatch = shouldRequestImmediateRefresh(
+      isActive: _calendarActive(),
+      isInFlight: _isFetching,
+      immediate: immediate,
+    );
+    if (dispatch.shouldReconcile) {
       _reconcileCalendarLoop();
       return;
     }
 
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
+    _calendarLoop.cancelTimer();
 
-    final decision = resolveRefreshRequestDecision(isInFlight: _isFetching);
-    if (decision.shouldQueuePending) {
-      _pendingRefresh = true;
-      _pendingBypassRateLimit = _pendingBypassRateLimit || bypassRateLimit;
+    if (dispatch.shouldQueuePending) {
+      _calendarLoop.queuePending(bypassRateLimit: bypassRateLimit);
       return;
     }
 
-    if (immediate) {
+    if (dispatch.shouldRunNow) {
       unawaited(refresh(bypassRateLimit: bypassRateLimit));
       return;
     }
 
-    _scheduleNextCalendarTick();
+    if (dispatch.shouldScheduleTick) {
+      _scheduleNextCalendarTick();
+    }
   }
 
   void _scheduleNextCalendarTick({Duration? overrideDelay}) {
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
+    _calendarLoop.cancelTimer();
 
     if (!_calendarActive()) {
       _reconcileCalendarLoop();
@@ -516,7 +228,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     }
 
     final delay = overrideDelay ?? const Duration(minutes: _refreshMinutes);
-    _refreshTimer = Timer(delay, () {
+    _calendarLoop.timer = Timer(delay, () {
       if (!ref.mounted) {
         return;
       }
@@ -525,8 +237,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   }
 
   void _disposeTimer() {
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
+    _calendarLoop.cancelTimer();
   }
 
   void _clearForEmptySelectionIfNeeded() {
@@ -562,33 +273,46 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       _disposeTimer();
       _selectionRefreshDebounceTimer?.cancel();
       _selectionRefreshDebounceTimer = null;
-      _pendingRefresh = false;
-      _pendingBypassRateLimit = false;
+      _calendarLoop.clearPending();
       _clearForEmptySelectionIfNeeded();
       return;
     }
 
-    if (_refreshTimer == null && !_isFetching && !_pendingRefresh) {
+    if (shouldScheduleNextTick(
+      isActive: true,
+      hasTimer: _calendarLoop.hasTimer,
+      isInFlight: _isFetching,
+      hasPendingRefresh: _calendarLoop.pendingRefresh,
+    )) {
       _requestCalendarRefresh(immediate: true);
     }
   }
 
   void _drainPendingRefreshesOrScheduleTick() {
-    if (!ref.mounted || _isFetching) {
-      return;
-    }
-
-    if (_pendingRefresh && _calendarActive()) {
-      final bypassRateLimit = _pendingBypassRateLimit;
-      _pendingRefresh = false;
-      _pendingBypassRateLimit = false;
+    final active = ref.mounted ? _calendarActive() : false;
+    if (shouldDrainPendingRefresh(
+      isMounted: ref.mounted,
+      isInFlight: _isFetching,
+      hasPendingRefresh: _calendarLoop.pendingRefresh,
+      isActive: active,
+    )) {
+      final pending = _calendarLoop.consumePending();
       if (ref.mounted) {
-        unawaited(refresh(bypassRateLimit: bypassRateLimit));
+        unawaited(refresh(bypassRateLimit: pending.bypassRateLimit));
       }
       return;
     }
 
-    if (_calendarActive() && _refreshTimer == null) {
+    if (!ref.mounted || _isFetching) {
+      return;
+    }
+
+    if (shouldScheduleNextTick(
+      isActive: active,
+      hasTimer: _calendarLoop.hasTimer,
+      isInFlight: _isFetching,
+      hasPendingRefresh: _calendarLoop.pendingRefresh,
+    )) {
       _scheduleNextCalendarTick();
       return;
     }
@@ -606,8 +330,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     }
 
     if (_isFetching) {
-      _pendingRefresh = true;
-      _pendingBypassRateLimit = _pendingBypassRateLimit || bypassRateLimit;
+      _calendarLoop.queuePending(bypassRateLimit: bypassRateLimit);
       AppLogger.debug(
         'Calendar refresh already in progress',
         subCategory: 'calendar',
@@ -615,8 +338,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       return;
     }
 
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
+    _calendarLoop.cancelTimer();
 
     final monitorState = ref.read(groupMonitorProvider(userId));
     final selectedGroupIds = monitorState.selectedGroupIds;
@@ -626,26 +348,15 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       return;
     }
 
-    if (!bypassRateLimit) {
-      final coordinator = ref.read(apiRateLimitCoordinatorProvider);
-      final remaining = coordinator.remainingCooldown(ApiRequestLane.calendar);
-      if (remaining != null) {
-        AppLogger.debug(
-          'Calendar refresh deferred due to cooldown'
-          ' (${remaining.inSeconds}s remaining)',
-          subCategory: 'calendar',
-        );
-        ref
-            .read(apiCallCounterProvider.notifier)
-            .incrementThrottledSkip(lane: ApiRequestLane.calendar);
-        _scheduleNextCalendarTick(
-          overrideDelay: resolveCooldownAwareDelay(
-            remainingCooldown: remaining,
-            fallbackDelay: const Duration(minutes: _refreshMinutes),
-          ),
-        );
-        return;
-      }
+    if (RefreshCooldownHandler.shouldDeferForCooldown(
+      ref: ref,
+      bypassRateLimit: bypassRateLimit,
+      lane: ApiRequestLane.calendar,
+      logContext: 'calendar',
+      fallbackDelay: const Duration(minutes: _refreshMinutes),
+      onDefer: (delay) => _scheduleNextCalendarTick(overrideDelay: delay),
+    )) {
+      return;
     }
 
     _isFetching = true;
@@ -660,7 +371,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     try {
       await _ensureGroupDetails(monitorState);
       final refreshedMonitor = ref.read(groupMonitorProvider(userId));
-      final groupLookup = _buildGroupLookup(refreshedMonitor.allGroups);
+      final groupLookup = ref.read(groupMonitorAllGroupsByIdProvider(userId));
       final api = ref.read(vrchatApiProvider);
       final orderedGroupIds = refreshedMonitor.selectedGroupIds.toList(
         growable: false,
@@ -716,22 +427,15 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
         didDataChange: selectedData.didDataChange,
       );
       if (shouldEmitState) {
-        if (selectedData.didDataChange) {
-          state = state.copyWith(
-            eventsByGroup: selectedData.effectiveEventsByGroup,
-            todayEvents: selectedData.effectiveTodayEvents,
-            groupErrors: selectedData.effectiveGroupErrors,
-            isLoading: false,
-            lastDataChangedAt: DateTime.now(),
-          );
-        } else {
-          state = state.copyWith(
-            eventsByGroup: selectedData.effectiveEventsByGroup,
-            todayEvents: selectedData.effectiveTodayEvents,
-            groupErrors: selectedData.effectiveGroupErrors,
-            isLoading: false,
-          );
-        }
+        state = state.copyWith(
+          eventsByGroup: selectedData.effectiveEventsByGroup,
+          todayEvents: selectedData.effectiveTodayEvents,
+          groupErrors: selectedData.effectiveGroupErrors,
+          isLoading: false,
+          lastDataChangedAt: selectedData.didDataChange
+              ? DateTime.now()
+              : state.lastDataChangedAt,
+        );
       }
     } catch (e, s) {
       AppLogger.error(
@@ -766,19 +470,6 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
           .read(groupMonitorProvider(userId).notifier)
           .fetchUserGroupsIfNeeded();
     }
-  }
-
-  Map<String, LimitedUserGroups> _buildGroupLookup(
-    List<LimitedUserGroups> groups,
-  ) {
-    final lookup = <String, LimitedUserGroups>{};
-    for (final group in groups) {
-      final id = group.groupId;
-      if (id != null && id.isNotEmpty) {
-        lookup[id] = group;
-      }
-    }
-    return lookup;
   }
 
   List<GroupCalendarEvent> _buildTodayEvents({

@@ -9,13 +9,13 @@ class InstanceLocationRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      spacing: context.m3e.spacing.xs,
       children: [
         Icon(
           Icons.location_on,
           size: 14,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
-        SizedBox(width: context.m3e.spacing.xs),
         Expanded(
           child: Text(
             location,
