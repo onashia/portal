@@ -109,20 +109,18 @@ extension GroupMonitorRelayExtension on GroupMonitorNotifier {
     }
 
     final hintDedupeKey = 'hint:${hint.hintId}';
-    if (_relayHintSeenUntilByKey[hintDedupeKey]?.isAfter(now) == true) {
+    if (_relayHintDedupe.isBlocked(hintDedupeKey, now)) {
       return;
     }
 
     final instanceDedupeKey = 'instance:${hint.instanceKey}';
-    if (_relayHintSeenUntilByKey[instanceDedupeKey]?.isAfter(now) == true) {
+    if (_relayHintDedupe.isBlocked(instanceDedupeKey, now)) {
       return;
     }
 
-    final expiresAt = now.add(
-      const Duration(seconds: AppConstants.relayHintDedupeSeconds),
-    );
-    _relayHintSeenUntilByKey[hintDedupeKey] = expiresAt;
-    _relayHintSeenUntilByKey[instanceDedupeKey] = expiresAt;
+    const hintTtl = Duration(seconds: AppConstants.relayHintDedupeSeconds);
+    _relayHintDedupe.record(hintDedupeKey, now: now, ttl: hintTtl);
+    _relayHintDedupe.record(instanceDedupeKey, now: now, ttl: hintTtl);
 
     state = state.copyWith(
       relayHintsReceived: state.relayHintsReceived + 1,
@@ -219,13 +217,14 @@ extension GroupMonitorRelayExtension on GroupMonitorNotifier {
     _pruneRelayDedupeState(now);
     final publishKey =
         '${best.groupId}|${best.instance.worldId}|${best.instance.instanceId}';
-    final seenUntil = _relayPublishSeenUntilByKey[publishKey];
-    if (seenUntil != null && seenUntil.isAfter(now)) {
+    if (_relayPublishDedupe.isBlocked(publishKey, now)) {
       return;
     }
 
-    _relayPublishSeenUntilByKey[publishKey] = now.add(
-      const Duration(seconds: AppConstants.relayPublishDedupeSeconds),
+    _relayPublishDedupe.record(
+      publishKey,
+      now: now,
+      ttl: const Duration(seconds: AppConstants.relayPublishDedupeSeconds),
     );
 
     final hint = RelayHintMessage.create(
@@ -272,7 +271,7 @@ extension GroupMonitorRelayExtension on GroupMonitorNotifier {
   }
 
   void _pruneRelayDedupeState(DateTime now) {
-    _relayHintSeenUntilByKey.removeWhere((_, until) => !until.isAfter(now));
-    _relayPublishSeenUntilByKey.removeWhere((_, until) => !until.isAfter(now));
+    _relayHintDedupe.prune(now);
+    _relayPublishDedupe.prune(now);
   }
 }

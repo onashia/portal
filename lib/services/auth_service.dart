@@ -107,13 +107,7 @@ class AuthService {
         );
       }
     } catch (e, s) {
-      logDioException('Login', e, subCategory: 'auth');
-      AppLogger.error(
-        'Login failed with exception',
-        subCategory: 'auth',
-        error: e,
-        stackTrace: s,
-      );
+      _logAuthException('Login', e, s);
       return AuthResult(
         status: AuthResultStatus.failure,
         errorMessage: formatApiError('Login failed', e),
@@ -136,13 +130,7 @@ class AuthService {
 
       return AuthResult(status: AuthResultStatus.success);
     } catch (e, s) {
-      logDioException('Logout', e, subCategory: 'auth');
-      AppLogger.error(
-        'Logout failed with exception',
-        subCategory: 'auth',
-        error: e,
-        stackTrace: s,
-      );
+      _logAuthException('Logout', e, s);
       return AuthResult(
         status: AuthResultStatus.failure,
         errorMessage: formatApiError('Logout failed', e),
@@ -170,17 +158,21 @@ class AuthService {
         return AuthResult(status: AuthResultStatus.failure);
       }
     } catch (e, s) {
-      logDioException('Check session', e, subCategory: 'auth');
-      AppLogger.error(
-        'Failed to check existing session',
-        subCategory: 'auth',
-        error: e,
-        stackTrace: s,
-      );
+      _logAuthException('Check session', e, s);
       return AuthResult(
         status: AuthResultStatus.failure,
         errorMessage: formatApiError('Session check failed', e),
       );
     }
+  }
+
+  void _logAuthException(String operation, Object e, StackTrace s) {
+    logDioException(operation, e, subCategory: 'auth');
+    AppLogger.error(
+      '$operation failed',
+      subCategory: 'auth',
+      error: e,
+      stackTrace: s,
+    );
   }
 }

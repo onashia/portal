@@ -202,62 +202,68 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
     bool immediate = true,
     bool bypassRateLimit = false,
   }) {
-    final dispatch = shouldRequestImmediateRefresh(
+    _requestLoopRefresh(
+      loop: _baselineLoop,
       isActive: _baselineActive(),
-      isInFlight: _isAnyFetchInFlight,
+      reconcile: _reconcileBaselineLoop,
+      fetch: fetchGroupInstances,
+      scheduleNextTick: () => _scheduleNextBaselineTick(),
       immediate: immediate,
+      bypassRateLimit: bypassRateLimit,
+      onQueuePending: () => _recordBaselineSkip('in_flight_queue'),
     );
-    if (dispatch.shouldReconcile) {
-      _reconcileBaselineLoop();
-      return;
-    }
-
-    _baselineLoop.cancelTimer();
-
-    if (dispatch.shouldQueuePending) {
-      _baselineLoop.queuePending(bypassRateLimit: bypassRateLimit);
-      _recordBaselineSkip('in_flight_queue');
-      return;
-    }
-
-    if (dispatch.shouldRunNow) {
-      unawaited(fetchGroupInstances(bypassRateLimit: bypassRateLimit));
-      return;
-    }
-
-    if (dispatch.shouldScheduleTick) {
-      _scheduleNextBaselineTick();
-    }
   }
 
   void _requestBoostRefresh({
     bool immediate = true,
     bool bypassRateLimit = false,
   }) {
-    final dispatch = shouldRequestImmediateRefresh(
+    _requestLoopRefresh(
+      loop: _boostLoop,
       isActive: _boostActive(),
+      reconcile: _reconcileBoostLoop,
+      fetch: fetchBoostedGroupInstances,
+      scheduleNextTick: () => _scheduleNextBoostTick(),
+      immediate: immediate,
+      bypassRateLimit: bypassRateLimit,
+    );
+  }
+
+  void _requestLoopRefresh({
+    required RefreshLoopState loop,
+    required bool isActive,
+    required void Function() reconcile,
+    required Future<void> Function({bool bypassRateLimit}) fetch,
+    required void Function() scheduleNextTick,
+    bool immediate = true,
+    bool bypassRateLimit = false,
+    void Function()? onQueuePending,
+  }) {
+    final dispatch = shouldRequestImmediateRefresh(
+      isActive: isActive,
       isInFlight: _isAnyFetchInFlight,
       immediate: immediate,
     );
     if (dispatch.shouldReconcile) {
-      _reconcileBoostLoop();
+      reconcile();
       return;
     }
 
-    _boostLoop.cancelTimer();
+    loop.cancelTimer();
 
     if (dispatch.shouldQueuePending) {
-      _boostLoop.queuePending(bypassRateLimit: bypassRateLimit);
+      loop.queuePending(bypassRateLimit: bypassRateLimit);
+      onQueuePending?.call();
       return;
     }
 
     if (dispatch.shouldRunNow) {
-      unawaited(fetchBoostedGroupInstances(bypassRateLimit: bypassRateLimit));
+      unawaited(fetch(bypassRateLimit: bypassRateLimit));
       return;
     }
 
     if (dispatch.shouldScheduleTick) {
-      _scheduleNextBoostTick();
+      scheduleNextTick();
     }
   }
 

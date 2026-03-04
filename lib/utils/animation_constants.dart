@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:motor/motor.dart';
 
 class AnimationConstants {
@@ -38,12 +37,7 @@ class AnimationConstants {
   static final Motion expressiveEffectsSlow =
       MaterialSpringMotion.expressiveEffectsSlow();
 
-  // Backward compatibility curves (for components that need curves)
-  static const Curve defaultEnter = Curves.easeOutCubic;
-  static const Curve defaultExit = Curves.easeInCubic;
-  static const Curve standardCurve = Curves.easeInOut;
-
-  // Slide distances (unchanged)
+  // Slide distances
   static const double defaultSlideDistance = 16.0;
   static const double enterSlideDistance = 24.0;
 }

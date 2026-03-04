@@ -30,7 +30,7 @@ class LoginFormFields extends StatelessWidget {
       key: const ValueKey('loginForm'),
       mainAxisSize: MainAxisSize.min,
       children: [
-        AppTextFormField(
+        AppTextField(
           controller: usernameController,
           focusNode: usernameFocusNode,
           onFieldSubmitted: (_) => passwordFocusNode.requestFocus(),

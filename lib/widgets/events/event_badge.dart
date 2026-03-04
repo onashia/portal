@@ -21,7 +21,9 @@ class EventBadge extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: textTheme.labelSmall?.copyWith(color: scheme.onSecondaryContainer),
+        style: textTheme.labelSmall?.copyWith(
+          color: scheme.onSecondaryContainer,
+        ),
         overflow: TextOverflow.ellipsis,
       ),
     );

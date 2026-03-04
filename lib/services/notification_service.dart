@@ -65,10 +65,7 @@ class NotificationService {
   }
 
   void _onNotificationTap(NotificationResponse response) {
-    AppLogger.info(
-      'Notification tapped: ${response.payload}',
-      subCategory: 'notification',
-    );
+    // TODO: implement navigation on tap
   }
 
   Future<void> showNewInstanceNotification({required int count}) async {
@@ -112,35 +109,5 @@ class NotificationService {
       'Showed notification: $title - $body',
       subCategory: 'notification',
     );
-  }
-
-  Future<void> cancelAll() async {
-    await _notifications.cancelAll();
-    AppLogger.info('Cancelled all notifications', subCategory: 'notification');
-  }
-
-  Future<bool> get hasPermission async {
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return true;
-      case TargetPlatform.iOS:
-        final result = await _notifications
-            .resolvePlatformSpecificImplementation<
-              IOSFlutterLocalNotificationsPlugin
-            >()
-            ?.requestPermissions(alert: true, badge: true, sound: true);
-
-        return result ?? false;
-      case TargetPlatform.macOS:
-        final result = await _notifications
-            .resolvePlatformSpecificImplementation<
-              MacOSFlutterLocalNotificationsPlugin
-            >()
-            ?.requestPermissions(alert: true, badge: true, sound: true);
-
-        return result ?? false;
-      default:
-        return false;
-    }
   }
 }

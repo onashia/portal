@@ -37,6 +37,23 @@ part 'group_monitor_provider_loops.dart';
 part 'group_monitor_provider_persistence.dart';
 part 'group_monitor_provider_relay.dart';
 
+/// Tracks deduplication windows for keyed entries by recording expiry times.
+class _DedupeTracker {
+  final Map<String, DateTime> _seenUntilByKey = <String, DateTime>{};
+
+  bool isBlocked(String key, DateTime now) {
+    return _seenUntilByKey[key]?.isAfter(now) == true;
+  }
+
+  void record(String key, {required DateTime now, required Duration ttl}) {
+    _seenUntilByKey[key] = now.add(ttl);
+  }
+
+  void prune(DateTime now) {
+    _seenUntilByKey.removeWhere((_, until) => !until.isAfter(now));
+  }
+}
+
 class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   GroupMonitorNotifier(this.arg);
 
@@ -55,9 +72,8 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   int _boostPollCount = 0;
   bool _boostFirstSeenLogged = false;
   int _relayFailureStreak = 0;
-  final Map<String, DateTime> _relayHintSeenUntilByKey = <String, DateTime>{};
-  final Map<String, DateTime> _relayPublishSeenUntilByKey =
-      <String, DateTime>{};
+  final _relayHintDedupe = _DedupeTracker();
+  final _relayPublishDedupe = _DedupeTracker();
   final Set<CancelToken> _relayInviteCancelTokens = <CancelToken>{};
   StreamSubscription<RelayHintMessage>? _relayHintSubscription;
   StreamSubscription<RelayConnectionStatus>? _relayStatusSubscription;
@@ -131,32 +147,38 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     );
   }
 
-  Future<void> toggleAutoInvite() async {
-    final newValue = !state.autoInviteEnabled;
-    state = state.copyWith(autoInviteEnabled: newValue);
-    final didPersist = await _persistStorageWrite(
-      actionDescription: 'save auto-invite setting',
-      action: () => GroupMonitorStorage.saveAutoInviteEnabled(newValue),
-    );
-    if (didPersist) {
-      AppLogger.info(
-        'Auto-invite set to $newValue',
-        subCategory: 'group_monitor',
-      );
-    }
-    _reconcileRelayConnection();
-  }
+  Future<void> toggleAutoInvite() => _toggleBoolSetting(
+    currentValue: state.autoInviteEnabled,
+    applyToState: (v) => state.copyWith(autoInviteEnabled: v),
+    persist: GroupMonitorStorage.saveAutoInviteEnabled,
+    settingName: 'Auto-invite',
+    actionDescription: 'save auto-invite setting',
+  );
 
-  Future<void> toggleRelayAssist() async {
-    final newValue = !state.relayAssistEnabled;
-    state = state.copyWith(relayAssistEnabled: newValue);
+  Future<void> toggleRelayAssist() => _toggleBoolSetting(
+    currentValue: state.relayAssistEnabled,
+    applyToState: (v) => state.copyWith(relayAssistEnabled: v),
+    persist: GroupMonitorStorage.saveRelayAssistEnabled,
+    settingName: 'Relay assist',
+    actionDescription: 'save relay assist setting',
+  );
+
+  Future<void> _toggleBoolSetting({
+    required bool currentValue,
+    required GroupMonitorState Function(bool) applyToState,
+    required Future<void> Function(bool) persist,
+    required String settingName,
+    required String actionDescription,
+  }) async {
+    final newValue = !currentValue;
+    state = applyToState(newValue);
     final didPersist = await _persistStorageWrite(
-      actionDescription: 'save relay assist setting',
-      action: () => GroupMonitorStorage.saveRelayAssistEnabled(newValue),
+      actionDescription: actionDescription,
+      action: () => persist(newValue),
     );
     if (didPersist) {
       AppLogger.info(
-        'Relay assist set to $newValue',
+        '$settingName set to $newValue',
         subCategory: 'group_monitor',
       );
     }

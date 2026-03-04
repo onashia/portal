@@ -221,23 +221,12 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         subCategory: 'group_monitor',
       );
 
-      if (previousInstances.isEmpty && instances.isNotEmpty) {
-        try {
-          await _autoInviteService.attemptAutoInvite(
-            instances: instances,
-            groupId: groupId,
-            enabled: state.autoInviteEnabled && state.isMonitoring,
-            hasBaseline: _hasBaseline,
-          );
-        } catch (e, s) {
-          AppLogger.error(
-            'Failed to auto-invite for group $groupId',
-            subCategory: 'group_monitor',
-            error: e,
-            stackTrace: s,
-          );
-        }
-      }
+      await _attemptAutoInviteIfNewInstances(
+        previousInstances: previousInstances,
+        instances: instances,
+        groupId: groupId,
+        laneLabel: 'group',
+      );
 
       final merged = mergeFetchedGroupInstancesWithDiff(
         groupId: groupId,
@@ -580,23 +569,12 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         didBoostFirstSeenChange = state.boostFirstSeenAfter != delta;
       }
 
-      if (previousInstances.isEmpty && instances.isNotEmpty) {
-        try {
-          await _autoInviteService.attemptAutoInvite(
-            instances: instances,
-            groupId: groupId,
-            enabled: state.autoInviteEnabled && state.isMonitoring,
-            hasBaseline: _hasBaseline,
-          );
-        } catch (e, s) {
-          AppLogger.error(
-            'Failed to auto-invite for boosted group $groupId',
-            subCategory: 'group_monitor',
-            error: e,
-            stackTrace: s,
-          );
-        }
-      }
+      await _attemptAutoInviteIfNewInstances(
+        previousInstances: previousInstances,
+        instances: instances,
+        groupId: groupId,
+        laneLabel: 'boosted group',
+      );
 
       final merged = mergeFetchedGroupInstancesWithDiff(
         groupId: groupId,
@@ -686,6 +664,32 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         _reconcileRelayConnection();
         _drainPendingRefreshesOrScheduleTicks();
       }
+    }
+  }
+
+  Future<void> _attemptAutoInviteIfNewInstances({
+    required List<GroupInstanceWithGroup> previousInstances,
+    required List<Instance> instances,
+    required String groupId,
+    required String laneLabel,
+  }) async {
+    if (previousInstances.isNotEmpty || instances.isEmpty) {
+      return;
+    }
+    try {
+      await _autoInviteService.attemptAutoInvite(
+        instances: instances,
+        groupId: groupId,
+        enabled: state.autoInviteEnabled && state.isMonitoring,
+        hasBaseline: _hasBaseline,
+      );
+    } catch (e, s) {
+      AppLogger.error(
+        'Failed to auto-invite for $laneLabel $groupId',
+        subCategory: 'group_monitor',
+        error: e,
+        stackTrace: s,
+      );
     }
   }
 

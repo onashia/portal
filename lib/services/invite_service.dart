@@ -4,17 +4,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
+import '../constants/http_status_codes.dart';
 import '../utils/app_logger.dart';
 import '../utils/dio_error_logger.dart';
 
 const Duration _selfInvite403LogDedupeWindow = Duration(minutes: 5);
 const Duration _selfInvite403LogRetentionWindow = Duration(minutes: 15);
-const int _httpForbidden = 403;
-const int _httpBadRequest = 400;
-const int _httpUnauthorized = 401;
-const int _httpNotFound = 404;
-const int _httpConflict = 409;
-const int _httpRateLimited = 429;
 
 enum InviteRetryOutcome {
   sent,
@@ -29,7 +24,7 @@ bool isSelfInviteForbiddenDioError(Object error) {
   if (error is! DioException) {
     return false;
   }
-  return error.response?.statusCode == _httpForbidden;
+  return error.response?.statusCode == HttpStatus.forbidden;
 }
 
 @visibleForTesting
@@ -44,9 +39,9 @@ int? selfInviteStatusCode(Object error) {
 bool isTransientSelfInviteError(Object error) {
   final statusCode = selfInviteStatusCode(error);
   if (statusCode != null) {
-    if (statusCode == _httpNotFound ||
-        statusCode == _httpConflict ||
-        statusCode == _httpRateLimited ||
+    if (statusCode == HttpStatus.notFound ||
+        statusCode == HttpStatus.conflict ||
+        statusCode == HttpStatus.tooManyRequests ||
         statusCode >= 500) {
       return true;
     }
@@ -69,9 +64,9 @@ bool isHardStopSelfInviteError(Object error) {
   if (statusCode == null) {
     return false;
   }
-  return statusCode == _httpBadRequest ||
-      statusCode == _httpUnauthorized ||
-      statusCode == _httpForbidden;
+  return statusCode == HttpStatus.badRequest ||
+      statusCode == HttpStatus.unauthorized ||
+      statusCode == HttpStatus.forbidden;
 }
 
 @visibleForTesting
@@ -282,7 +277,7 @@ class InviteService {
     final key = selfInviteDedupeKey(
       worldId: worldId,
       instanceId: instanceId,
-      statusCode: _httpForbidden,
+      statusCode: HttpStatus.forbidden,
     );
     final shouldWarn = shouldLogSelfInvite403AsWarning(
       now: now,
