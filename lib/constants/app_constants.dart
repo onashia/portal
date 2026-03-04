@@ -15,6 +15,8 @@ class AppConstants {
   static const int relayHintTtlSeconds = 45;
   static const int relayHintDedupeSeconds = 60;
   static const int relayPublishDedupeSeconds = 30;
+  static const int relayHeartbeatIntervalSeconds = 20;
+  static const int relayHeartbeatStaleSeconds = 60;
   static const int relayReconnectBaseSeconds = 2;
   static const int relayReconnectMaxSeconds = 20;
   static const int relayCircuitBreakerThreshold = 4;

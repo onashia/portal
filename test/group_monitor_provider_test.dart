@@ -112,6 +112,27 @@ class _CancelableInviteServiceFake implements InviteService {
   }
 }
 
+class _ThrowingInviteServiceFake implements InviteService {
+  @override
+  Future<void> inviteSelfToInstance(Instance instance) async {}
+
+  @override
+  Future<void> inviteSelfToLocation({
+    required String worldId,
+    required String instanceId,
+  }) async {}
+
+  @override
+  Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
+    required String worldId,
+    required String instanceId,
+    Duration maxWindow = const Duration(seconds: 25),
+    CancelToken? cancelToken,
+  }) {
+    throw StateError('unexpected invite failure');
+  }
+}
+
 ({
   ProviderContainer container,
   TestAuthNotifier authNotifier,
@@ -1612,6 +1633,47 @@ void main() {
 
       expect(tokenBeforeDispose.isCancelled, isTrue);
       expect(observedRelayErrors.whereType<String>(), isEmpty);
+    });
+
+    test('records relay failure for unexpected invite exceptions', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [
+          relayHintServiceProvider.overrideWithValue(relayService),
+          inviteServiceProvider.overrideWithValue(_ThrowingInviteServiceFake()),
+        ],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+      final observedRelayErrors = <String?>[];
+      final subscription = container.listen<GroupMonitorState>(
+        provider,
+        (_, next) => observedRelayErrors.add(next.lastRelayError),
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+
+      notifier.state = GroupMonitorState(
+        isMonitoring: true,
+        autoInviteEnabled: true,
+        boostedGroupId: 'grp_alpha',
+        boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+      );
+
+      final hint = RelayHintMessage.create(
+        groupId: 'grp_alpha',
+        worldId: 'wrld_alpha',
+        instanceId: 'inst_alpha',
+        nUsers: 9,
+        sourceClientId: 'relay_peer',
+      );
+      await relayService.emitHint(hint);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(observedRelayErrors, contains('unexpected_invite_error'));
     });
   });
 

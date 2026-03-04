@@ -141,14 +141,25 @@ extension GroupMonitorRelayExtension on GroupMonitorNotifier {
     InviteRetryOutcome? outcome;
     _registerRelayInviteCancelToken(cancelToken);
     try {
-      outcome = await _autoInviteService.attemptAutoInviteFromHint(
-        hint: hint,
-        enabled: state.autoInviteEnabled && state.isMonitoring,
-        maxRetryWindow: const Duration(
-          seconds: AppConstants.relayInviteRetryWindowSeconds,
-        ),
-        cancelToken: cancelToken,
-      );
+      try {
+        outcome = await _autoInviteService.attemptAutoInviteFromHint(
+          hint: hint,
+          enabled: state.autoInviteEnabled && state.isMonitoring,
+          maxRetryWindow: const Duration(
+            seconds: AppConstants.relayInviteRetryWindowSeconds,
+          ),
+          cancelToken: cancelToken,
+        );
+      } catch (e, s) {
+        AppLogger.error(
+          'Relay auto-invite from hint failed unexpectedly',
+          subCategory: 'group_monitor',
+          error: e,
+          stackTrace: s,
+        );
+        _recordRelayFailure(reason: 'unexpected_invite_error');
+        return;
+      }
     } finally {
       _unregisterRelayInviteCancelToken(cancelToken);
     }
