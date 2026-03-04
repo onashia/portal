@@ -101,7 +101,6 @@ android/**/GeneratedPluginRegistrant.cpp
 android/.idea/
 android/*.iml
 android/.cxx/
-android/.gradle/
 
 # iOS
 ios/.symlinks/
@@ -177,6 +176,11 @@ web/.packages
 web/build/
 web/.flutter-plugins
 
+# Cloudflare Wrangler
+.wrangler/
+
 # AI Assistant Files
 .opencode/
+.claude/
 AGENTS.md
+CLAUDE.md
