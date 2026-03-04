@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../common/loading_state.dart';
+import '../common/theme_mode_toggle_button.dart';
 import '../custom_title_bar.dart';
-import 'login_theme_toggle.dart';
 
 class LoginLoadingScaffold extends ConsumerWidget {
   const LoginLoadingScaffold({super.key});
@@ -15,7 +15,7 @@ class LoginLoadingScaffold extends ConsumerWidget {
         title: 'portal.',
         icon: Icons.tonality,
         showBranding: false,
-        actions: const [LoginThemeToggle()],
+        actions: const [ThemeModeToggleButton()],
       ),
       body: const LoadingState(semanticLabel: 'Loading portal', scale: 2.0),
     );
