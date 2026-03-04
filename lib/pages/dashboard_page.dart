@@ -12,7 +12,6 @@ import '../constants/ui_constants.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import '../providers/group_monitor_storage.dart';
-import '../services/notification_service.dart';
 import '../utils/animation_constants.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_utils.dart';
@@ -75,7 +74,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   void initState() {
     super.initState();
     AppLogger.debug('Dashboard initialized', subCategory: 'dashboard');
-    NotificationService().initialize();
   }
 
   @override

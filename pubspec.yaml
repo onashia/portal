@@ -56,8 +56,6 @@ dependencies:
   # Cryptography
   crypto: ^3.0.7
 
-  # Local Notifications
-  flutter_local_notifications: ^20.1.0
   window_manager: ^0.5.1
 
   # Motion & Animations (MD3 Spring Physics)

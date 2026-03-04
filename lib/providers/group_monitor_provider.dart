@@ -38,7 +38,8 @@ part 'group_monitor_provider_persistence.dart';
 part 'group_monitor_provider_relay.dart';
 
 /// Tracks deduplication windows for keyed entries by recording expiry times.
-class _DedupeTracker {
+@visibleForTesting
+class DedupeTracker {
   final Map<String, DateTime> _seenUntilByKey = <String, DateTime>{};
 
   bool isBlocked(String key, DateTime now) {
@@ -72,15 +73,15 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   int _boostPollCount = 0;
   bool _boostFirstSeenLogged = false;
   int _relayFailureStreak = 0;
-  final _relayHintDedupe = _DedupeTracker();
-  final _relayPublishDedupe = _DedupeTracker();
+  final _relayHintDedupe = DedupeTracker();
+  final _relayPublishDedupe = DedupeTracker();
   final Set<CancelToken> _relayInviteCancelTokens = <CancelToken>{};
   StreamSubscription<RelayHintMessage>? _relayHintSubscription;
   StreamSubscription<RelayConnectionStatus>? _relayStatusSubscription;
-  late final InviteService _inviteService;
-  late final RelayHintService _relayHintService;
-  late final String _relayClientId;
-  late final AutoInviteService _autoInviteService;
+  late InviteService _inviteService;
+  late RelayHintService _relayHintService;
+  late String _relayClientId;
+  late AutoInviteService _autoInviteService;
 
   @visibleForTesting
   bool get hasActivePollingTimer => _baselineLoop.hasTimer;

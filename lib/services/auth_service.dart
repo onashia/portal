@@ -107,7 +107,7 @@ class AuthService {
         );
       }
     } catch (e, s) {
-      _logAuthException('Login', e, s);
+      logAuthException('Login', e, s);
       return AuthResult(
         status: AuthResultStatus.failure,
         errorMessage: formatApiError('Login failed', e),
@@ -130,7 +130,7 @@ class AuthService {
 
       return AuthResult(status: AuthResultStatus.success);
     } catch (e, s) {
-      _logAuthException('Logout', e, s);
+      logAuthException('Logout', e, s);
       return AuthResult(
         status: AuthResultStatus.failure,
         errorMessage: formatApiError('Logout failed', e),
@@ -158,21 +158,11 @@ class AuthService {
         return AuthResult(status: AuthResultStatus.failure);
       }
     } catch (e, s) {
-      _logAuthException('Check session', e, s);
+      logAuthException('Check session', e, s);
       return AuthResult(
         status: AuthResultStatus.failure,
         errorMessage: formatApiError('Session check failed', e),
       );
     }
-  }
-
-  void _logAuthException(String operation, Object e, StackTrace s) {
-    logDioException(operation, e, subCategory: 'auth');
-    AppLogger.error(
-      '$operation failed',
-      subCategory: 'auth',
-      error: e,
-      stackTrace: s,
-    );
   }
 }

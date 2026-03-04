@@ -24,7 +24,7 @@ bool isSelfInviteForbiddenDioError(Object error) {
   if (error is! DioException) {
     return false;
   }
-  return error.response?.statusCode == HttpStatus.forbidden;
+  return error.response?.statusCode == AppHttpStatus.forbidden;
 }
 
 @visibleForTesting
@@ -39,9 +39,9 @@ int? selfInviteStatusCode(Object error) {
 bool isTransientSelfInviteError(Object error) {
   final statusCode = selfInviteStatusCode(error);
   if (statusCode != null) {
-    if (statusCode == HttpStatus.notFound ||
-        statusCode == HttpStatus.conflict ||
-        statusCode == HttpStatus.tooManyRequests ||
+    if (statusCode == AppHttpStatus.notFound ||
+        statusCode == AppHttpStatus.conflict ||
+        statusCode == AppHttpStatus.tooManyRequests ||
         statusCode >= 500) {
       return true;
     }
@@ -64,9 +64,9 @@ bool isHardStopSelfInviteError(Object error) {
   if (statusCode == null) {
     return false;
   }
-  return statusCode == HttpStatus.badRequest ||
-      statusCode == HttpStatus.unauthorized ||
-      statusCode == HttpStatus.forbidden;
+  return statusCode == AppHttpStatus.badRequest ||
+      statusCode == AppHttpStatus.unauthorized ||
+      statusCode == AppHttpStatus.forbidden;
 }
 
 @visibleForTesting
@@ -277,7 +277,7 @@ class InviteService {
     final key = selfInviteDedupeKey(
       worldId: worldId,
       instanceId: instanceId,
-      statusCode: HttpStatus.forbidden,
+      statusCode: AppHttpStatus.forbidden,
     );
     final shouldWarn = shouldLogSelfInvite403AsWarning(
       now: now,

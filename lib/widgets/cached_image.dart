@@ -79,7 +79,7 @@ class _CachedImageState extends ConsumerState<CachedImage> {
 
         final bytes = _cachedBytes ?? snapshot.data;
         if (bytes != null) {
-          return _buildImage(bytes, context, true);
+          return _buildImage(bytes, context);
         }
 
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -136,11 +136,7 @@ class _CachedImageState extends ConsumerState<CachedImage> {
     return bytes;
   }
 
-  Widget _buildImage(
-    Uint8List bytes,
-    BuildContext context,
-    bool applyBackgroundColor,
-  ) {
+  Widget _buildImage(Uint8List bytes, BuildContext context) {
     final effectiveDpr = MediaQuery.devicePixelRatioOf(
       context,
     ).clamp(1.0, 2.0).toDouble();
@@ -177,7 +173,7 @@ class _CachedImageState extends ConsumerState<CachedImage> {
     }
 
     return _buildBaseContainer(
-      color: applyBackgroundColor ? _resolveSurfaceColor(context) : null,
+      color: _resolveSurfaceColor(context),
       child: shapedWidget,
     );
   }
@@ -235,6 +231,12 @@ class _CachedImageState extends ConsumerState<CachedImage> {
     );
   }
 
+  /// Returns the surface color used as the container background for all states
+  /// (loaded, loading, fallback).
+  ///
+  /// Previously, loaded vs. fallback states resolved different parameter slots
+  /// (`backgroundColor` vs. `fallbackBackgroundColor`); both are now unified
+  /// here after the `backgroundColor` parameter was removed.
   Color _resolveSurfaceColor(BuildContext context) {
     return widget.fallbackBackgroundColor ??
         Theme.of(context).colorScheme.surfaceContainerHighest;

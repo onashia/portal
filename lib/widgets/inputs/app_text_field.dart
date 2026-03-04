@@ -41,7 +41,11 @@ class AppTextField extends StatelessWidget {
     this.onFieldSubmitted,
     this.validator,
     this.enabled = true,
-  });
+  }) : assert(
+         onSubmitted == null || onFieldSubmitted == null,
+         'Provide onSubmitted (TextField mode) or onFieldSubmitted '
+         '(TextFormField mode), not both.',
+       );
 
   @override
   Widget build(BuildContext context) {

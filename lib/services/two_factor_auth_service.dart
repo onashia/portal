@@ -66,21 +66,11 @@ class TwoFactorAuthService {
         );
       }
     } catch (e, s) {
-      _logAuthException('2FA verify', e, s);
+      logAuthException('2FA verify', e, s);
       return TwoFactorAuthResult(
         status: TwoFactorAuthResultStatus.failure,
         errorMessage: formatApiError('2FA verification failed', e),
       );
     }
-  }
-
-  void _logAuthException(String operation, Object e, StackTrace s) {
-    logDioException(operation, e, subCategory: 'auth');
-    AppLogger.error(
-      '$operation failed',
-      subCategory: 'auth',
-      error: e,
-      stackTrace: s,
-    );
   }
 }
