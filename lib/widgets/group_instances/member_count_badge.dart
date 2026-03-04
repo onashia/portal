@@ -8,13 +8,15 @@ class MemberCountBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: context.m3e.spacing.md,
         vertical: context.m3e.spacing.sm,
       ),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.secondaryContainer,
+        color: scheme.secondaryContainer,
         borderRadius: context.m3e.shapes.round.md,
       ),
       child: Row(
@@ -24,12 +26,12 @@ class MemberCountBadge extends StatelessWidget {
           Icon(
             Icons.people,
             size: 16,
-            color: Theme.of(context).colorScheme.onSecondaryContainer,
+            color: scheme.onSecondaryContainer,
           ),
           Text(
             userCount.toString(),
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
+            style: textTheme.labelMedium?.copyWith(
+              color: scheme.onSecondaryContainer,
               fontWeight: FontWeight.bold,
             ),
           ),

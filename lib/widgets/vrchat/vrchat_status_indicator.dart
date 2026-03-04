@@ -292,6 +292,7 @@ class _VrchatStatusDialogContent extends StatelessWidget {
     M3ETheme m3e,
     VrchatStatusColors colors,
   ) {
+    final scheme = Theme.of(context).colorScheme;
     final serviceColor = _serviceStatusColor(service.status, colors);
     final isOperational = service.status.toLowerCase() == 'operational';
 
@@ -313,9 +314,7 @@ class _VrchatStatusDialogContent extends StatelessWidget {
           Text(
             service.status,
             style: textTheme.bodySmall?.copyWith(
-              color: isOperational
-                  ? Theme.of(context).colorScheme.onSurfaceVariant
-                  : serviceColor,
+              color: isOperational ? scheme.onSurfaceVariant : serviceColor,
               fontWeight: isOperational ? FontWeight.normal : FontWeight.bold,
             ),
           ),

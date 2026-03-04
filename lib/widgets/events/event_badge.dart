@@ -9,6 +9,7 @@ class EventBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: context.m3e.spacing.sm,
@@ -20,9 +21,7 @@ class EventBadge extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: Theme.of(
-          context,
-        ).textTheme.labelSmall?.copyWith(color: scheme.onSecondaryContainer),
+        style: textTheme.labelSmall?.copyWith(color: scheme.onSecondaryContainer),
         overflow: TextOverflow.ellipsis,
       ),
     );

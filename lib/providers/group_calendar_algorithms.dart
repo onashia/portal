@@ -150,7 +150,7 @@ selectCalendarDataForState({
     previousState.todayEvents,
     nextTodayEvents,
   );
-  final didGroupErrorsChange = !collection_eq.areStringMapsEquivalent(
+  final didGroupErrorsChange = !collection_eq.areMapsEquivalent(
     previousState.groupErrors,
     nextGroupErrors,
   );

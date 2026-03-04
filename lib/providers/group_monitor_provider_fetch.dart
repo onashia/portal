@@ -274,7 +274,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     final nextGroupInstances = processingResult.didInstancesChange
         ? processingResult.groupInstances
         : executionResult.previousGroupInstances;
-    final didErrorsChange = !collection_eq.areStringMapsEquivalent(
+    final didErrorsChange = !collection_eq.areMapsEquivalent(
       executionResult.previousGroupErrors,
       executionResult.newGroupErrors,
     );

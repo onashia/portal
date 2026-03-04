@@ -24,29 +24,6 @@ void main() {
     });
   });
 
-  group('areStringMapsEquivalent', () {
-    test('returns true for value-equivalent maps', () {
-      expect(
-        areStringMapsEquivalent(
-          const {'a': '1', 'b': '2'},
-          const {'b': '2', 'a': '1'},
-        ),
-        isTrue,
-      );
-    });
-
-    test('returns false when keys or values differ', () {
-      expect(
-        areStringMapsEquivalent(const {'a': '1'}, const {'a': '2'}),
-        isFalse,
-      );
-      expect(
-        areStringMapsEquivalent(const {'a': '1'}, const {'b': '1'}),
-        isFalse,
-      );
-    });
-  });
-
   group('areMapsEquivalent', () {
     test('returns true for identical maps', () {
       final map = {'a': 1, 'b': 2};
