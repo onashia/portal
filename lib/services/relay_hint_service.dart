@@ -21,6 +21,7 @@ class RelayHintService {
   RelayHintService({
     Dio? dio,
     String? bootstrapUrl,
+    String? appSecret,
     math.Random? random,
     DateTime Function()? now,
     Duration? heartbeatInterval,
@@ -29,6 +30,7 @@ class RelayHintService {
     RelayBootstrapResolver? bootstrapResolver,
   }) : _dio = dio ?? Dio(),
        _bootstrapUrl = bootstrapUrl ?? AppConstants.relayBootstrapUrl,
+       _appSecret = appSecret ?? AppConstants.relayAppSecret,
        _random = random ?? math.Random(),
        _now = now ?? DateTime.now,
        _heartbeatInterval =
@@ -49,6 +51,7 @@ class RelayHintService {
 
   final Dio _dio;
   final String _bootstrapUrl;
+  final String _appSecret;
   final math.Random _random;
   final DateTime Function() _now;
   final Duration _heartbeatInterval;
@@ -82,7 +85,9 @@ class RelayHintService {
   bool get isConnected => _channel != null;
 
   bool get isConfigured =>
-      AppConstants.relayAssistEnabled && _bootstrapUrl.trim().isNotEmpty;
+      AppConstants.relayAssistEnabled &&
+      _bootstrapUrl.trim().isNotEmpty &&
+      _appSecret.isNotEmpty;
 
   DateTime? get runtimeDisabledUntil => _runtimeDisabledUntil;
 
@@ -234,7 +239,12 @@ class RelayHintService {
         'clientId': clientId,
         'version': '1',
       },
-      options: Options(headers: {'content-type': 'application/json'}),
+      options: Options(
+        headers: {
+          'content-type': 'application/json',
+          'x-app-secret': _appSecret,
+        },
+      ),
     );
 
     final data = response.data;

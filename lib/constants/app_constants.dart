@@ -11,6 +11,10 @@ class AppConstants {
     defaultValue:
         'https://portal-relay-assist.me-3aa.workers.dev/relay/bootstrap',
   );
+  static const String relayAppSecret = String.fromEnvironment(
+    'PORTAL_RELAY_APP_SECRET',
+    defaultValue: '',
+  );
   static const int relayBootstrapTimeoutSeconds = 8;
   static const int relayHintTtlSeconds = 45;
   static const int relayHintDedupeSeconds = 60;

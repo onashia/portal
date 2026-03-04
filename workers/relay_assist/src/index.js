@@ -28,6 +28,15 @@ async function handleBootstrap(request, env) {
     return json({ relayEnabled: false, retryAfterSeconds: 60 }, 503);
   }
 
+  if (!env.PORTAL_APP_SECRET) {
+    return json({ error: 'missing_secret' }, 500);
+  }
+
+  const appSecret = `${request.headers.get('x-app-secret') || ''}`;
+  if (!timingSafeEqual(appSecret, env.PORTAL_APP_SECRET)) {
+    return json({ error: 'unauthorized' }, 401);
+  }
+
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
   if (!checkRateLimit(bootstrapRateLimitByIp, ip, BOOTSTRAP_WINDOW_MS, MAX_BOOTSTRAP_PER_WINDOW)) {
     return json({ error: 'bootstrap_rate_limited' }, 429);
