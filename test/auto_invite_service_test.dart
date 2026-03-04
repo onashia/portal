@@ -1,4 +1,6 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:portal/models/relay_hint_message.dart';
 import 'package:portal/services/auto_invite_service.dart';
 import 'package:portal/services/invite_service.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
@@ -7,16 +9,58 @@ import 'test_helpers/fake_vrchat_models.dart';
 
 class MockInviteService implements InviteService {
   final List<Instance> invitedInstances = [];
+  CancelToken? lastRetryCancelToken;
+  String? lastRetryWorldId;
+  String? lastRetryInstanceId;
+  Duration? lastRetryWindow;
 
   @override
   Future<void> inviteSelfToInstance(Instance instance) async {
     invitedInstances.add(instance);
+  }
+
+  @override
+  Future<void> inviteSelfToLocation({
+    required String worldId,
+    required String instanceId,
+  }) async {}
+
+  @override
+  Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
+    required String worldId,
+    required String instanceId,
+    Duration maxWindow = const Duration(seconds: 25),
+    CancelToken? cancelToken,
+  }) async {
+    lastRetryWorldId = worldId;
+    lastRetryInstanceId = instanceId;
+    lastRetryWindow = maxWindow;
+    lastRetryCancelToken = cancelToken;
+    return InviteRetryOutcome.sent;
   }
 }
 
 class FailingInviteService implements InviteService {
   @override
   Future<void> inviteSelfToInstance(Instance instance) async {
+    throw Exception('Invite failed');
+  }
+
+  @override
+  Future<void> inviteSelfToLocation({
+    required String worldId,
+    required String instanceId,
+  }) async {
+    throw Exception('Invite failed');
+  }
+
+  @override
+  Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
+    required String worldId,
+    required String instanceId,
+    Duration maxWindow = const Duration(seconds: 25),
+    CancelToken? cancelToken,
+  }) async {
     throw Exception('Invite failed');
   }
 }
@@ -133,6 +177,41 @@ void main() {
         ),
         throwsException,
       );
+    });
+  });
+
+  group('AutoInviteService.attemptAutoInviteFromHint', () {
+    late MockInviteService mockInviteService;
+    late AutoInviteService autoInviteService;
+
+    setUp(() {
+      mockInviteService = MockInviteService();
+      autoInviteService = AutoInviteService(mockInviteService);
+    });
+
+    test('forwards cancel token and hint target to InviteService', () async {
+      final cancelToken = CancelToken();
+      final hint = RelayHintMessage.create(
+        groupId: 'grp_alpha',
+        worldId: 'wrld_alpha',
+        instanceId: 'inst_a',
+        nUsers: 6,
+        sourceClientId: 'client_a',
+        now: DateTime.now(),
+      );
+
+      final outcome = await autoInviteService.attemptAutoInviteFromHint(
+        hint: hint,
+        enabled: true,
+        maxRetryWindow: const Duration(seconds: 7),
+        cancelToken: cancelToken,
+      );
+
+      expect(outcome, InviteRetryOutcome.sent);
+      expect(mockInviteService.lastRetryWorldId, hint.worldId);
+      expect(mockInviteService.lastRetryInstanceId, hint.instanceId);
+      expect(mockInviteService.lastRetryWindow, const Duration(seconds: 7));
+      expect(mockInviteService.lastRetryCancelToken, same(cancelToken));
     });
   });
 }

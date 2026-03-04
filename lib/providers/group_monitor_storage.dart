@@ -31,6 +31,16 @@ class GroupMonitorStorage {
     await prefs.setBool(StorageKeys.autoInviteEnabled, value);
   }
 
+  static Future<bool> loadRelayAssistEnabled({bool defaultValue = true}) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(StorageKeys.relayAssistEnabled) ?? defaultValue;
+  }
+
+  static Future<void> saveRelayAssistEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(StorageKeys.relayAssistEnabled, value);
+  }
+
   static Future<GroupMonitorBoostSettings> loadBoostSettings() async {
     final prefs = await SharedPreferences.getInstance();
     final boostedGroupId = prefs.getString(StorageKeys.boostedGroupId);
@@ -74,5 +84,6 @@ class GroupMonitorStorage {
     await prefs.remove(StorageKeys.boostedGroupId);
     await prefs.remove(StorageKeys.boostExpiresAt);
     await prefs.remove(StorageKeys.autoInviteEnabled);
+    await prefs.remove(StorageKeys.relayAssistEnabled);
   }
 }

@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/models/group_instance_with_group.dart';
+import 'package:portal/models/relay_hint_message.dart';
 import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/api_rate_limit_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
@@ -10,11 +12,105 @@ import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/providers/group_monitor_storage.dart';
 import 'package:portal/providers/polling_lifecycle.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
+import 'package:portal/services/invite_service.dart';
+import 'package:portal/services/relay_hint_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import 'test_helpers/auth_test_harness.dart';
 import 'test_helpers/fake_vrchat_models.dart';
+
+class _RelayHintServiceFake extends RelayHintService {
+  _RelayHintServiceFake()
+    : super(bootstrapUrl: 'https://example.com/bootstrap');
+
+  final StreamController<RelayHintMessage> _hints =
+      StreamController<RelayHintMessage>.broadcast();
+  final StreamController<RelayConnectionStatus> _statuses =
+      StreamController<RelayConnectionStatus>.broadcast();
+  bool _isDisposed = false;
+
+  @override
+  Stream<RelayHintMessage> get hints => _hints.stream;
+
+  @override
+  Stream<RelayConnectionStatus> get statuses => _statuses.stream;
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  Future<void> connect({
+    required String groupId,
+    required String userId,
+    required String clientId,
+  }) async {
+    if (!_statuses.isClosed) {
+      _statuses.add(const RelayConnectionStatus(connected: true));
+    }
+  }
+
+  @override
+  Future<void> disconnect() async {
+    if (!_statuses.isClosed) {
+      _statuses.add(const RelayConnectionStatus(connected: false));
+    }
+  }
+
+  @override
+  Future<void> publishHint(RelayHintMessage hint) async {}
+
+  Future<void> emitHint(RelayHintMessage hint) async {
+    if (!_hints.isClosed) {
+      _hints.add(hint);
+    }
+  }
+
+  @override
+  Future<void> dispose() async {
+    if (_isDisposed) {
+      return;
+    }
+    _isDisposed = true;
+    await _hints.close();
+    await _statuses.close();
+  }
+}
+
+class _CancelableInviteServiceFake implements InviteService {
+  final Completer<void> started = Completer<void>();
+  CancelToken? lastCancelToken;
+
+  @override
+  Future<void> inviteSelfToInstance(Instance instance) async {}
+
+  @override
+  Future<void> inviteSelfToLocation({
+    required String worldId,
+    required String instanceId,
+  }) async {}
+
+  @override
+  Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
+    required String worldId,
+    required String instanceId,
+    Duration maxWindow = const Duration(seconds: 25),
+    CancelToken? cancelToken,
+  }) async {
+    lastCancelToken = cancelToken;
+    if (!started.isCompleted) {
+      started.complete();
+    }
+    if (cancelToken == null) {
+      return InviteRetryOutcome.sent;
+    }
+    if (cancelToken.isCancelled) {
+      return InviteRetryOutcome.cancelled;
+    }
+    await cancelToken.whenCancel;
+    return InviteRetryOutcome.cancelled;
+  }
+}
 
 ({
   ProviderContainer container,
@@ -1464,6 +1560,58 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 40));
 
       expect(container.read(provider).lastBaselineAttemptAt, isNotNull);
+    });
+  });
+
+  group('relay hint lifecycle cancellation', () {
+    test('cancels in-flight relay invite work on notifier dispose', () async {
+      final relayService = _RelayHintServiceFake();
+      final inviteService = _CancelableInviteServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [
+          relayHintServiceProvider.overrideWithValue(relayService),
+          inviteServiceProvider.overrideWithValue(inviteService),
+        ],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+
+      final observedRelayErrors = <String?>[];
+      final subscription = container.listen<GroupMonitorState>(
+        provider,
+        (_, next) => observedRelayErrors.add(next.lastRelayError),
+        fireImmediately: true,
+      );
+
+      notifier.state = GroupMonitorState(
+        isMonitoring: true,
+        autoInviteEnabled: true,
+        boostedGroupId: 'grp_alpha',
+        boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+      );
+
+      final hint = RelayHintMessage.create(
+        groupId: 'grp_alpha',
+        worldId: 'wrld_alpha',
+        instanceId: 'inst_alpha',
+        nUsers: 9,
+        sourceClientId: 'relay_peer',
+      );
+      await relayService.emitHint(hint);
+      await inviteService.started.future;
+
+      final tokenBeforeDispose = inviteService.lastCancelToken;
+      expect(tokenBeforeDispose, isNotNull);
+      expect(tokenBeforeDispose!.isCancelled, isFalse);
+
+      container.dispose();
+      await Future<void>.delayed(Duration.zero);
+      subscription.close();
+
+      expect(tokenBeforeDispose.isCancelled, isTrue);
+      expect(observedRelayErrors.whereType<String>(), isEmpty);
     });
   });
 

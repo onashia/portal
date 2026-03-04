@@ -70,6 +70,7 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
       }
       _reconcileBaselineLoop();
       _reconcileBoostLoop();
+      _reconcileRelayConnection();
       return;
     }
 
@@ -88,6 +89,7 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
 
     _reconcileBaselineLoop();
     _reconcileBoostLoop();
+    _reconcileRelayConnection();
   }
 
   void _reconcileBaselineLoop() {
@@ -363,6 +365,7 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
     _requestBaselineRefresh(immediate: true);
     _reconcileBoostLoop();
     _reconcileBaselineLoop();
+    _reconcileRelayConnection();
   }
 
   void _stopMonitoringInternal() {
@@ -383,6 +386,7 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
     );
     state = state.copyWith(isMonitoring: false);
     _backoffDelay = 1;
+    _reconcileRelayConnection();
 
     AppLogger.info('Stopped monitoring', subCategory: 'group_monitor');
   }

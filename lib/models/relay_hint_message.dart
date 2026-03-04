@@ -1,0 +1,117 @@
+import 'dart:math' as math;
+
+import '../constants/app_constants.dart';
+
+class RelayHintMessage {
+  final String version;
+  final String hintId;
+  final String groupId;
+  final String worldId;
+  final String instanceId;
+  final int nUsers;
+  final DateTime detectedAt;
+  final DateTime expiresAt;
+  final String sourceClientId;
+
+  const RelayHintMessage({
+    required this.version,
+    required this.hintId,
+    required this.groupId,
+    required this.worldId,
+    required this.instanceId,
+    required this.nUsers,
+    required this.detectedAt,
+    required this.expiresAt,
+    required this.sourceClientId,
+  });
+
+  factory RelayHintMessage.create({
+    required String groupId,
+    required String worldId,
+    required String instanceId,
+    required int nUsers,
+    required String sourceClientId,
+    DateTime? now,
+  }) {
+    final timestamp = now ?? DateTime.now();
+    final expiresAt = timestamp.add(
+      const Duration(seconds: AppConstants.relayHintTtlSeconds),
+    );
+    return RelayHintMessage(
+      version: '1',
+      hintId: _generateHintId(sourceClientId: sourceClientId, now: timestamp),
+      groupId: groupId,
+      worldId: worldId,
+      instanceId: instanceId,
+      nUsers: nUsers,
+      detectedAt: timestamp,
+      expiresAt: expiresAt,
+      sourceClientId: sourceClientId,
+    );
+  }
+
+  factory RelayHintMessage.fromJson(Map<String, dynamic> json) {
+    return RelayHintMessage(
+      version: json['version']?.toString() ?? '1',
+      hintId: json['hintId']?.toString() ?? '',
+      groupId: json['groupId']?.toString() ?? '',
+      worldId: json['worldId']?.toString() ?? '',
+      instanceId: json['instanceId']?.toString() ?? '',
+      nUsers: (json['nUsers'] as num?)?.toInt() ?? 0,
+      detectedAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['detectedAtMs'] as num?)?.toInt() ?? 0,
+      ),
+      expiresAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['expiresAtMs'] as num?)?.toInt() ?? 0,
+      ),
+      sourceClientId: json['sourceClientId']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'version': version,
+      'hintId': hintId,
+      'groupId': groupId,
+      'worldId': worldId,
+      'instanceId': instanceId,
+      'nUsers': nUsers,
+      'detectedAtMs': detectedAt.millisecondsSinceEpoch,
+      'expiresAtMs': expiresAt.millisecondsSinceEpoch,
+      'sourceClientId': sourceClientId,
+    };
+  }
+
+  bool get isStructurallyValid {
+    return hintId.isNotEmpty &&
+        groupId.isNotEmpty &&
+        worldId.isNotEmpty &&
+        instanceId.isNotEmpty &&
+        sourceClientId.isNotEmpty;
+  }
+
+  bool isExpired({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    return !expiresAt.isAfter(current);
+  }
+
+  String get instanceKey => '$groupId|$worldId|$instanceId';
+
+  static String _generateHintId({
+    required String sourceClientId,
+    required DateTime now,
+  }) {
+    final randomPart = _random.nextInt(1 << 32).toRadixString(16);
+    final micros = now.microsecondsSinceEpoch.toRadixString(16);
+    return '$sourceClientId-$micros-$randomPart';
+  }
+
+  static final math.Random _random = math.Random();
+}
+
+class RelayConnectionStatus {
+  final bool connected;
+  final String? error;
+
+  const RelayConnectionStatus({required this.connected, this.error});
+}

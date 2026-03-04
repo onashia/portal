@@ -607,6 +607,14 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       final newInstances = merged.newInstances;
       final mergedInstances = merged.effectiveInstances;
 
+      if (newInstances.isNotEmpty) {
+        _publishRelayHintForNewBoostedInstances(
+          groupId: groupId,
+          newInstances: newInstances,
+          detectedAt: pollStart,
+        );
+      }
+
       var didGroupInstancesChange = false;
       Map<String, List<GroupInstanceWithGroup>> nextGroupInstances =
           previousGroupInstances;
@@ -675,6 +683,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     } finally {
       _isBoostFetching = false;
       if (ref.mounted) {
+        _reconcileRelayConnection();
         _drainPendingRefreshesOrScheduleTicks();
       }
     }

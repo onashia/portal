@@ -28,6 +28,50 @@ void main() {
     });
   });
 
+  group('isTransientSelfInviteError', () {
+    test('returns true for transient status codes', () {
+      final request = RequestOptions(path: '/invite/myself/to');
+      for (final statusCode in [404, 409, 429, 500, 502]) {
+        final error = DioException(
+          requestOptions: request,
+          response: Response(requestOptions: request, statusCode: statusCode),
+          type: DioExceptionType.badResponse,
+        );
+        expect(isTransientSelfInviteError(error), isTrue);
+      }
+    });
+
+    test('returns true for connection timeout and false for bad request', () {
+      final request = RequestOptions(path: '/invite/myself/to');
+      final timeoutError = DioException(
+        requestOptions: request,
+        type: DioExceptionType.connectionTimeout,
+      );
+      final badRequestError = DioException(
+        requestOptions: request,
+        response: Response(requestOptions: request, statusCode: 400),
+        type: DioExceptionType.badResponse,
+      );
+
+      expect(isTransientSelfInviteError(timeoutError), isTrue);
+      expect(isTransientSelfInviteError(badRequestError), isFalse);
+    });
+  });
+
+  group('isHardStopSelfInviteError', () {
+    test('returns true for hard stop status codes', () {
+      final request = RequestOptions(path: '/invite/myself/to');
+      for (final statusCode in [400, 401, 403]) {
+        final error = DioException(
+          requestOptions: request,
+          response: Response(requestOptions: request, statusCode: statusCode),
+          type: DioExceptionType.badResponse,
+        );
+        expect(isHardStopSelfInviteError(error), isTrue);
+      }
+    });
+  });
+
   group('shouldLogSelfInvite403AsWarning', () {
     test('logs warning when no previous entry exists', () {
       final now = DateTime.utc(2026, 2, 23, 12, 0, 0);

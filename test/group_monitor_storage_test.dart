@@ -38,6 +38,15 @@ void main() {
     expect(loaded, isFalse);
   });
 
+  test('relay assist default and save', () async {
+    final defaultValue = await GroupMonitorStorage.loadRelayAssistEnabled();
+    expect(defaultValue, isTrue);
+
+    await GroupMonitorStorage.saveRelayAssistEnabled(false);
+    final loaded = await GroupMonitorStorage.loadRelayAssistEnabled();
+    expect(loaded, isFalse);
+  });
+
   test('boost settings save/load/clear', () async {
     final expiresAt = DateTime.now().add(const Duration(minutes: 10));
 
