@@ -6,8 +6,6 @@ const PUBLISH_WINDOW_MS = 10_000;
 const BOOTSTRAP_WINDOW_MS = 10_000;
 const MAX_BOOTSTRAP_PER_WINDOW = 8;
 
-const bootstrapRateLimitByIp = new Map();
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -33,12 +31,20 @@ async function handleBootstrap(request, env) {
   }
 
   const appSecret = `${request.headers.get('x-app-secret') || ''}`;
-  if (!timingSafeEqual(appSecret, env.PORTAL_APP_SECRET)) {
+  if (!await timingSafeEqual(appSecret, env.PORTAL_APP_SECRET)) {
     return json({ error: 'unauthorized' }, 401);
   }
 
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  if (!checkRateLimit(bootstrapRateLimitByIp, ip, BOOTSTRAP_WINDOW_MS, MAX_BOOTSTRAP_PER_WINDOW)) {
+  const rlId = env.BOOTSTRAP_RL.idFromName('singleton');
+  const rlStub = env.BOOTSTRAP_RL.get(rlId);
+  const rlRes = await rlStub.fetch(new Request('https://internal/check', {
+    method: 'POST',
+    body: JSON.stringify({ ip }),
+    headers: { 'content-type': 'application/json' },
+  }));
+  const { allowed } = await rlRes.json();
+  if (!allowed) {
     return json({ error: 'bootstrap_rate_limited' }, 429);
   }
 
@@ -129,22 +135,6 @@ function isRelayEnabled(env) {
   return `${env.RELAY_RUNTIME_ENABLED ?? 'true'}`.toLowerCase() !== 'false';
 }
 
-function checkRateLimit(map, key, windowMs, maxRequests) {
-  const now = Date.now();
-  const current = map.get(key);
-  if (!current || current.windowStart + windowMs <= now) {
-    map.set(key, { windowStart: now, count: 1 });
-    return true;
-  }
-
-  if (current.count >= maxRequests) {
-    return false;
-  }
-
-  current.count += 1;
-  return true;
-}
-
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -214,15 +204,22 @@ function bytesToBase64Url(bytes) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-function timingSafeEqual(a, b) {
-  if (a.length !== b.length) {
-    return false;
-  }
-  let result = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
+// HMAC both values with a random per-call key so the outputs are always
+// 32 bytes regardless of input length, then compare with the platform's
+// constant-time timingSafeEqual. crypto.subtle.timingSafeEqual throws on
+// length mismatch, so equal-length HMAC outputs sidestep that requirement.
+async function timingSafeEqual(a, b) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.generateKey(
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const [sigA, sigB] = await Promise.all([
+    crypto.subtle.sign('HMAC', key, enc.encode(a)),
+    crypto.subtle.sign('HMAC', key, enc.encode(b)),
+  ]);
+  return crypto.subtle.timingSafeEqual(sigA, sigB);
 }
 
 export class RelayRoom {
@@ -338,6 +335,7 @@ export class RelayRoom {
 
     const outbound = JSON.stringify({ type: 'hint', payload: hint });
     for (const socket of this.state.getWebSockets()) {
+      if (socket === ws) continue;
       socket.send(outbound);
     }
   }
@@ -417,5 +415,34 @@ export class RelayRoom {
         this.recentHints.delete(key);
       }
     }
+  }
+}
+
+export class BootstrapRateLimiter {
+  constructor(state) {
+    this.state = state;
+    this.windowByIp = new Map();
+  }
+
+  async fetch(request) {
+    const { ip } = await request.json();
+    const now = Date.now();
+    const allowed = this.#check(ip, now);
+    return new Response(JSON.stringify({ allowed }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  #check(ip, now) {
+    const current = this.windowByIp.get(ip);
+    if (!current || current.windowStart + BOOTSTRAP_WINDOW_MS <= now) {
+      this.windowByIp.set(ip, { windowStart: now, count: 1 });
+      return true;
+    }
+    if (current.count >= MAX_BOOTSTRAP_PER_WINDOW) {
+      return false;
+    }
+    current.count += 1;
+    return true;
   }
 }

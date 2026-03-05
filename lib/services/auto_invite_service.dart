@@ -69,14 +69,6 @@ class AutoInviteService {
       return null;
     }
 
-    if (hint.worldId.isEmpty || hint.instanceId.isEmpty) {
-      AppLogger.warning(
-        'Skipping relay auto-invite due to missing instance identifiers',
-        subCategory: 'group_monitor',
-      );
-      return null;
-    }
-
     return inviteService.inviteSelfToLocationWithRetry(
       worldId: hint.worldId,
       instanceId: hint.instanceId,

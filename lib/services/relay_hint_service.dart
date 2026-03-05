@@ -142,6 +142,7 @@ class RelayHintService {
       final channel = _channelConnector(Uri.parse(wsUrl));
       _channel = channel;
       _reconnectAttempt = 0;
+      _runtimeDisabledUntil = null;
       _lastInboundAt = _now();
       _lastPongAt = _lastInboundAt;
       _emitStatus(const RelayConnectionStatus(connected: true));

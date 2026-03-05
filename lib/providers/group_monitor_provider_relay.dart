@@ -21,6 +21,9 @@ extension GroupMonitorRelayExtension on GroupMonitorNotifier {
 
       if (status.connected) {
         _relayFailureStreak = 0;
+        if (state.relayTemporarilyDisabledUntil != null) {
+          state = state.copyWith(relayTemporarilyDisabledUntil: null);
+        }
       } else if (status.error != null) {
         _recordRelayFailure(reason: status.error!);
       }
