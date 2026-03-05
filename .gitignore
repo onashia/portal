@@ -178,6 +178,7 @@ web/.flutter-plugins
 
 # Cloudflare Wrangler
 .wrangler/
+.wrangler-dryrun/
 
 # AI Assistant Files
 .opencode/

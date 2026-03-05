@@ -8,6 +8,7 @@ This worker implements zero-setup relay assist for Portal boosted-group auto-inv
 
 ## Environment variables
 - `RELAY_TOKEN_SECRET` (required): HMAC secret for token signing
+- `PORTAL_APP_SECRET` (required): shared secret clients must send in `x-app-secret` header to authenticate bootstrap requests
 - `RELAY_RUNTIME_ENABLED` (optional): `"true"` or `"false"`, defaults to `true`
 
 ## Deploy

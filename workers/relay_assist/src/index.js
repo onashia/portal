@@ -155,7 +155,7 @@ async function verifyToken(token, secret) {
   }
 
   const expected = await hmacSha256(encodedClaims, secret);
-  if (!timingSafeEqual(signature, expected)) {
+  if (!await timingSafeEqual(signature, expected)) {
     return null;
   }
 
@@ -427,10 +427,19 @@ export class BootstrapRateLimiter {
   async fetch(request) {
     const { ip } = await request.json();
     const now = Date.now();
+    this.#pruneWindowByIp(now);
     const allowed = this.#check(ip, now);
     return new Response(JSON.stringify({ allowed }), {
       headers: { 'content-type': 'application/json' },
     });
+  }
+
+  #pruneWindowByIp(now) {
+    for (const [ip, window] of this.windowByIp.entries()) {
+      if (window.windowStart + BOOTSTRAP_WINDOW_MS <= now) {
+        this.windowByIp.delete(ip);
+      }
+    }
   }
 
   #check(ip, now) {

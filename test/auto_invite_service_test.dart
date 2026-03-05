@@ -193,8 +193,8 @@ void main() {
       final cancelToken = CancelToken();
       final hint = RelayHintMessage.create(
         groupId: 'grp_alpha',
-        worldId: 'wrld_alpha',
-        instanceId: 'inst_a',
+        worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+        instanceId: '12345~inst_a',
         nUsers: 6,
         sourceClientId: 'client_a',
         now: DateTime.now(),

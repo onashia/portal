@@ -146,6 +146,7 @@ void main() {
       var connectCount = 0;
 
       final service = RelayHintService(
+        appSecret: 'test-secret',
         random: _FixedRandom(0),
         heartbeatInterval: const Duration(milliseconds: 20),
         heartbeatStaleAfter: const Duration(milliseconds: 60),
@@ -182,6 +183,7 @@ void main() {
       var connectCount = 0;
 
       final service = RelayHintService(
+        appSecret: 'test-secret',
         random: _FixedRandom(0),
         heartbeatInterval: const Duration(milliseconds: 20),
         heartbeatStaleAfter: const Duration(milliseconds: 60),

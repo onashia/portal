@@ -85,10 +85,21 @@ class RelayHintMessage {
   bool get isStructurallyValid {
     return hintId.isNotEmpty &&
         groupId.isNotEmpty &&
-        worldId.isNotEmpty &&
-        instanceId.isNotEmpty &&
+        _isValidWorldId(worldId) &&
+        _isValidInstanceId(instanceId) &&
         sourceClientId.isNotEmpty;
   }
+
+  // Mirrors server-side validation in workers/relay_assist/src/index.js.
+  static final _worldIdPattern = RegExp(
+    r'^wrld_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+    caseSensitive: false,
+  );
+
+  static bool _isValidWorldId(String id) => _worldIdPattern.hasMatch(id);
+
+  static bool _isValidInstanceId(String id) =>
+      id.isNotEmpty && RegExp(r'^\d').hasMatch(id);
 
   bool isExpired({DateTime? now}) {
     final current = now ?? DateTime.now();

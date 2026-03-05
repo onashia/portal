@@ -71,7 +71,7 @@ class GroupMonitorState {
     List<LimitedUserGroups>? allGroups,
     Set<String>? selectedGroupIds,
     Map<String, List<GroupInstanceWithGroup>>? groupInstances,
-    String? newestInstanceId,
+    Object? newestInstanceId = _unset,
     bool? autoInviteEnabled,
     bool? relayAssistEnabled,
     bool? relayConnected,
@@ -101,7 +101,9 @@ class GroupMonitorState {
       allGroups: allGroups ?? this.allGroups,
       selectedGroupIds: selectedGroupIds ?? this.selectedGroupIds,
       groupInstances: groupInstances ?? this.groupInstances,
-      newestInstanceId: newestInstanceId ?? this.newestInstanceId,
+      newestInstanceId: newestInstanceId == _unset
+          ? this.newestInstanceId
+          : newestInstanceId as String?,
       autoInviteEnabled: autoInviteEnabled ?? this.autoInviteEnabled,
       relayAssistEnabled: relayAssistEnabled ?? this.relayAssistEnabled,
       relayConnected: relayConnected ?? this.relayConnected,

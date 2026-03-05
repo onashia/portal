@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:portal/constants/app_constants.dart';
 import 'package:portal/models/group_instance_with_group.dart';
 import 'package:portal/models/relay_hint_message.dart';
 import 'package:portal/providers/api_call_counter.dart';
@@ -63,6 +64,12 @@ class _RelayHintServiceFake extends RelayHintService {
   Future<void> emitHint(RelayHintMessage hint) async {
     if (!_hints.isClosed) {
       _hints.add(hint);
+    }
+  }
+
+  Future<void> emitStatus(RelayConnectionStatus status) async {
+    if (!_statuses.isClosed) {
+      _statuses.add(status);
     }
   }
 
@@ -1615,8 +1622,8 @@ void main() {
 
       final hint = RelayHintMessage.create(
         groupId: 'grp_alpha',
-        worldId: 'wrld_alpha',
-        instanceId: 'inst_alpha',
+        worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+        instanceId: '12345~alpha',
         nUsers: 9,
         sourceClientId: 'relay_peer',
       );
@@ -1665,8 +1672,8 @@ void main() {
 
       final hint = RelayHintMessage.create(
         groupId: 'grp_alpha',
-        worldId: 'wrld_alpha',
-        instanceId: 'inst_alpha',
+        worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+        instanceId: '12345~alpha',
         nUsers: 9,
         sourceClientId: 'relay_peer',
       );
@@ -1675,6 +1682,56 @@ void main() {
 
       expect(observedRelayErrors, contains('unexpected_invite_error'));
     });
+  });
+
+  group('relay circuit breaker', () {
+    test(
+      'opens circuit after threshold consecutive connection errors',
+      () async {
+        final relayService = _RelayHintServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        addTearDown(container.dispose);
+
+        final states = <GroupMonitorState>[];
+        final subscription = container.listen<GroupMonitorState>(
+          provider,
+          (_, next) => states.add(next),
+          fireImmediately: true,
+        );
+        addTearDown(subscription.close);
+
+        // Emit connection errors up to the circuit breaker threshold (4).
+        for (var i = 0; i < AppConstants.relayCircuitBreakerThreshold; i++) {
+          await relayService.emitStatus(
+            const RelayConnectionStatus(
+              connected: false,
+              error: 'test_connection_error',
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+        }
+
+        // The circuit breaker state is emitted synchronously before
+        // disconnect() fires. Check that the states list captured it.
+        final circuitBreakerState = states.firstWhere(
+          (s) => s.lastRelayError == 'relay_circuit_breaker',
+          orElse: () => throw StateError('Circuit breaker state not emitted'),
+        );
+        expect(circuitBreakerState.relayTemporarilyDisabledUntil, isNotNull);
+        expect(
+          circuitBreakerState.relayTemporarilyDisabledUntil!.isAfter(
+            DateTime.now(),
+          ),
+          isTrue,
+        );
+        expect(circuitBreakerState.relayConnected, isFalse);
+      },
+    );
   });
 
   group('setBoostedGroup', () {

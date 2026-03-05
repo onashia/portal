@@ -102,6 +102,13 @@ class RelayHintService {
     _shouldStayConnected = true;
 
     if (!isConfigured) {
+      if (_appSecret.isEmpty) {
+        AppLogger.warning(
+          'Relay assist skipped: PORTAL_RELAY_APP_SECRET is not set. '
+          'Pass --dart-define=PORTAL_RELAY_APP_SECRET=<secret> to enable.',
+          subCategory: 'relay',
+        );
+      }
       _emitStatus(
         RelayConnectionStatus(
           connected: false,
@@ -141,6 +148,24 @@ class RelayHintService {
 
       final channel = _channelConnector(Uri.parse(wsUrl));
       _channel = channel;
+
+      try {
+        await channel.ready;
+      } catch (e) {
+        _emitStatus(
+          RelayConnectionStatus(
+            connected: false,
+            error: 'Relay handshake failed: $e',
+          ),
+        );
+        _handleDisconnect();
+        return;
+      }
+
+      if (!_shouldStayConnected || _isDisposed) {
+        return;
+      }
+
       _reconnectAttempt = 0;
       _runtimeDisabledUntil = null;
       _lastInboundAt = _now();
