@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:portal/providers/group_monitor_provider.dart';
+import 'package:portal/utils/dedupe_tracker.dart';
 
 void main() {
   group('DedupeTracker', () {

@@ -19,6 +19,10 @@ class GroupMonitorState {
   final DateTime? lastRelayHintAt;
   final String? lastRelayError;
   final DateTime? relayTemporarilyDisabledUntil;
+  // Stored as a field rather than computed from boostExpiresAt so that
+  // Riverpod's equality diffing operates on a stable boolean instead of
+  // calling DateTime.now() inside operator== on every rebuild.
+  final bool isBoostActive;
   final String? boostedGroupId;
   final DateTime? boostExpiresAt;
   final int boostPollCount;
@@ -49,6 +53,7 @@ class GroupMonitorState {
     this.lastRelayHintAt,
     this.lastRelayError,
     this.relayTemporarilyDisabledUntil,
+    this.isBoostActive = false,
     this.boostedGroupId,
     this.boostExpiresAt,
     this.boostPollCount = 0,
@@ -80,6 +85,7 @@ class GroupMonitorState {
     Object? lastRelayHintAt = _unset,
     Object? lastRelayError = _unset,
     Object? relayTemporarilyDisabledUntil = _unset,
+    bool? isBoostActive,
     Object? boostedGroupId = _unset,
     Object? boostExpiresAt = _unset,
     int? boostPollCount,
@@ -118,6 +124,7 @@ class GroupMonitorState {
       relayTemporarilyDisabledUntil: relayTemporarilyDisabledUntil == _unset
           ? this.relayTemporarilyDisabledUntil
           : relayTemporarilyDisabledUntil as DateTime?,
+      isBoostActive: isBoostActive ?? this.isBoostActive,
       boostedGroupId: boostedGroupId == _unset
           ? this.boostedGroupId
           : boostedGroupId as String?,
@@ -160,11 +167,6 @@ class GroupMonitorState {
           : lastGroupsFetchTime as DateTime?,
     );
   }
-
-  bool get isBoostActive =>
-      boostedGroupId != null &&
-      boostExpiresAt != null &&
-      boostExpiresAt!.isAfter(DateTime.now());
 
   bool get isRelayTemporarilyDisabled =>
       relayTemporarilyDisabledUntil != null &&

@@ -31,6 +31,14 @@ class _RelayHintServiceFake extends RelayHintService {
       StreamController<RelayConnectionStatus>.broadcast();
   bool _isDisposed = false;
 
+  /// Counts how many times [connect] has been called.
+  int connectCallCount = 0;
+
+  /// When non-null, overrides [runtimeDisabledUntil] so that tests can
+  /// simulate the service's own cooldown value being read by
+  /// [_reconcileRelayConnection].
+  DateTime? runtimeDisabledUntilOverride;
+
   @override
   Stream<RelayHintMessage> get hints => _hints.stream;
 
@@ -41,11 +49,14 @@ class _RelayHintServiceFake extends RelayHintService {
   bool get isConfigured => true;
 
   @override
+  DateTime? get runtimeDisabledUntil => runtimeDisabledUntilOverride;
+
+  @override
   Future<void> connect({
     required String groupId,
-    required String userId,
     required String clientId,
   }) async {
+    connectCallCount += 1;
     if (!_statuses.isClosed) {
       _statuses.add(const RelayConnectionStatus(connected: true));
     }
@@ -1372,6 +1383,7 @@ void main() {
         notifier.state = GroupMonitorState(
           selectedGroupIds: const {'grp_alpha'},
           isMonitoring: true,
+          isBoostActive: true,
           boostedGroupId: 'grp_alpha',
           boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
         );
@@ -1393,6 +1405,7 @@ void main() {
       notifier.state = GroupMonitorState(
         selectedGroupIds: const {'grp_alpha'},
         isMonitoring: true,
+        isBoostActive: true,
         boostedGroupId: 'grp_alpha',
         boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
       );
@@ -1450,6 +1463,7 @@ void main() {
       notifier.state = GroupMonitorState(
         selectedGroupIds: const {'grp_alpha'},
         isMonitoring: true,
+        isBoostActive: true,
         boostedGroupId: 'grp_alpha',
         boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
       );
@@ -1616,6 +1630,7 @@ void main() {
       notifier.state = GroupMonitorState(
         isMonitoring: true,
         autoInviteEnabled: true,
+        isBoostActive: true,
         boostedGroupId: 'grp_alpha',
         boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
       );
@@ -1666,6 +1681,7 @@ void main() {
       notifier.state = GroupMonitorState(
         isMonitoring: true,
         autoInviteEnabled: true,
+        isBoostActive: true,
         boostedGroupId: 'grp_alpha',
         boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
       );
@@ -1732,6 +1748,164 @@ void main() {
         expect(circuitBreakerState.relayConnected, isFalse);
       },
     );
+
+    // A successful connection must reset the streak so that a subsequent run
+    // of N-1 errors does not re-open the circuit.
+    test('streak_resets_on_successful_connection', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      addTearDown(container.dispose);
+
+      final states = <GroupMonitorState>[];
+      final subscription = container.listen<GroupMonitorState>(
+        provider,
+        (_, next) => states.add(next),
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+
+      // Emit one fewer error than the threshold (streak not yet at limit).
+      for (var i = 0; i < AppConstants.relayCircuitBreakerThreshold - 1; i++) {
+        await relayService.emitStatus(
+          const RelayConnectionStatus(
+            connected: false,
+            error: 'test_connection_error',
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      // A successful connection resets the streak to zero.
+      await relayService.emitStatus(
+        const RelayConnectionStatus(connected: true),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(provider).relayConnected, isTrue);
+
+      // Another N-1 errors should NOT open the circuit (streak was reset).
+      for (var i = 0; i < AppConstants.relayCircuitBreakerThreshold - 1; i++) {
+        await relayService.emitStatus(
+          const RelayConnectionStatus(
+            connected: false,
+            error: 'test_connection_error',
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      // Circuit breaker must NOT have fired in any observed state.
+      expect(
+        states.any((s) => s.lastRelayError == 'relay_circuit_breaker'),
+        isFalse,
+        reason: 'circuit should not open when streak was reset by a success',
+      );
+    });
+
+    // After the circuit opens, the cooldown stored in
+    // runtimeDisabledUntilOverride propagates back to state whenever
+    // _reconcileRelayConnection runs, so connect() is not called again.
+    test('circuit_breaker_cooldown_prevents_reconnect', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      // Open the circuit by emitting the threshold number of errors.
+      for (var i = 0; i < AppConstants.relayCircuitBreakerThreshold; i++) {
+        await relayService.emitStatus(
+          const RelayConnectionStatus(
+            connected: false,
+            error: 'test_connection_error',
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      // Simulate the relay service's own cooldown (what runtimeDisabledUntil
+      // would return after a real server-side disable or circuit open).
+      relayService.runtimeDisabledUntilOverride = DateTime.now().add(
+        const Duration(minutes: 10),
+      );
+      final countAtBreak = relayService.connectCallCount;
+
+      // Toggle auto-invite off then on to trigger _reconcileRelayConnection()
+      // twice without waiting for a real polling timer.
+      await notifier
+          .toggleAutoInvite(); // off — clears lastRelayError, syncs cooldown
+      await Future<void>.delayed(Duration.zero);
+      await notifier
+          .toggleAutoInvite(); // on  — cooldown still future, connect() blocked
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        relayService.connectCallCount,
+        countAtBreak,
+        reason: 'connect() must not be called while cooldown is in the future',
+      );
+    });
+
+    // Once the cooldown has elapsed, _reconcileRelayConnection() must call
+    // connect() again so the client recovers without manual intervention.
+    test('circuit_breaker_resets_after_cooldown', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      // Open the circuit.
+      for (var i = 0; i < AppConstants.relayCircuitBreakerThreshold; i++) {
+        await relayService.emitStatus(
+          const RelayConnectionStatus(
+            connected: false,
+            error: 'test_connection_error',
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      // Leave runtimeDisabledUntilOverride as null (cooldown expired).
+      final countAtBreak = relayService.connectCallCount;
+
+      // Set the state so _shouldConnectRelay() can return true once the
+      // cooldown is cleared.  Direct state assignment is used here to avoid
+      // side effects from the full setBoostedGroup() flow.
+      notifier.state = notifier.state.copyWith(
+        isMonitoring: true,
+        autoInviteEnabled: true,
+        isBoostActive: true,
+        boostedGroupId: 'grp_alpha',
+      );
+
+      // Toggle auto-invite off: clears lastRelayError and sets
+      // relayTemporarilyDisabledUntil from runtimeDisabledUntilOverride (null).
+      await notifier.toggleAutoInvite(); // off
+      await Future<void>.delayed(Duration.zero);
+
+      // Toggle auto-invite on: cooldown is now null → connect() fires.
+      await notifier.toggleAutoInvite(); // on
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        relayService.connectCallCount,
+        greaterThan(countAtBreak),
+        reason: 'connect() must be called once the cooldown has elapsed',
+      );
+      expect(container.read(provider).relayConnected, isTrue);
+    });
   });
 
   group('setBoostedGroup', () {

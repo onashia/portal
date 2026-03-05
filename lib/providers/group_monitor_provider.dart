@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -14,6 +15,7 @@ import '../services/invite_service.dart';
 import '../services/relay_hint_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/collection_equivalence.dart' as collection_eq;
+import '../utils/dedupe_tracker.dart';
 import 'api_call_counter.dart';
 import 'auth_provider.dart';
 import 'group_instance_merging.dart';
@@ -36,24 +38,6 @@ part 'group_monitor_provider_fetch.dart';
 part 'group_monitor_provider_loops.dart';
 part 'group_monitor_provider_persistence.dart';
 part 'group_monitor_provider_relay.dart';
-
-/// Tracks deduplication windows for keyed entries by recording expiry times.
-@visibleForTesting
-class DedupeTracker {
-  final Map<String, DateTime> _seenUntilByKey = <String, DateTime>{};
-
-  bool isBlocked(String key, DateTime now) {
-    return _seenUntilByKey[key]?.isAfter(now) == true;
-  }
-
-  void record(String key, {required DateTime now, required Duration ttl}) {
-    _seenUntilByKey[key] = now.add(ttl);
-  }
-
-  void prune(DateTime now) {
-    _seenUntilByKey.removeWhere((_, until) => !until.isAfter(now));
-  }
-}
 
 class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   GroupMonitorNotifier(this.arg);
@@ -139,6 +123,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     required DateTime? expiresAt,
   }) {
     state = state.copyWith(
+      isBoostActive:
+          groupId != null &&
+          expiresAt != null &&
+          expiresAt.isAfter(DateTime.now()),
       boostedGroupId: groupId,
       boostExpiresAt: expiresAt,
       boostPollCount: 0,

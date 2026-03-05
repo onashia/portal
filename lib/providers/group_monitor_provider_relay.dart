@@ -1,4 +1,7 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+// Both suppressions are necessary because this part-file defines an extension
+// on GroupMonitorNotifier and must access Riverpod's @protected `state` setter
+// and `ref` property, which are legitimately available within the same library.
 
 part of 'group_monitor_provider.dart';
 
@@ -31,8 +34,14 @@ extension GroupMonitorRelayExtension on GroupMonitorNotifier {
   }
 
   String _createRelayClientId({required String userId}) {
-    final micros = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
-    return '$userId-$micros';
+    // Use 8 cryptographically-random bytes to ensure uniqueness even when
+    // multiple clients connect at the same microsecond.
+    final bytes = List<int>.generate(
+      8,
+      (_) => math.Random.secure().nextInt(256),
+    );
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '$userId-$hex';
   }
 
   bool _shouldConnectRelay() {
@@ -83,11 +92,7 @@ extension GroupMonitorRelayExtension on GroupMonitorNotifier {
     }
 
     unawaited(
-      _relayHintService.connect(
-        groupId: groupId,
-        userId: arg,
-        clientId: _relayClientId,
-      ),
+      _relayHintService.connect(groupId: groupId, clientId: _relayClientId),
     );
   }
 

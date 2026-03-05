@@ -9,55 +9,69 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../constants/app_constants.dart';
 import '../models/relay_hint_message.dart';
 import '../utils/app_logger.dart';
+import 'relay_bootstrap_client.dart';
+import 'relay_heartbeat_monitor.dart';
+import 'relay_reconnect_scheduler.dart';
 
-typedef RelayBootstrapResolver =
-    Future<String> Function({
-      required String groupId,
-      required String userId,
-      required String clientId,
-    });
+/// Injectable factory type for opening a [WebSocketChannel], used in tests
+/// to substitute a fake in-memory channel.
+typedef ChannelConnector = WebSocketChannel Function(Uri uri);
 
 class RelayHintService {
   RelayHintService({
+    RelayBootstrapClient? bootstrapClient,
+    RelayHeartbeatMonitor? heartbeatMonitor,
+    ReconnectScheduler? reconnectScheduler,
+    ChannelConnector? channelConnector,
+    DateTime Function()? now,
+    math.Random? random,
     Dio? dio,
     String? bootstrapUrl,
     String? appSecret,
-    math.Random? random,
-    DateTime Function()? now,
     Duration? heartbeatInterval,
     Duration? heartbeatStaleAfter,
-    WebSocketChannel Function(Uri uri)? channelConnector,
-    RelayBootstrapResolver? bootstrapResolver,
-  }) : _dio = dio ?? Dio(),
-       _bootstrapUrl = bootstrapUrl ?? AppConstants.relayBootstrapUrl,
-       _appSecret = appSecret ?? AppConstants.relayAppSecret,
-       _random = random ?? math.Random(),
-       _now = now ?? DateTime.now,
-       _heartbeatInterval =
-           heartbeatInterval ??
-           const Duration(seconds: AppConstants.relayHeartbeatIntervalSeconds),
-       _heartbeatStaleAfter =
-           heartbeatStaleAfter ??
-           const Duration(seconds: AppConstants.relayHeartbeatStaleSeconds),
-       _channelConnector = channelConnector ?? WebSocketChannel.connect,
-       _bootstrapResolver = bootstrapResolver {
-    _dio.options.connectTimeout = Duration(
+  }) : _now = now ?? DateTime.now,
+       _channelConnector = channelConnector ?? WebSocketChannel.connect {
+    final effectiveDio = dio ?? Dio();
+    effectiveDio.options.connectTimeout = Duration(
       seconds: AppConstants.relayBootstrapTimeoutSeconds,
     );
-    _dio.options.receiveTimeout = Duration(
+    effectiveDio.options.receiveTimeout = Duration(
       seconds: AppConstants.relayBootstrapTimeoutSeconds,
     );
+
+    _bootstrapClient =
+        bootstrapClient ??
+        RelayBootstrapClient(
+          dio: effectiveDio,
+          bootstrapUrl: bootstrapUrl ?? AppConstants.relayBootstrapUrl,
+          appSecret: appSecret ?? AppConstants.relayAppSecret,
+        );
+
+    final effectiveRandom = random ?? math.Random();
+    _heartbeatMonitor =
+        heartbeatMonitor ??
+        RelayHeartbeatMonitor(
+          interval: heartbeatInterval,
+          staleAfter: heartbeatStaleAfter,
+          now: now,
+        );
+    _reconnectScheduler =
+        reconnectScheduler ??
+        ReconnectScheduler(
+          random: effectiveRandom,
+          baseSeconds: AppConstants.relayReconnectBaseSeconds,
+          maxSeconds: AppConstants.relayReconnectMaxSeconds,
+        );
   }
 
-  final Dio _dio;
-  final String _bootstrapUrl;
-  final String _appSecret;
-  final math.Random _random;
   final DateTime Function() _now;
-  final Duration _heartbeatInterval;
-  final Duration _heartbeatStaleAfter;
-  final WebSocketChannel Function(Uri uri) _channelConnector;
-  final RelayBootstrapResolver? _bootstrapResolver;
+  final ChannelConnector _channelConnector;
+
+  late final RelayBootstrapClient _bootstrapClient;
+  late final RelayHeartbeatMonitor _heartbeatMonitor;
+  late final ReconnectScheduler _reconnectScheduler;
+
   final StreamController<RelayHintMessage> _hintsController =
       StreamController<RelayHintMessage>.broadcast();
   final StreamController<RelayConnectionStatus> _statusController =
@@ -65,54 +79,37 @@ class RelayHintService {
 
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _channelSubscription;
-  Timer? _heartbeatTimer;
-  Timer? _reconnectTimer;
 
   bool _isDisposed = false;
   bool _shouldStayConnected = false;
   bool _isConnecting = false;
   String? _targetGroupId;
-  String? _targetUserId;
   String? _targetClientId;
   DateTime? _runtimeDisabledUntil;
-  DateTime? _lastInboundAt;
-  DateTime? _lastPongAt;
-  int _reconnectAttempt = 0;
 
   Stream<RelayHintMessage> get hints => _hintsController.stream;
   Stream<RelayConnectionStatus> get statuses => _statusController.stream;
 
   bool get isConnected => _channel != null;
 
-  bool get isConfigured =>
-      AppConstants.relayAssistEnabled &&
-      _bootstrapUrl.trim().isNotEmpty &&
-      _appSecret.isNotEmpty;
+  /// True when this service has valid bootstrap configuration.
+  bool get isConfigured => _bootstrapClient.isConfigured;
 
   DateTime? get runtimeDisabledUntil => _runtimeDisabledUntil;
 
   Future<void> connect({
     required String groupId,
-    required String userId,
     required String clientId,
   }) async {
     _targetGroupId = groupId;
-    _targetUserId = userId;
     _targetClientId = clientId;
     _shouldStayConnected = true;
 
     if (!isConfigured) {
-      if (_appSecret.isEmpty) {
-        AppLogger.warning(
-          'Relay assist skipped: PORTAL_RELAY_APP_SECRET is not set. '
-          'Pass --dart-define=PORTAL_RELAY_APP_SECRET=<secret> to enable.',
-          subCategory: 'relay',
-        );
-      }
       _emitStatus(
-        RelayConnectionStatus(
+        const RelayConnectionStatus(
           connected: false,
-          error: 'Relay unavailable: missing bootstrap configuration',
+          error: 'relay_misconfigured',
         ),
       );
       return;
@@ -136,17 +133,20 @@ class RelayHintService {
 
     _isConnecting = true;
     try {
-      final bootstrap = _bootstrapResolver ?? _bootstrap;
-      final wsUrl = await bootstrap(
+      final wsUri = await _bootstrapClient.bootstrap(
         groupId: groupId,
-        userId: userId,
         clientId: clientId,
+        now: _now,
+        onRuntimeDisabled: (until) {
+          _runtimeDisabledUntil = until;
+        },
       );
+
       if (!_shouldStayConnected || _isDisposed) {
         return;
       }
 
-      final channel = _channelConnector(Uri.parse(wsUrl));
+      final channel = _channelConnector(wsUri);
       _channel = channel;
 
       try {
@@ -166,10 +166,8 @@ class RelayHintService {
         return;
       }
 
-      _reconnectAttempt = 0;
+      _reconnectScheduler.reset();
       _runtimeDisabledUntil = null;
-      _lastInboundAt = _now();
-      _lastPongAt = _lastInboundAt;
       _emitStatus(const RelayConnectionStatus(connected: true));
 
       _channelSubscription = channel.stream.listen(
@@ -180,7 +178,7 @@ class RelayHintService {
             subCategory: 'relay',
           );
           _emitStatus(
-            RelayConnectionStatus(
+            const RelayConnectionStatus(
               connected: false,
               error: 'Relay connection error',
             ),
@@ -191,30 +189,28 @@ class RelayHintService {
         cancelOnError: false,
       );
 
-      _heartbeatTimer?.cancel();
-      _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
-        final now = _now();
-        if (isHeartbeatStale(
-          now: now,
-          lastInboundAt: _lastPongAt,
-          staleAfter: _heartbeatStaleAfter,
-        )) {
+      _heartbeatMonitor.start(
+        sendPing: (now) =>
+            _send({'type': 'ping', 'ts': now.millisecondsSinceEpoch}),
+        onStale: () {
           AppLogger.warning(
             'Relay heartbeat stale; reconnecting websocket',
             subCategory: 'relay',
           );
-          _heartbeatTimer?.cancel();
-          _heartbeatTimer = null;
           _handleDisconnect();
-          return;
-        }
-        _send({'type': 'ping', 'ts': now.millisecondsSinceEpoch});
-      });
+        },
+      );
     } catch (e, s) {
       AppLogger.warning('Relay connect failed: $e', subCategory: 'relay');
       AppLogger.debug('$s', subCategory: 'relay');
+      final detail = e is DioException && e.response?.statusCode != null
+          ? ' (${e.response!.statusCode})'
+          : '';
       _emitStatus(
-        RelayConnectionStatus(connected: false, error: 'Relay connect failed'),
+        RelayConnectionStatus(
+          connected: false,
+          error: 'Relay connect failed$detail',
+        ),
       );
       _scheduleReconnect();
     } finally {
@@ -224,12 +220,7 @@ class RelayHintService {
 
   Future<void> disconnect() async {
     _shouldStayConnected = false;
-    _reconnectTimer?.cancel();
-    _reconnectTimer = null;
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-    _lastInboundAt = null;
-    _lastPongAt = null;
+    _reconnectScheduler.cancel();
     await _closeChannel();
     _emitStatus(const RelayConnectionStatus(connected: false));
   }
@@ -238,7 +229,6 @@ class RelayHintService {
     if (_channel == null || !_shouldStayConnected) {
       return;
     }
-
     _send({'type': 'publish_hint', 'payload': hint.toJson()});
   }
 
@@ -250,48 +240,6 @@ class RelayHintService {
     await disconnect();
     await _hintsController.close();
     await _statusController.close();
-  }
-
-  Future<String> _bootstrap({
-    required String groupId,
-    required String userId,
-    required String clientId,
-  }) async {
-    final response = await _dio.post<dynamic>(
-      _bootstrapUrl,
-      data: {
-        'groupId': groupId,
-        'userId': userId,
-        'clientId': clientId,
-        'version': '1',
-      },
-      options: Options(
-        headers: {
-          'content-type': 'application/json',
-          'x-app-secret': _appSecret,
-        },
-      ),
-    );
-
-    final data = response.data;
-    if (data is! Map<String, dynamic>) {
-      throw StateError('Invalid relay bootstrap response payload');
-    }
-
-    final relayEnabled = data['relayEnabled'] != false;
-    if (!relayEnabled) {
-      final retryAfterSeconds =
-          (data['retryAfterSeconds'] as num?)?.toInt() ??
-          AppConstants.relayCircuitBreakerCooldownSeconds;
-      _runtimeDisabledUntil = _now().add(Duration(seconds: retryAfterSeconds));
-      throw StateError('Relay runtime disabled by server');
-    }
-
-    final wsUrl = data['wsUrl']?.toString();
-    if (wsUrl == null || wsUrl.isEmpty) {
-      throw StateError('Missing wsUrl from relay bootstrap');
-    }
-    return wsUrl;
   }
 
   void _handleRawMessage(dynamic event) {
@@ -309,11 +257,10 @@ class RelayHintService {
     } catch (_) {
       return;
     }
-    _lastInboundAt = _now();
 
     final type = payload['type']?.toString();
     if (type == 'pong') {
-      _lastPongAt = _lastInboundAt;
+      _heartbeatMonitor.recordPong();
       return;
     }
 
@@ -342,7 +289,7 @@ class RelayHintService {
           AppConstants.relayCircuitBreakerCooldownSeconds;
       _runtimeDisabledUntil = _now().add(Duration(seconds: retryAfterSeconds));
       _emitStatus(
-        RelayConnectionStatus(
+        const RelayConnectionStatus(
           connected: false,
           error: 'Relay temporarily disabled by server',
         ),
@@ -361,10 +308,7 @@ class RelayHintService {
   }
 
   Future<void> _closeChannel() async {
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-    _lastInboundAt = null;
-    _lastPongAt = null;
+    _heartbeatMonitor.stop();
     await _channelSubscription?.cancel();
     _channelSubscription = null;
     await _channel?.sink.close();
@@ -375,9 +319,7 @@ class RelayHintService {
     if (!_shouldStayConnected || _isDisposed) {
       return;
     }
-    if (_targetGroupId == null ||
-        _targetUserId == null ||
-        _targetClientId == null) {
+    if (_targetGroupId == null || _targetClientId == null) {
       return;
     }
     if (_runtimeDisabledUntil != null &&
@@ -385,31 +327,32 @@ class RelayHintService {
       return;
     }
 
-    _reconnectTimer?.cancel();
-    final delaySeconds = _nextReconnectDelaySeconds();
-    _reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
+    _reconnectScheduler.schedule(() {
       if (_isDisposed || !_shouldStayConnected) {
         return;
       }
-      unawaited(
-        connect(
-          groupId: _targetGroupId!,
-          userId: _targetUserId!,
-          clientId: _targetClientId!,
-        ),
-      );
+      unawaited(connect(groupId: _targetGroupId!, clientId: _targetClientId!));
     });
   }
 
-  int _nextReconnectDelaySeconds() {
-    _reconnectAttempt += 1;
-    return computeReconnectDelaySeconds(
-      attempt: _reconnectAttempt,
-      baseSeconds: AppConstants.relayReconnectBaseSeconds,
-      maxSeconds: AppConstants.relayReconnectMaxSeconds,
-      random: _random,
-    );
+  void _send(Map<String, dynamic> message) {
+    try {
+      _channel?.sink.add(jsonEncode(message));
+    } catch (e) {
+      AppLogger.warning('Relay send failed: $e', subCategory: 'relay');
+    }
   }
+
+  void _emitStatus(RelayConnectionStatus status) {
+    if (_isDisposed || _statusController.isClosed) {
+      return;
+    }
+    _statusController.add(status);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Static helpers kept for test compatibility.
+  // ---------------------------------------------------------------------------
 
   @visibleForTesting
   static int computeReconnectDelaySeconds({
@@ -435,20 +378,5 @@ class RelayHintService {
       return true;
     }
     return !lastInboundAt.add(staleAfter).isAfter(now);
-  }
-
-  void _send(Map<String, dynamic> message) {
-    try {
-      _channel?.sink.add(jsonEncode(message));
-    } catch (e) {
-      AppLogger.warning('Relay send failed: $e', subCategory: 'relay');
-    }
-  }
-
-  void _emitStatus(RelayConnectionStatus status) {
-    if (_isDisposed || _statusController.isClosed) {
-      return;
-    }
-    _statusController.add(status);
   }
 }

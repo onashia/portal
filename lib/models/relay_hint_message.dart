@@ -101,9 +101,15 @@ class RelayHintMessage {
   static bool _isValidInstanceId(String id) =>
       id.isNotEmpty && RegExp(r'^\d').hasMatch(id);
 
-  bool isExpired({DateTime? now}) {
+  /// Returns true if this hint has expired.
+  ///
+  /// A [grace] period (default 5 s) extends the validity window beyond
+  /// [expiresAt] to tolerate minor NTP skew between publisher and consumer
+  /// clocks. For example, a hint with [expiresAt] of 12:00:00 is still
+  /// considered valid until 12:00:05 from the consumer's perspective.
+  bool isExpired({DateTime? now, Duration grace = const Duration(seconds: 5)}) {
     final current = now ?? DateTime.now();
-    return !expiresAt.isAfter(current);
+    return !expiresAt.isAfter(current.subtract(grace));
   }
 
   String get instanceKey => '$groupId|$worldId|$instanceId';

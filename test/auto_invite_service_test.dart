@@ -7,7 +7,7 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 
 import 'test_helpers/fake_vrchat_models.dart';
 
-class MockInviteService implements InviteService {
+class FakeInviteService implements InviteService {
   final List<Instance> invitedInstances = [];
   CancelToken? lastRetryCancelToken;
   String? lastRetryWorldId;
@@ -40,7 +40,7 @@ class MockInviteService implements InviteService {
   }
 }
 
-class FailingInviteService implements InviteService {
+class AlwaysFailingInviteService implements InviteService {
   @override
   Future<void> inviteSelfToInstance(Instance instance) async {
     throw Exception('Invite failed');
@@ -67,12 +67,12 @@ class FailingInviteService implements InviteService {
 
 void main() {
   group('AutoInviteService.attemptAutoInvite', () {
-    late MockInviteService mockInviteService;
+    late FakeInviteService fakeInviteService;
     late AutoInviteService autoInviteService;
 
     setUp(() {
-      mockInviteService = MockInviteService();
-      autoInviteService = AutoInviteService(mockInviteService);
+      fakeInviteService = FakeInviteService();
+      autoInviteService = AutoInviteService(fakeInviteService);
     });
 
     test('returns null when disabled', () async {
@@ -89,7 +89,7 @@ void main() {
       );
 
       expect(result, isNull);
-      expect(mockInviteService.invitedInstances, isEmpty);
+      expect(fakeInviteService.invitedInstances, isEmpty);
     });
 
     test('returns null when instances empty', () async {
@@ -101,7 +101,7 @@ void main() {
       );
 
       expect(result, isNull);
-      expect(mockInviteService.invitedInstances, isEmpty);
+      expect(fakeInviteService.invitedInstances, isEmpty);
     });
 
     test('returns null when no baseline', () async {
@@ -118,7 +118,7 @@ void main() {
       );
 
       expect(result, isNull);
-      expect(mockInviteService.invitedInstances, isEmpty);
+      expect(fakeInviteService.invitedInstances, isEmpty);
     });
 
     test('selects instance with most users', () async {
@@ -139,8 +139,8 @@ void main() {
       expect(result, isNotNull);
       expect(result!.target.instance.instanceId, 'inst_b');
       expect(result.target.instance.nUsers, 8);
-      expect(mockInviteService.invitedInstances.length, 1);
-      expect(mockInviteService.invitedInstances[0].instanceId, 'inst_b');
+      expect(fakeInviteService.invitedInstances.length, 1);
+      expect(fakeInviteService.invitedInstances[0].instanceId, 'inst_b');
     });
 
     test('tracks latency correctly', () async {
@@ -162,7 +162,7 @@ void main() {
     });
 
     test('propagates invite service errors', () async {
-      autoInviteService = AutoInviteService(FailingInviteService());
+      autoInviteService = AutoInviteService(AlwaysFailingInviteService());
       final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
       final instances = [
         buildTestInstance(instanceId: 'inst_a', world: world, userCount: 5),
@@ -181,12 +181,12 @@ void main() {
   });
 
   group('AutoInviteService.attemptAutoInviteFromHint', () {
-    late MockInviteService mockInviteService;
+    late FakeInviteService fakeInviteService;
     late AutoInviteService autoInviteService;
 
     setUp(() {
-      mockInviteService = MockInviteService();
-      autoInviteService = AutoInviteService(mockInviteService);
+      fakeInviteService = FakeInviteService();
+      autoInviteService = AutoInviteService(fakeInviteService);
     });
 
     test('forwards cancel token and hint target to InviteService', () async {
@@ -208,10 +208,10 @@ void main() {
       );
 
       expect(outcome, InviteRetryOutcome.sent);
-      expect(mockInviteService.lastRetryWorldId, hint.worldId);
-      expect(mockInviteService.lastRetryInstanceId, hint.instanceId);
-      expect(mockInviteService.lastRetryWindow, const Duration(seconds: 7));
-      expect(mockInviteService.lastRetryCancelToken, same(cancelToken));
+      expect(fakeInviteService.lastRetryWorldId, hint.worldId);
+      expect(fakeInviteService.lastRetryInstanceId, hint.instanceId);
+      expect(fakeInviteService.lastRetryWindow, const Duration(seconds: 7));
+      expect(fakeInviteService.lastRetryCancelToken, same(cancelToken));
     });
   });
 }

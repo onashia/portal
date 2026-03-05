@@ -54,6 +54,7 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
 
       if (resolved.boostedGroupId != null && resolved.boostExpiresAt != null) {
         state = state.copyWith(
+          isBoostActive: resolved.boostExpiresAt!.isAfter(DateTime.now()),
           boostedGroupId: resolved.boostedGroupId,
           boostExpiresAt: resolved.boostExpiresAt,
         );
@@ -227,6 +228,7 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
         selectedGroupIds: {},
         groupInstances: {},
         newestInstanceId: null,
+        isBoostActive: false,
         boostedGroupId: null,
         boostExpiresAt: null,
         groupErrors: {},

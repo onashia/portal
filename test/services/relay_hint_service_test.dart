@@ -5,7 +5,10 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/constants/app_constants.dart';
 import 'package:portal/models/relay_hint_message.dart';
+import 'package:portal/services/relay_bootstrap_client.dart';
+import 'package:portal/services/relay_heartbeat_monitor.dart';
 import 'package:portal/services/relay_hint_service.dart';
+import 'package:portal/services/relay_reconnect_scheduler.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 class _FixedRandom implements math.Random {
@@ -122,40 +125,109 @@ class _FakeWebSocketChannel extends Fake implements WebSocketChannel {
   }
 }
 
-Future<void> _waitForCondition({
-  required bool Function() predicate,
-  required Duration timeout,
-  Duration pollEvery = const Duration(milliseconds: 10),
-}) async {
-  final deadline = DateTime.now().add(timeout);
-  while (DateTime.now().isBefore(deadline)) {
-    if (predicate()) {
-      return;
-    }
-    await Future<void>.delayed(pollEvery);
+/// Fake heartbeat monitor that lets tests trigger stale callbacks on demand,
+/// eliminating wall-clock waits from the heartbeat lifecycle tests.
+class _FakeHeartbeatMonitor extends Fake implements RelayHeartbeatMonitor {
+  void Function(DateTime)? _sendPing;
+  void Function()? _onStale;
+
+  @override
+  void start({
+    required void Function(DateTime now) sendPing,
+    required void Function() onStale,
+  }) {
+    _sendPing = sendPing;
+    _onStale = onStale;
   }
-  if (!predicate()) {
-    throw TimeoutException('Timed out waiting for condition');
+
+  @override
+  void stop() {}
+
+  @override
+  void recordPong() {}
+
+  @override
+  bool get isStale => false;
+
+  @override
+  DateTime? get lastPongAt => null;
+
+  /// Simulates a stale heartbeat by invoking the [onStale] callback that was
+  /// supplied to [start].
+  void triggerStale() {
+    stop();
+    _onStale?.call();
+  }
+
+  // Expose sendPing for tests that verify ping frames are sent.
+  void Function(DateTime)? get sendPing => _sendPing;
+}
+
+/// Fake bootstrap client that immediately resolves to a fixed WebSocket URI,
+/// eliminating the HTTP bootstrap round-trip from connection tests.
+class _FakeBootstrapClient extends Fake implements RelayBootstrapClient {
+  _FakeBootstrapClient(this._uri);
+
+  final Uri _uri;
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  Future<Uri> bootstrap({
+    required String groupId,
+    required String clientId,
+    required DateTime Function() now,
+    required void Function(DateTime disabledUntil) onRuntimeDisabled,
+  }) async => _uri;
+}
+
+/// Fake reconnect scheduler that stores the reconnect callback for immediate
+/// on-demand firing, removing timer-based delays from reconnect tests.
+class _FakeReconnectScheduler extends Fake implements ReconnectScheduler {
+  void Function()? _pendingCallback;
+
+  @override
+  void schedule(void Function() callback) {
+    _pendingCallback = callback;
+  }
+
+  @override
+  void cancel() {
+    _pendingCallback = null;
+  }
+
+  @override
+  void reset() {
+    _pendingCallback = null;
+  }
+
+  @override
+  int get attemptCount => 0;
+
+  /// Fires the most recently scheduled reconnect callback synchronously.
+  void fireScheduled() {
+    final cb = _pendingCallback;
+    _pendingCallback = null;
+    cb?.call();
   }
 }
 
 void main() {
   group('RelayHintService heartbeat lifecycle', () {
+    // Verifies the stale-heartbeat → disconnect → reconnect path using
+    // injected fakes so the test completes without any wall-clock waits.
     test('connect_wait_stale_reconnect', () async {
       final statuses = <RelayConnectionStatus>[];
       var connectCount = 0;
 
+      final fakeHeartbeat = _FakeHeartbeatMonitor();
+      final fakeScheduler = _FakeReconnectScheduler();
+
       final service = RelayHintService(
-        appSecret: 'test-secret',
-        random: _FixedRandom(0),
-        heartbeatInterval: const Duration(milliseconds: 20),
-        heartbeatStaleAfter: const Duration(milliseconds: 60),
-        bootstrapResolver:
-            ({
-              required String groupId,
-              required String userId,
-              required String clientId,
-            }) async => 'ws://relay.test',
+        bootstrapClient: _FakeBootstrapClient(Uri.parse('ws://relay.test')),
+        heartbeatMonitor: fakeHeartbeat,
+        reconnectScheduler: fakeScheduler,
         channelConnector: (uri) {
           connectCount += 1;
           return _FakeWebSocketChannel();
@@ -168,11 +240,17 @@ void main() {
         await service.dispose();
       });
 
-      await service.connect(groupId: 'grp', userId: 'usr', clientId: 'client');
-      await _waitForCondition(
-        predicate: () => connectCount >= 2,
-        timeout: const Duration(seconds: 3),
-      );
+      // First connect — heartbeat.start() is called, storing onStale callback.
+      await service.connect(groupId: 'grp', clientId: 'client');
+      expect(connectCount, 1);
+
+      // Trigger stale: disconnect path runs, schedules reconnect on fake.
+      fakeHeartbeat.triggerStale();
+      await pumpEventQueue(); // let _closeChannel() finish asynchronously
+
+      // Fire the queued reconnect immediately — no timer delay needed.
+      fakeScheduler.fireScheduled();
+      await pumpEventQueue(); // let connect() complete
 
       expect(connectCount, greaterThanOrEqualTo(2));
       expect(statuses.first.connected, isTrue);
@@ -183,16 +261,10 @@ void main() {
       var connectCount = 0;
 
       final service = RelayHintService(
-        appSecret: 'test-secret',
+        bootstrapClient: _FakeBootstrapClient(Uri.parse('ws://relay.test')),
         random: _FixedRandom(0),
         heartbeatInterval: const Duration(milliseconds: 20),
         heartbeatStaleAfter: const Duration(milliseconds: 60),
-        bootstrapResolver:
-            ({
-              required String groupId,
-              required String userId,
-              required String clientId,
-            }) async => 'ws://relay.test',
         channelConnector: (uri) {
           connectCount += 1;
           late final _FakeWebSocketChannel channel;
@@ -216,7 +288,7 @@ void main() {
 
       addTearDown(service.dispose);
 
-      await service.connect(groupId: 'grp', userId: 'usr', clientId: 'client');
+      await service.connect(groupId: 'grp', clientId: 'client');
       await Future<void>.delayed(const Duration(milliseconds: 260));
 
       expect(connectCount, 1);

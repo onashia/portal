@@ -1,4 +1,7 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+// Both suppressions are necessary because this part-file defines an extension
+// on GroupMonitorNotifier and must access Riverpod's @protected `state` setter
+// and `ref` property, which are legitimately available within the same library.
 
 part of 'group_monitor_provider.dart';
 
@@ -127,6 +130,16 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
   }
 
   void _reconcileBoostLoop() {
+    // Detect boost expiry at the poll-tick boundary. DateTime.now() is called
+    // here — once per reconcile — rather than inside a state getter so that
+    // Riverpod's equality diffing operates on a stable stored boolean.
+    if (state.isBoostActive &&
+        state.boostExpiresAt != null &&
+        !state.boostExpiresAt!.isAfter(DateTime.now())) {
+      unawaited(_clearBoost(persist: true, logExpired: true));
+      return;
+    }
+
     if (!_boostActive()) {
       _boostLoop.reset();
       return;

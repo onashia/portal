@@ -5,6 +5,7 @@ const MAX_PUBLISH_PER_WINDOW = 10;
 const PUBLISH_WINDOW_MS = 10_000;
 const BOOTSTRAP_WINDOW_MS = 10_000;
 const MAX_BOOTSTRAP_PER_WINDOW = 8;
+const MAX_CONNECTIONS_PER_ROOM = 100;
 
 export default {
   async fetch(request, env) {
@@ -59,6 +60,13 @@ async function handleBootstrap(request, env) {
   const clientId = `${payload?.clientId || ''}`.trim();
   if (!groupId || !clientId || groupId.length > 128 || clientId.length > 128) {
     return json({ error: 'invalid_bootstrap_payload' }, 400);
+  }
+
+  // Require VRChat group ID format (grp_<UUID>) to prevent Durable Object
+  // rooms being created for arbitrary strings.
+  const GROUP_ID_RE = /^grp_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+  if (!GROUP_ID_RE.test(groupId)) {
+    return json({ error: 'invalid_group_id_format' }, 400);
   }
 
   if (!env.RELAY_TOKEN_SECRET) {
@@ -254,6 +262,12 @@ export class RelayRoom {
       claims = JSON.parse(claimsRaw);
     } catch {
       return new Response('Invalid relay claims', { status: 401 });
+    }
+
+    // Durable Objects process one fetch() at a time (single-threaded event
+    // loop), so this read-then-accept sequence is not a true TOCTOU race.
+    if (this.state.getWebSockets().length >= MAX_CONNECTIONS_PER_ROOM) {
+      return new Response('room full', { status: 503 });
     }
 
     const pair = new WebSocketPair();

@@ -1,4 +1,7 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+// Both suppressions are necessary because this part-file defines an extension
+// on GroupMonitorNotifier and must access Riverpod's @protected `state` setter
+// and `ref` property, which are legitimately available within the same library.
 
 part of 'group_monitor_provider.dart';
 
