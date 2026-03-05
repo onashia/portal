@@ -391,6 +391,15 @@ export class RelayRoom {
       return false;
     }
 
+    // Validate VRChat ID formats to block purely synthetic payloads.
+    // worldId must be wrld_ + UUID; instanceId must start with digits.
+    if (!/^wrld_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(worldId)) {
+      return false;
+    }
+    if (!/^\d+/.test(instanceId)) {
+      return false;
+    }
+
     if (!Number.isFinite(expiresAtMs) || expiresAtMs <= now) {
       return false;
     }
