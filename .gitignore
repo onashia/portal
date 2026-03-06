@@ -36,6 +36,7 @@ app.*.map.json
 .atom/
 .history/
 .swiftpm/
+*.sublime-*
 
 # IntelliJ related
 *.iml
@@ -72,6 +73,7 @@ $RECYCLE.BIN/
 *.tmp
 .build/
 .buildlog/
+.cache/
 .svn/
 migrate_working_dir/
 
@@ -179,6 +181,11 @@ web/.flutter-plugins
 # Cloudflare Wrangler
 .wrangler/
 .wrangler-dryrun/
+
+# Node.js
+node_modules/
+package-lock.json
+yarn.lock
 
 # AI Assistant Files
 .opencode/
