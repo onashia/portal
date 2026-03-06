@@ -96,6 +96,71 @@ void main() {
         expect(hint.isStructurallyValid, isTrue);
       });
     });
+
+    group('isExpired', () {
+      // Base expiry time used across tests.
+      final expiresAt = DateTime.utc(2026, 3, 3, 12, 0, 0);
+
+      RelayHintMessage makeHint() => RelayHintMessage(
+        version: '1',
+        hintId: 'hint_1',
+        groupId: 'grp_alpha',
+        worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+        instanceId: '12345~alpha',
+        nUsers: 1,
+        detectedAt: _epoch,
+        expiresAt: expiresAt,
+        sourceClientId: 'usr_a',
+      );
+
+      test('returns_false_well_before_expiry', () {
+        final hint = makeHint();
+        expect(
+          hint.isExpired(now: expiresAt.subtract(const Duration(minutes: 10))),
+          isFalse,
+        );
+      });
+
+      test('returns_false_within_default_grace_period_after_expiry', () {
+        // Default grace is 5s; at expiresAt + 3s the hint should still be valid.
+        final hint = makeHint();
+        expect(
+          hint.isExpired(now: expiresAt.add(const Duration(seconds: 3))),
+          isFalse,
+        );
+      });
+
+      test('returns_true_at_grace_period_boundary', () {
+        // At exactly expiresAt + 5s the hint should be considered expired.
+        final hint = makeHint();
+        expect(
+          hint.isExpired(now: expiresAt.add(const Duration(seconds: 5))),
+          isTrue,
+        );
+      });
+
+      test('returns_true_after_grace_period', () {
+        final hint = makeHint();
+        expect(
+          hint.isExpired(now: expiresAt.add(const Duration(seconds: 60))),
+          isTrue,
+        );
+      });
+
+      test('custom_zero_grace_expires_immediately_at_expiresAt', () {
+        final hint = makeHint();
+        // With no grace, the hint is expired at exactly expiresAt.
+        expect(hint.isExpired(now: expiresAt, grace: Duration.zero), isTrue);
+        // One second before expiry it is still valid.
+        expect(
+          hint.isExpired(
+            now: expiresAt.subtract(const Duration(seconds: 1)),
+            grace: Duration.zero,
+          ),
+          isFalse,
+        );
+      });
+    });
   });
 }
 

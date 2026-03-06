@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/constants/app_constants.dart';
 import 'package:portal/models/relay_hint_message.dart';
@@ -182,6 +183,25 @@ class _FakeBootstrapClient extends Fake implements RelayBootstrapClient {
   }) async => _uri;
 }
 
+/// Fake bootstrap client that immediately throws [DioException], simulating
+/// an HTTP-level failure during relay bootstrap.
+class _ThrowingBootstrapClient extends Fake implements RelayBootstrapClient {
+  @override
+  bool get isConfigured => true;
+
+  @override
+  Future<Uri> bootstrap({
+    required String groupId,
+    required String clientId,
+    required DateTime Function() now,
+    required void Function(DateTime disabledUntil) onRuntimeDisabled,
+  }) async {
+    throw DioException(
+      requestOptions: RequestOptions(path: '/relay/bootstrap'),
+    );
+  }
+}
+
 /// Fake reconnect scheduler that stores the reconnect callback for immediate
 /// on-demand firing, removing timer-based delays from reconnect tests.
 class _FakeReconnectScheduler extends Fake implements ReconnectScheduler {
@@ -296,63 +316,295 @@ void main() {
     });
   });
 
-  group('RelayHintService.computeReconnectDelaySeconds', () {
-    test('stays within expected ranges by reconnect attempt', () {
-      final expectedRanges = <int, ({int min, int max})>{
-        1: (min: 1, max: 2),
-        2: (min: 3, max: 4),
-        3: (min: 6, max: 8),
-        4: (min: 12, max: 16),
-        5: (min: 15, max: 20),
-        6: (min: 15, max: 20),
-      };
+  group('RelayHintService message handling', () {
+    // Valid hint JSON that passes isStructurallyValid and is not expired.
+    final farFuture = DateTime.utc(2099);
+    final validHintJson = <String, dynamic>{
+      'version': '1',
+      'hintId': 'hint_1',
+      'groupId': 'grp_alpha',
+      'worldId': 'wrld_12345678-1234-1234-1234-123456789abc',
+      'instanceId': '12345~alpha',
+      'nUsers': 10,
+      'detectedAtMs': DateTime.utc(2026).millisecondsSinceEpoch,
+      'expiresAtMs': farFuture.millisecondsSinceEpoch,
+      'sourceClientId': 'usr_a',
+    };
 
-      for (final entry in expectedRanges.entries) {
-        final delay = RelayHintService.computeReconnectDelaySeconds(
-          attempt: entry.key,
-          baseSeconds: AppConstants.relayReconnectBaseSeconds,
-          maxSeconds: AppConstants.relayReconnectMaxSeconds,
-          random: math.Random(entry.key),
-        );
-        expect(delay, inInclusiveRange(entry.value.min, entry.value.max));
-      }
+    /// Returns a connected [RelayHintService] backed by [channel].
+    Future<RelayHintService> connectService(
+      _FakeWebSocketChannel channel,
+    ) async {
+      final service = RelayHintService(
+        bootstrapClient: _FakeBootstrapClient(Uri.parse('ws://relay.test')),
+        heartbeatMonitor: _FakeHeartbeatMonitor(),
+        reconnectScheduler: _FakeReconnectScheduler(),
+        channelConnector: (_) => channel,
+      );
+      addTearDown(service.dispose);
+      await service.connect(groupId: 'grp', clientId: 'client');
+      return service;
+    }
+
+    test('valid_hint_is_emitted_on_hints_stream', () async {
+      final channel = _FakeWebSocketChannel();
+      final service = await connectService(channel);
+      final hints = <RelayHintMessage>[];
+      final sub = service.hints.listen(hints.add);
+      addTearDown(sub.cancel);
+
+      channel.emit(jsonEncode({'type': 'hint', 'payload': validHintJson}));
+      await pumpEventQueue();
+
+      expect(hints, hasLength(1));
+      expect(hints.first.hintId, 'hint_1');
     });
 
-    test('never exceeds the configured max delay', () {
-      final random = math.Random(42);
-      for (var attempt = 1; attempt <= 30; attempt += 1) {
-        for (var run = 0; run < 50; run += 1) {
-          final delay = RelayHintService.computeReconnectDelaySeconds(
-            attempt: attempt,
-            baseSeconds: AppConstants.relayReconnectBaseSeconds,
-            maxSeconds: AppConstants.relayReconnectMaxSeconds,
-            random: random,
-          );
-          expect(
-            delay,
-            lessThanOrEqualTo(AppConstants.relayReconnectMaxSeconds),
-          );
-          expect(delay, greaterThanOrEqualTo(1));
-        }
-      }
+    test('expired_hint_is_silently_dropped', () async {
+      final channel = _FakeWebSocketChannel();
+      final service = await connectService(channel);
+      final hints = <RelayHintMessage>[];
+      final sub = service.hints.listen(hints.add);
+      addTearDown(sub.cancel);
+
+      final expiredJson = Map<String, dynamic>.from(validHintJson)
+        ..['expiresAtMs'] = DateTime.utc(2000).millisecondsSinceEpoch;
+      channel.emit(jsonEncode({'type': 'hint', 'payload': expiredJson}));
+      await pumpEventQueue();
+
+      expect(hints, isEmpty);
     });
 
-    test('keeps non-trivial jitter spread when delay is capped', () {
-      final random = math.Random(7);
-      final delays = <int>{};
-      for (var run = 0; run < 120; run += 1) {
-        delays.add(
-          RelayHintService.computeReconnectDelaySeconds(
-            attempt: 8,
-            baseSeconds: AppConstants.relayReconnectBaseSeconds,
-            maxSeconds: AppConstants.relayReconnectMaxSeconds,
-            random: random,
-          ),
-        );
-      }
+    test('structurally_invalid_hint_is_silently_dropped', () async {
+      final channel = _FakeWebSocketChannel();
+      final service = await connectService(channel);
+      final hints = <RelayHintMessage>[];
+      final sub = service.hints.listen(hints.add);
+      addTearDown(sub.cancel);
 
-      expect(delays.every((delay) => delay >= 15 && delay <= 20), isTrue);
-      expect(delays.length, greaterThan(1));
+      final invalidJson = Map<String, dynamic>.from(validHintJson)
+        ..['worldId'] = 'not_a_valid_world_id'; // fails regex
+      channel.emit(jsonEncode({'type': 'hint', 'payload': invalidJson}));
+      await pumpEventQueue();
+
+      expect(hints, isEmpty);
+    });
+
+    test('non_map_hint_payload_is_silently_dropped', () async {
+      final channel = _FakeWebSocketChannel();
+      final service = await connectService(channel);
+      final hints = <RelayHintMessage>[];
+      final sub = service.hints.listen(hints.add);
+      addTearDown(sub.cancel);
+
+      channel.emit(jsonEncode({'type': 'hint', 'payload': 'not_a_map'}));
+      await pumpEventQueue();
+
+      expect(hints, isEmpty);
+    });
+
+    test('error_message_emits_disconnected_status_with_error_string', () async {
+      final channel = _FakeWebSocketChannel();
+      final service = await connectService(channel);
+      final statuses = <RelayConnectionStatus>[];
+      final sub = service.statuses.listen(statuses.add);
+      addTearDown(sub.cancel);
+
+      channel.emit(
+        jsonEncode({'type': 'error', 'message': 'relay_overloaded'}),
+      );
+      await pumpEventQueue();
+
+      expect(statuses, isNotEmpty);
+      final last = statuses.last;
+      expect(last.connected, isFalse);
+      expect(last.error, 'relay_overloaded');
+    });
+
+    test(
+      'disabled_message_sets_runtimeDisabledUntil_and_disconnects',
+      () async {
+        final fixedNow = DateTime.utc(2026, 3, 3, 12, 0, 0);
+        final channel = _FakeWebSocketChannel();
+        final service = RelayHintService(
+          bootstrapClient: _FakeBootstrapClient(Uri.parse('ws://relay.test')),
+          heartbeatMonitor: _FakeHeartbeatMonitor(),
+          reconnectScheduler: _FakeReconnectScheduler(),
+          channelConnector: (_) => channel,
+          now: () => fixedNow,
+        );
+        addTearDown(service.dispose);
+        await service.connect(groupId: 'grp', clientId: 'client');
+
+        channel.emit(
+          jsonEncode({'type': 'disabled', 'retryAfterSeconds': 120}),
+        );
+        await pumpEventQueue();
+
+        expect(service.runtimeDisabledUntil, isNotNull);
+        expect(
+          service.runtimeDisabledUntil!,
+          fixedNow.add(const Duration(seconds: 120)),
+        );
+        expect(service.isConnected, isFalse);
+      },
+    );
+
+    test('disabled_message_caps_retryAfterSeconds_at_max', () async {
+      final fixedNow = DateTime.utc(2026, 3, 3, 12, 0, 0);
+      final channel = _FakeWebSocketChannel();
+      final service = RelayHintService(
+        bootstrapClient: _FakeBootstrapClient(Uri.parse('ws://relay.test')),
+        heartbeatMonitor: _FakeHeartbeatMonitor(),
+        reconnectScheduler: _FakeReconnectScheduler(),
+        channelConnector: (_) => channel,
+        now: () => fixedNow,
+      );
+      addTearDown(service.dispose);
+      await service.connect(groupId: 'grp', clientId: 'client');
+
+      // Server sends an absurdly large value.
+      channel.emit(
+        jsonEncode({'type': 'disabled', 'retryAfterSeconds': 999999999}),
+      );
+      await pumpEventQueue();
+
+      final disabledUntil = service.runtimeDisabledUntil;
+      expect(disabledUntil, isNotNull);
+      final expectedMax = fixedNow.add(
+        Duration(seconds: AppConstants.relayMaxRetryAfterSeconds),
+      );
+      expect(disabledUntil, expectedMax);
+    });
+
+    test('binary_frame_is_silently_dropped', () async {
+      final channel = _FakeWebSocketChannel();
+      final service = await connectService(channel);
+      final hints = <RelayHintMessage>[];
+      final sub = service.hints.listen(hints.add);
+      addTearDown(sub.cancel);
+
+      channel.emit(<int>[0x00, 0x01, 0x02]); // binary (List<int>)
+      await pumpEventQueue();
+
+      expect(hints, isEmpty);
+    });
+
+    test('non_json_string_is_silently_dropped', () async {
+      final channel = _FakeWebSocketChannel();
+      final service = await connectService(channel);
+      final hints = <RelayHintMessage>[];
+      final sub = service.hints.listen(hints.add);
+      addTearDown(sub.cancel);
+
+      channel.emit('not valid json {{{{');
+      await pumpEventQueue();
+
+      expect(hints, isEmpty);
+    });
+
+    test('json_array_is_silently_dropped', () async {
+      final channel = _FakeWebSocketChannel();
+      final service = await connectService(channel);
+      final hints = <RelayHintMessage>[];
+      final sub = service.hints.listen(hints.add);
+      addTearDown(sub.cancel);
+
+      channel.emit(jsonEncode([1, 2, 3])); // valid JSON but not a Map
+      await pumpEventQueue();
+
+      expect(hints, isEmpty);
+    });
+
+    test('oversized_message_is_silently_dropped', () async {
+      final channel = _FakeWebSocketChannel();
+      final service = await connectService(channel);
+      final hints = <RelayHintMessage>[];
+      final sub = service.hints.listen(hints.add);
+      addTearDown(sub.cancel);
+
+      // 8193 characters — just over the 8192-byte limit.
+      channel.emit('x' * 8193);
+      await pumpEventQueue();
+
+      expect(hints, isEmpty);
+    });
+
+    group('publishHint', () {
+      test('publishHint_sends_serialized_hint_to_sink', () async {
+        final channel = _FakeWebSocketChannel();
+        final service = await connectService(channel);
+
+        final hint = RelayHintMessage.create(
+          groupId: 'grp_alpha',
+          worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+          instanceId: '12345~alpha',
+          nUsers: 5,
+          sourceClientId: 'client',
+        );
+        await service.publishHint(hint);
+        await pumpEventQueue();
+
+        expect(channel.sentMessages, isNotEmpty);
+        final sent =
+            jsonDecode(channel.sentMessages.last as String)
+                as Map<String, dynamic>;
+        expect(sent['type'], 'publish_hint');
+        final payload = sent['payload'] as Map<String, dynamic>;
+        expect(payload['hintId'], hint.hintId);
+        expect(payload['groupId'], 'grp_alpha');
+      });
+
+      test('publishHint_is_noop_when_disconnected', () async {
+        final service = RelayHintService(
+          bootstrapClient: _FakeBootstrapClient(Uri.parse('ws://relay.test')),
+          heartbeatMonitor: _FakeHeartbeatMonitor(),
+          reconnectScheduler: _FakeReconnectScheduler(),
+          channelConnector: (_) => _FakeWebSocketChannel(),
+        );
+        addTearDown(service.dispose);
+        // Do not call connect() — service is disconnected.
+
+        final hint = RelayHintMessage.create(
+          groupId: 'grp_alpha',
+          worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+          instanceId: '12345~alpha',
+          nUsers: 5,
+          sourceClientId: 'client',
+        );
+        // Must complete without throwing.
+        await expectLater(service.publishHint(hint), completes);
+      });
+    });
+  });
+
+  group('RelayHintService bootstrap error handling', () {
+    test('bootstrap_DioException_schedules_reconnect', () async {
+      final fakeScheduler = _FakeReconnectScheduler();
+      final statuses = <RelayConnectionStatus>[];
+
+      final service = RelayHintService(
+        bootstrapClient: _ThrowingBootstrapClient(),
+        heartbeatMonitor: _FakeHeartbeatMonitor(),
+        reconnectScheduler: fakeScheduler,
+        channelConnector: (_) => _FakeWebSocketChannel(),
+      );
+      addTearDown(service.dispose);
+
+      final sub = service.statuses.listen(statuses.add);
+      addTearDown(sub.cancel);
+
+      await service.connect(groupId: 'grp', clientId: 'client');
+      await pumpEventQueue();
+
+      // A reconnect must be scheduled after the bootstrap failure.
+      expect(fakeScheduler._pendingCallback, isNotNull);
+
+      // The status stream must emit a disconnected error status.
+      expect(statuses, isNotEmpty);
+      final errorStatus = statuses.last;
+      expect(errorStatus.connected, isFalse);
+      expect(errorStatus.error, isNotNull);
     });
   });
 

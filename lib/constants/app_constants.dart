@@ -25,6 +25,7 @@ class AppConstants {
   static const int relayReconnectMaxSeconds = 20;
   static const int relayCircuitBreakerThreshold = 4;
   static const int relayCircuitBreakerCooldownSeconds = 60;
+  static const int relayMaxRetryAfterSeconds = 3600;
   static const int relayInviteRetryWindowSeconds = 25;
   static const int vrchatApiConnectTimeoutSeconds = 10;
   static const int vrchatApiReceiveTimeoutSeconds = 20;

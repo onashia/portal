@@ -86,6 +86,13 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     _inviteService = ref.read(inviteServiceProvider);
     _autoInviteService = AutoInviteService(_inviteService);
     _relayHintService = ref.read(relayHintServiceProvider);
+    if (AppConstants.relayAssistEnabled && !_relayHintService.isConfigured) {
+      AppLogger.warning(
+        'Relay assist is enabled but not configured (missing app secret or bootstrap URL). '
+        'Relay will be inactive for this session.',
+        subCategory: 'relay',
+      );
+    }
     _relayClientId = _createRelayClientId(userId: arg);
     _bindRelayStreams();
 

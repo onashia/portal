@@ -243,7 +243,7 @@ class RelayHintService {
   }
 
   void _handleRawMessage(dynamic event) {
-    if (event is! String) {
+    if (event is! String || event.length > 8192) {
       return;
     }
 
@@ -285,8 +285,9 @@ class RelayHintService {
 
     if (type == 'disabled') {
       final retryAfterSeconds =
-          (payload['retryAfterSeconds'] as num?)?.toInt() ??
-          AppConstants.relayCircuitBreakerCooldownSeconds;
+          ((payload['retryAfterSeconds'] as num?)?.toInt() ??
+                  AppConstants.relayCircuitBreakerCooldownSeconds)
+              .clamp(0, AppConstants.relayMaxRetryAfterSeconds);
       _runtimeDisabledUntil = _now().add(Duration(seconds: retryAfterSeconds));
       _emitStatus(
         const RelayConnectionStatus(
@@ -351,22 +352,8 @@ class RelayHintService {
   }
 
   // ---------------------------------------------------------------------------
-  // Static helpers kept for test compatibility.
+  // Static helpers.
   // ---------------------------------------------------------------------------
-
-  @visibleForTesting
-  static int computeReconnectDelaySeconds({
-    required int attempt,
-    required int baseSeconds,
-    required int maxSeconds,
-    required math.Random random,
-  }) {
-    final exponent = attempt.clamp(1, 6);
-    final exponentialBase = baseSeconds * (1 << (exponent - 1));
-    final capped = math.min(exponentialBase, maxSeconds);
-    final lowerBound = math.max(1, (capped * 3) ~/ 4);
-    return lowerBound + random.nextInt(capped - lowerBound + 1);
-  }
 
   @visibleForTesting
   static bool isHeartbeatStale({

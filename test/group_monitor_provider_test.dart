@@ -1908,6 +1908,169 @@ void main() {
     });
   });
 
+  group('relay hint filtering and deduplication', () {
+    /// Returns a [GroupMonitorState] with all prerequisites for relay hint
+    /// processing satisfied: monitoring, auto-invite, boost active for [groupId].
+    GroupMonitorState activeState({String groupId = 'grp_alpha'}) =>
+        GroupMonitorState(
+          isMonitoring: true,
+          autoInviteEnabled: true,
+          isBoostActive: true,
+          boostedGroupId: groupId,
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+    RelayHintMessage validHint({String groupId = 'grp_alpha'}) =>
+        RelayHintMessage.create(
+          groupId: groupId,
+          worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+          instanceId: '12345~alpha',
+          nUsers: 9,
+          sourceClientId: 'relay_peer',
+        );
+
+    test('hint_for_monitored_group_increments_relayHintsReceived', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      notifier.state = activeState();
+
+      await relayService.emitHint(validHint());
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(container.read(provider).relayHintsReceived, 1);
+    });
+
+    test('hint_for_wrong_group_is_ignored', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      notifier.state = activeState(groupId: 'grp_alpha');
+
+      await relayService.emitHint(validHint(groupId: 'grp_other'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(container.read(provider).relayHintsReceived, 0);
+    });
+
+    test('duplicate_hint_id_is_deduplicated', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      notifier.state = activeState();
+
+      final hint = validHint();
+      await relayService.emitHint(hint);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await relayService.emitHint(hint); // same hint again
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(container.read(provider).relayHintsReceived, 1);
+    });
+
+    test('duplicate_instance_key_is_deduplicated', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      notifier.state = activeState();
+
+      // Two hints with different hintIds but same worldId+instanceId (same instanceKey).
+      final hint1 = RelayHintMessage.create(
+        groupId: 'grp_alpha',
+        worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+        instanceId: '12345~alpha',
+        nUsers: 9,
+        sourceClientId: 'peer_a',
+      );
+      final hint2 = RelayHintMessage.create(
+        groupId: 'grp_alpha',
+        worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+        instanceId: '12345~alpha',
+        nUsers: 9,
+        sourceClientId: 'peer_b',
+      );
+
+      await relayService.emitHint(hint1);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await relayService.emitHint(hint2);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(container.read(provider).relayHintsReceived, 1);
+    });
+
+    test('invalid_or_expired_hint_records_relay_failure', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      notifier.state = activeState();
+
+      final observedErrors = <String?>[];
+      final subscription = container.listen<GroupMonitorState>(
+        provider,
+        (_, next) => observedErrors.add(next.lastRelayError),
+        fireImmediately: false,
+      );
+      addTearDown(subscription.close);
+
+      // An expired hint (expiresAt in the past).
+      final expiredHint = RelayHintMessage(
+        version: '1',
+        hintId: 'hint_expired',
+        groupId: 'grp_alpha',
+        worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+        instanceId: '12345~alpha',
+        nUsers: 1,
+        detectedAt: DateTime.utc(2000),
+        expiresAt: DateTime.utc(2000),
+        sourceClientId: 'peer_a',
+      );
+      await relayService.emitHint(expiredHint);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        observedErrors,
+        contains('invalid_or_expired_hint'),
+        reason: 'expired hint must record a relay failure',
+      );
+      expect(container.read(provider).relayHintsReceived, 0);
+    });
+  });
+
   group('setBoostedGroup', () {
     test(
       'emits one state update and resets boost diagnostics fields',

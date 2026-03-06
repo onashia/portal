@@ -36,10 +36,8 @@ extension GroupMonitorRelayExtension on GroupMonitorNotifier {
   String _createRelayClientId({required String userId}) {
     // Use 8 cryptographically-random bytes to ensure uniqueness even when
     // multiple clients connect at the same microsecond.
-    final bytes = List<int>.generate(
-      8,
-      (_) => math.Random.secure().nextInt(256),
-    );
+    final rng = math.Random.secure();
+    final bytes = List<int>.generate(8, (_) => rng.nextInt(256));
     final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     return '$userId-$hex';
   }

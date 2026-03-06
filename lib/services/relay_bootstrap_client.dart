@@ -62,8 +62,9 @@ class RelayBootstrapClient {
     final relayEnabled = data['relayEnabled'] != false;
     if (!relayEnabled) {
       final retryAfterSeconds =
-          (data['retryAfterSeconds'] as num?)?.toInt() ??
-          AppConstants.relayCircuitBreakerCooldownSeconds;
+          ((data['retryAfterSeconds'] as num?)?.toInt() ??
+                  AppConstants.relayCircuitBreakerCooldownSeconds)
+              .clamp(0, AppConstants.relayMaxRetryAfterSeconds);
       onRuntimeDisabled(now().add(Duration(seconds: retryAfterSeconds)));
       throw StateError('Relay runtime disabled by server');
     }
@@ -72,6 +73,12 @@ class RelayBootstrapClient {
     if (wsUrlString == null || wsUrlString.isEmpty) {
       throw StateError('Missing wsUrl from relay bootstrap');
     }
-    return Uri.parse(wsUrlString);
+    final uri = Uri.parse(wsUrlString);
+    if (uri.scheme != 'ws' && uri.scheme != 'wss') {
+      throw StateError(
+        'Relay bootstrap returned non-WebSocket URI scheme: ${uri.scheme}',
+      );
+    }
+    return uri;
   }
 }

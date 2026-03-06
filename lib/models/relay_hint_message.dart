@@ -123,7 +123,7 @@ class RelayHintMessage {
     return '$sourceClientId-$micros-$randomPart';
   }
 
-  static final math.Random _random = math.Random();
+  static final math.Random _random = math.Random.secure();
 }
 
 class RelayConnectionStatus {
