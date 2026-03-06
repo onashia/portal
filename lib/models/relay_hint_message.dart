@@ -104,11 +104,16 @@ class RelayHintMessage {
         sourceClientId.isNotEmpty;
   }
 
-  // Mirrors server-side validation in workers/relay_assist/src/index.js.
+  // Case-sensitive: VRChat group IDs are always lowercase hex. Intentionally
+  // not setting caseSensitive: false — mirrors GROUP_ID_RE in the server
+  // (workers/relay_assist/src/index.js) which also enforces lowercase only.
   static final _groupIdPattern = RegExp(
     r'^grp_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
   );
 
+  // caseSensitive: false — the server accepts mixed case for world IDs and we
+  // match that permissiveness to avoid false rejections on the client.
+  // Intentionally asymmetric with _groupIdPattern, which is case-sensitive.
   static final _worldIdPattern = RegExp(
     r'^wrld_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
     caseSensitive: false,
@@ -129,6 +134,9 @@ class RelayHintMessage {
   /// considered valid until 12:00:05 from the consumer's perspective.
   bool isExpired({DateTime? now, Duration grace = const Duration(seconds: 5)}) {
     final current = now ?? DateTime.now();
+    // Equivalent to: current >= expiresAt + grace.
+    // The hint is valid while expiresAt > current - grace, allowing [grace]
+    // seconds of clock skew between publisher and consumer.
     return !expiresAt.isAfter(current.subtract(grace));
   }
 

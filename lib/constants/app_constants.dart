@@ -11,6 +11,10 @@ class AppConstants {
     defaultValue:
         'https://portal-relay-assist.me-3aa.workers.dev/relay/bootstrap',
   );
+  // The app secret is a compile-time constant embedded in the client binary.
+  // It is a defense-in-depth measure — not a true authentication boundary —
+  // because a determined actor can extract it via reverse engineering.
+  // The real enforcement is server-side rate limiting (BootstrapRateLimiter).
   static const String relayAppSecret = String.fromEnvironment(
     'PORTAL_RELAY_APP_SECRET',
     defaultValue: '',

@@ -243,7 +243,18 @@ class RelayHintService {
   }
 
   void _handleRawMessage(dynamic event) {
-    if (event is! String || event.length > 8192) {
+    if (event is! String) {
+      AppLogger.debug(
+        'Relay: dropped binary frame (${event.runtimeType})',
+        subCategory: 'relay',
+      );
+      return;
+    }
+    if (event.length > 8192) {
+      AppLogger.debug(
+        'Relay: dropped oversized message (${event.length} bytes)',
+        subCategory: 'relay',
+      );
       return;
     }
 
@@ -251,10 +262,15 @@ class RelayHintService {
     try {
       final decoded = jsonDecode(event);
       if (decoded is! Map<String, dynamic>) {
+        AppLogger.debug(
+          'Relay: dropped non-object JSON (${decoded.runtimeType})',
+          subCategory: 'relay',
+        );
         return;
       }
       payload = decoded;
     } catch (_) {
+      AppLogger.debug('Relay: dropped non-JSON message', subCategory: 'relay');
       return;
     }
 
@@ -267,10 +283,25 @@ class RelayHintService {
     if (type == 'hint') {
       final rawHint = payload['payload'];
       if (rawHint is! Map<String, dynamic>) {
+        AppLogger.debug(
+          'Relay: dropped hint with non-map payload',
+          subCategory: 'relay',
+        );
         return;
       }
       final hint = RelayHintMessage.fromJson(rawHint);
-      if (!hint.isStructurallyValid || hint.isExpired()) {
+      if (!hint.isStructurallyValid) {
+        AppLogger.debug(
+          'Relay: dropped structurally invalid hint (hintId=${hint.hintId})',
+          subCategory: 'relay',
+        );
+        return;
+      }
+      if (hint.isExpired()) {
+        AppLogger.debug(
+          'Relay: dropped expired hint (expiresAt=${hint.expiresAt.toIso8601String()})',
+          subCategory: 'relay',
+        );
         return;
       }
       _hintsController.add(hint);

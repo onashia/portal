@@ -7,7 +7,9 @@ import '../constants/app_constants.dart';
 /// Clients POST their [groupId] and [clientId] to the relay bootstrap endpoint.
 /// On success the server returns a signed [Uri] containing a short-lived token
 /// in the query string (a trade-off required by the WebSocket API, which does
-/// not support custom request headers during the upgrade handshake).
+/// not support custom request headers during the upgrade handshake). The token
+/// TTL ([AppConstants.relayBootstrapTimeoutSeconds]) limits exposure if the URI
+/// appears in logs.
 class RelayBootstrapClient {
   RelayBootstrapClient({
     required Dio dio,
@@ -49,6 +51,8 @@ class RelayBootstrapClient {
       options: Options(
         headers: {
           'content-type': 'application/json',
+          // Defense-in-depth: the secret is embedded in the binary and can be
+          // reverse-engineered. Server-side rate limiting is the real barrier.
           'x-app-secret': _appSecret,
         },
       ),

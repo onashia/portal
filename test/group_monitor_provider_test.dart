@@ -1961,9 +1961,13 @@ void main() {
       final notifier = harness.notifier;
       addTearDown(container.dispose);
 
-      notifier.state = activeState(groupId: 'grp_11111111-1111-1111-1111-111111111111');
+      notifier.state = activeState(
+        groupId: 'grp_11111111-1111-1111-1111-111111111111',
+      );
 
-      await relayService.emitHint(validHint(groupId: 'grp_22222222-2222-2222-2222-222222222222'));
+      await relayService.emitHint(
+        validHint(groupId: 'grp_22222222-2222-2222-2222-222222222222'),
+      );
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
       expect(container.read(provider).relayHintsReceived, 0);
