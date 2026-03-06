@@ -45,6 +45,16 @@ class AppTextField extends StatelessWidget {
          onSubmitted == null || onFieldSubmitted == null,
          'Provide onSubmitted (TextField mode) or onFieldSubmitted '
          '(TextFormField mode), not both.',
+       ),
+       assert(
+         validator == null || onSubmitted == null,
+         'onSubmitted is ignored in TextFormField mode (validator present); '
+         'use onFieldSubmitted instead.',
+       ),
+       assert(
+         validator != null || onFieldSubmitted == null,
+         'onFieldSubmitted is ignored in TextField mode (no validator); '
+         'use onSubmitted instead.',
        );
 
   @override
