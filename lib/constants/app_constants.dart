@@ -30,6 +30,16 @@ class AppConstants {
   static const int relayCircuitBreakerThreshold = 4;
   static const int relayCircuitBreakerCooldownSeconds = 60;
   static const int relayMaxRetryAfterSeconds = 3600;
+
+  /// Maximum byte length accepted from the server on the relay WebSocket.
+  /// Server-sent messages (hint, pong, error, ack, disabled) are well below
+  /// this in practice; this is a safety guard against rogue/malformed frames.
+  static const int relayMaxInboundMessageBytes = 8192;
+
+  /// Maximum byte length the server accepts from the client on the relay
+  /// WebSocket. Mirrors MAX_PAYLOAD_BYTES in workers/relay_assist/src/index.js.
+  /// Keep in sync if the worker value changes.
+  static const int relayMaxOutboundPayloadBytes = 2048;
   static const int relayInviteRetryWindowSeconds = 25;
   static const int vrchatApiConnectTimeoutSeconds = 10;
   static const int vrchatApiReceiveTimeoutSeconds = 20;

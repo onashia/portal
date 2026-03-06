@@ -229,7 +229,21 @@ class RelayHintService {
     if (_channel == null || !_shouldStayConnected) {
       return;
     }
-    _send({'type': 'publish_hint', 'payload': hint.toJson()});
+    // Encode once so we can guard against the server's inbound size limit
+    // (MAX_PAYLOAD_BYTES in workers/relay_assist/src/index.js) before sending.
+    final encoded = jsonEncode({
+      'type': 'publish_hint',
+      'payload': hint.toJson(),
+    });
+    if (encoded.length > AppConstants.relayMaxOutboundPayloadBytes) {
+      AppLogger.warning(
+        'Relay: skipped publish_hint — payload too large '
+        '(${encoded.length} > ${AppConstants.relayMaxOutboundPayloadBytes} bytes)',
+        subCategory: 'relay',
+      );
+      return;
+    }
+    _channel?.sink.add(encoded);
   }
 
   Future<void> dispose() async {
@@ -250,7 +264,7 @@ class RelayHintService {
       );
       return;
     }
-    if (event.length > 8192) {
+    if (event.length > AppConstants.relayMaxInboundMessageBytes) {
       AppLogger.debug(
         'Relay: dropped oversized message (${event.length} bytes)',
         subCategory: 'relay',

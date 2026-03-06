@@ -593,6 +593,35 @@ void main() {
         // Must complete without throwing.
         await expectLater(service.publishHint(hint), completes);
       });
+
+      test('publishHint_drops_oversized_payload', () async {
+        final channel = _FakeWebSocketChannel();
+        final service = await connectService(channel);
+
+        // Construct a hint whose encoded JSON exceeds relayMaxOutboundPayloadBytes
+        // by padding hintId with enough characters to tip it over the limit.
+        final oversizedHint = RelayHintMessage(
+          version: '1',
+          hintId: 'x' * 2048,
+          groupId: 'grp_alpha',
+          worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+          instanceId: '12345~alpha',
+          nUsers: 5,
+          detectedAt: DateTime.fromMillisecondsSinceEpoch(0),
+          expiresAt: DateTime.fromMillisecondsSinceEpoch(0),
+          sourceClientId: 'client',
+        );
+
+        final sinkSizeBefore = channel.sentMessages.length;
+        await service.publishHint(oversizedHint);
+        await pumpEventQueue();
+
+        expect(
+          channel.sentMessages.length,
+          sinkSizeBefore,
+          reason: 'oversized publish_hint must not be written to the sink',
+        );
+      });
     });
   });
 
