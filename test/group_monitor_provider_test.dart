@@ -1631,12 +1631,12 @@ void main() {
         isMonitoring: true,
         autoInviteEnabled: true,
         isBoostActive: true,
-        boostedGroupId: 'grp_alpha',
+        boostedGroupId: 'grp_11111111-1111-1111-1111-111111111111',
         boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
       );
 
       final hint = RelayHintMessage.create(
-        groupId: 'grp_alpha',
+        groupId: 'grp_11111111-1111-1111-1111-111111111111',
         worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
         instanceId: '12345~alpha',
         nUsers: 9,
@@ -1682,12 +1682,12 @@ void main() {
         isMonitoring: true,
         autoInviteEnabled: true,
         isBoostActive: true,
-        boostedGroupId: 'grp_alpha',
+        boostedGroupId: 'grp_11111111-1111-1111-1111-111111111111',
         boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
       );
 
       final hint = RelayHintMessage.create(
-        groupId: 'grp_alpha',
+        groupId: 'grp_11111111-1111-1111-1111-111111111111',
         worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
         instanceId: '12345~alpha',
         nUsers: 9,
@@ -1911,23 +1911,25 @@ void main() {
   group('relay hint filtering and deduplication', () {
     /// Returns a [GroupMonitorState] with all prerequisites for relay hint
     /// processing satisfied: monitoring, auto-invite, boost active for [groupId].
-    GroupMonitorState activeState({String groupId = 'grp_alpha'}) =>
-        GroupMonitorState(
-          isMonitoring: true,
-          autoInviteEnabled: true,
-          isBoostActive: true,
-          boostedGroupId: groupId,
-          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
-        );
+    GroupMonitorState activeState({
+      String groupId = 'grp_11111111-1111-1111-1111-111111111111',
+    }) => GroupMonitorState(
+      isMonitoring: true,
+      autoInviteEnabled: true,
+      isBoostActive: true,
+      boostedGroupId: groupId,
+      boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+    );
 
-    RelayHintMessage validHint({String groupId = 'grp_alpha'}) =>
-        RelayHintMessage.create(
-          groupId: groupId,
-          worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
-          instanceId: '12345~alpha',
-          nUsers: 9,
-          sourceClientId: 'relay_peer',
-        );
+    RelayHintMessage validHint({
+      String groupId = 'grp_11111111-1111-1111-1111-111111111111',
+    }) => RelayHintMessage.create(
+      groupId: groupId,
+      worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+      instanceId: '12345~alpha',
+      nUsers: 9,
+      sourceClientId: 'relay_peer',
+    );
 
     test('hint_for_monitored_group_increments_relayHintsReceived', () async {
       final relayService = _RelayHintServiceFake();
@@ -1959,9 +1961,9 @@ void main() {
       final notifier = harness.notifier;
       addTearDown(container.dispose);
 
-      notifier.state = activeState(groupId: 'grp_alpha');
+      notifier.state = activeState(groupId: 'grp_11111111-1111-1111-1111-111111111111');
 
-      await relayService.emitHint(validHint(groupId: 'grp_other'));
+      await relayService.emitHint(validHint(groupId: 'grp_22222222-2222-2222-2222-222222222222'));
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
       expect(container.read(provider).relayHintsReceived, 0);
@@ -2004,14 +2006,14 @@ void main() {
 
       // Two hints with different hintIds but same worldId+instanceId (same instanceKey).
       final hint1 = RelayHintMessage.create(
-        groupId: 'grp_alpha',
+        groupId: 'grp_11111111-1111-1111-1111-111111111111',
         worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
         instanceId: '12345~alpha',
         nUsers: 9,
         sourceClientId: 'peer_a',
       );
       final hint2 = RelayHintMessage.create(
-        groupId: 'grp_alpha',
+        groupId: 'grp_11111111-1111-1111-1111-111111111111',
         worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
         instanceId: '12345~alpha',
         nUsers: 9,

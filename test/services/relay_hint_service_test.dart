@@ -340,7 +340,7 @@ void main() {
     final validHintJson = <String, dynamic>{
       'version': '1',
       'hintId': 'hint_1',
-      'groupId': 'grp_alpha',
+      'groupId': 'grp_11111111-1111-1111-1111-111111111111',
       'worldId': 'wrld_12345678-1234-1234-1234-123456789abc',
       'instanceId': '12345~alpha',
       'nUsers': 10,

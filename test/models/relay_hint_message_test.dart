@@ -6,7 +6,7 @@ void main() {
     test('create builds valid expiring payload', () {
       final now = DateTime.utc(2026, 3, 3, 12);
       final hint = RelayHintMessage.create(
-        groupId: 'grp_alpha',
+        groupId: _validGroupId,
         worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
         instanceId: '12345~alpha',
         nUsers: 10,
@@ -18,14 +18,14 @@ void main() {
       expect(hint.isExpired(now: now), isFalse);
       expect(
         hint.instanceKey,
-        'grp_alpha|wrld_12345678-1234-1234-1234-123456789abc|12345~alpha',
+        '$_validGroupId|wrld_12345678-1234-1234-1234-123456789abc|12345~alpha',
       );
       expect(hint.expiresAt.isAfter(now), isTrue);
     });
 
     test('round-trips json representation', () {
       final hint = RelayHintMessage.create(
-        groupId: 'grp_alpha',
+        groupId: _validGroupId,
         worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
         instanceId: '12345~alpha',
         nUsers: 10,
@@ -55,7 +55,7 @@ void main() {
         final hint = RelayHintMessage(
           version: '1',
           hintId: 'hint_1',
-          groupId: 'grp_alpha',
+          groupId: _validGroupId,
           worldId: 'wrld_alpha',
           instanceId: '12345~alpha',
           nUsers: 1,
@@ -70,7 +70,7 @@ void main() {
         final hint = RelayHintMessage(
           version: '1',
           hintId: 'hint_1',
-          groupId: 'grp_alpha',
+          groupId: _validGroupId,
           worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
           instanceId: 'inst_alpha',
           nUsers: 1,
@@ -81,11 +81,56 @@ void main() {
         expect(hint.isStructurallyValid, isFalse);
       });
 
-      test('accepts valid worldId and instanceId', () {
+      test('rejects empty groupId', () {
         final hint = RelayHintMessage(
           version: '1',
           hintId: 'hint_1',
-          groupId: 'grp_alpha',
+          groupId: '',
+          worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+          instanceId: '12345~alpha',
+          nUsers: 1,
+          detectedAt: _epoch,
+          expiresAt: _farFuture,
+          sourceClientId: 'usr_a',
+        );
+        expect(hint.isStructurallyValid, isFalse);
+      });
+
+      test('rejects malformed groupId missing grp_ prefix', () {
+        final hint = RelayHintMessage(
+          version: '1',
+          hintId: 'hint_1',
+          groupId: '11111111-1111-1111-1111-111111111111',
+          worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+          instanceId: '12345~alpha',
+          nUsers: 1,
+          detectedAt: _epoch,
+          expiresAt: _farFuture,
+          sourceClientId: 'usr_a',
+        );
+        expect(hint.isStructurallyValid, isFalse);
+      });
+
+      test('rejects groupId with non-UUID suffix', () {
+        final hint = RelayHintMessage(
+          version: '1',
+          hintId: 'hint_1',
+          groupId: 'grp_notauuid',
+          worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+          instanceId: '12345~alpha',
+          nUsers: 1,
+          detectedAt: _epoch,
+          expiresAt: _farFuture,
+          sourceClientId: 'usr_a',
+        );
+        expect(hint.isStructurallyValid, isFalse);
+      });
+
+      test('accepts valid groupId, worldId, and instanceId', () {
+        final hint = RelayHintMessage(
+          version: '1',
+          hintId: 'hint_1',
+          groupId: _validGroupId,
           worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
           instanceId: '12345~alpha',
           nUsers: 1,
@@ -104,7 +149,7 @@ void main() {
       RelayHintMessage makeHint() => RelayHintMessage(
         version: '1',
         hintId: 'hint_1',
-        groupId: 'grp_alpha',
+        groupId: _validGroupId,
         worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
         instanceId: '12345~alpha',
         nUsers: 1,
@@ -164,5 +209,6 @@ void main() {
   });
 }
 
+const _validGroupId = 'grp_11111111-1111-1111-1111-111111111111';
 final _epoch = DateTime.utc(2000);
 final _farFuture = DateTime.utc(2099);

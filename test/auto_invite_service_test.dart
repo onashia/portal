@@ -192,7 +192,7 @@ void main() {
     test('forwards cancel token and hint target to InviteService', () async {
       final cancelToken = CancelToken();
       final hint = RelayHintMessage.create(
-        groupId: 'grp_alpha',
+        groupId: 'grp_11111111-1111-1111-1111-111111111111',
         worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
         instanceId: '12345~inst_a',
         nUsers: 6,

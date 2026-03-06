@@ -97,13 +97,18 @@ class RelayHintMessage {
   /// validation in workers/relay_assist/src/index.js.
   bool get isStructurallyValid {
     return hintId.isNotEmpty &&
-        groupId.isNotEmpty &&
+        hintId.length <= 256 &&
+        _groupIdPattern.hasMatch(groupId) &&
         _isValidWorldId(worldId) &&
         _isValidInstanceId(instanceId) &&
         sourceClientId.isNotEmpty;
   }
 
   // Mirrors server-side validation in workers/relay_assist/src/index.js.
+  static final _groupIdPattern = RegExp(
+    r'^grp_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+  );
+
   static final _worldIdPattern = RegExp(
     r'^wrld_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
     caseSensitive: false,
