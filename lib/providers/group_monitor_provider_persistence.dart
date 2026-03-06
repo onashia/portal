@@ -18,6 +18,7 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
         } else {
           _reconcileBaselineLoop();
           _reconcileBoostLoop();
+          _reconcileRelayConnection();
         }
         return;
       }
@@ -34,6 +35,7 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
 
       _reconcileBaselineLoop();
       _reconcileBoostLoop();
+      _reconcileRelayConnection();
     });
   }
 
@@ -52,6 +54,7 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
 
       if (resolved.boostedGroupId != null && resolved.boostExpiresAt != null) {
         state = state.copyWith(
+          isBoostActive: resolved.boostExpiresAt!.isAfter(DateTime.now()),
           boostedGroupId: resolved.boostedGroupId,
           boostExpiresAt: resolved.boostExpiresAt,
         );
@@ -64,6 +67,7 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
           _requestBoostRefresh(immediate: true);
         }
       }
+      _reconcileRelayConnection();
     } catch (e) {
       AppLogger.error(
         'Failed to load boost settings',
@@ -87,6 +91,29 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
         subCategory: 'group_monitor',
         error: e,
       );
+    } finally {
+      _reconcileRelayConnection();
+    }
+  }
+
+  Future<void> _loadRelayAssistSetting() async {
+    try {
+      final enabled = await GroupMonitorStorage.loadRelayAssistEnabled(
+        defaultValue: AppConstants.relayAssistEnabled,
+      );
+      state = state.copyWith(relayAssistEnabled: enabled);
+      AppLogger.debug(
+        'Loaded relay assist setting: $enabled',
+        subCategory: 'group_monitor',
+      );
+    } catch (e) {
+      AppLogger.error(
+        'Failed to load relay assist setting',
+        subCategory: 'group_monitor',
+        error: e,
+      );
+    } finally {
+      _reconcileRelayConnection();
     }
   }
 
@@ -146,6 +173,8 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
         state.selectedGroupIds.isNotEmpty) {
       _requestBaselineRefresh(immediate: true);
     }
+
+    _reconcileRelayConnection();
   }
 
   Future<void> _persistBoostSettings({
@@ -199,11 +228,15 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
         selectedGroupIds: {},
         groupInstances: {},
         newestInstanceId: null,
+        isBoostActive: false,
         boostedGroupId: null,
         boostExpiresAt: null,
         groupErrors: {},
+        relayConnected: false,
+        lastRelayError: null,
       );
       _reconcileMonitoringForSelectionState();
+      _reconcileRelayConnection();
 
       AppLogger.debug(
         'Cleared all selected groups from storage',

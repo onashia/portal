@@ -39,3 +39,15 @@ bool logDioException(
 
   return true;
 }
+
+/// Logs an auth operation exception using both Dio-specific and general error
+/// logging in a consistent format.
+void logAuthException(String operation, Object e, StackTrace s) {
+  logDioException(operation, e, subCategory: 'auth');
+  AppLogger.error(
+    '$operation failed',
+    subCategory: 'auth',
+    error: e,
+    stackTrace: s,
+  );
+}

@@ -1,8 +1,10 @@
+import 'package:dio/dio.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../utils/app_logger.dart';
 import 'invite_service.dart';
 import '../models/group_instance_with_group.dart';
+import '../models/relay_hint_message.dart';
 import '../providers/group_invite_and_boost.dart';
 
 /// Encapsulates the result of an auto-invite operation.
@@ -53,6 +55,26 @@ class AutoInviteService {
     final latencyMs = DateTime.now().difference(start).inMilliseconds;
 
     return AutoInviteResult(target: target, latencyMs: latencyMs);
+  }
+
+  /// Attempts to auto-invite from a relay hint even when local instance polling
+  /// has not observed the instance yet.
+  Future<InviteRetryOutcome?> attemptAutoInviteFromHint({
+    required RelayHintMessage hint,
+    required bool enabled,
+    Duration maxRetryWindow = const Duration(seconds: 25),
+    CancelToken? cancelToken,
+  }) async {
+    if (!enabled || !hint.isStructurallyValid || hint.isExpired()) {
+      return null;
+    }
+
+    return inviteService.inviteSelfToLocationWithRetry(
+      worldId: hint.worldId,
+      instanceId: hint.instanceId,
+      maxWindow: maxRetryWindow,
+      cancelToken: cancelToken,
+    );
   }
 
   GroupInstanceWithGroup? _selectInviteTarget(

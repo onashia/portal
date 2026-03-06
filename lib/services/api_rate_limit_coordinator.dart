@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 
+import '../constants/http_status_codes.dart';
+
 enum ApiRequestLane {
   userGroups,
   groupBaseline,
@@ -168,7 +170,8 @@ class ApiRateLimitInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     final lane = _laneForOptions(err.requestOptions);
-    if (lane != null && err.response?.statusCode == 429) {
+    if (lane != null &&
+        err.response?.statusCode == AppHttpStatus.tooManyRequests) {
       final retryAfter = _coordinator.parseRetryAfterFromHeaders(
         err.response?.headers,
       );

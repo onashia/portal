@@ -24,6 +24,7 @@ class DebugInfoCard extends ConsumerWidget {
     final scheme = theme.colorScheme;
     final coreRows = _buildCoreMetricRows(monitorState, apiCallState);
     final boostRows = _buildBoostMetricRows(monitorState);
+    final relayRows = _buildRelayMetricRows(monitorState);
     final labelStyle = textTheme.labelMedium?.copyWith(
       color: scheme.onSurfaceVariant,
     );
@@ -48,6 +49,14 @@ class DebugInfoCard extends ConsumerWidget {
               ),
             SizedBox(height: m3e.spacing.sm),
             for (final row in boostRows)
+              _buildMetricRow(
+                context,
+                row,
+                labelStyle: labelStyle,
+                valueStyle: valueStyle,
+              ),
+            SizedBox(height: m3e.spacing.sm),
+            for (final row in relayRows)
               _buildMetricRow(
                 context,
                 row,
@@ -147,6 +156,33 @@ class DebugInfoCard extends ConsumerWidget {
         'Boost First Seen After',
         _formatDuration(monitorState.boostFirstSeenAfter),
       ),
+    ];
+  }
+
+  List<_MetricRowData> _buildRelayMetricRows(GroupMonitorState monitorState) {
+    return [
+      _MetricRowData(
+        'Relay Enabled',
+        monitorState.relayAssistEnabled.toString(),
+      ),
+      _MetricRowData('Relay Connected', monitorState.relayConnected.toString()),
+      _MetricRowData(
+        'Relay Hints Sent',
+        monitorState.relayHintsPublished.toString(),
+      ),
+      _MetricRowData(
+        'Relay Hints Received',
+        monitorState.relayHintsReceived.toString(),
+      ),
+      _MetricRowData(
+        'Relay Last Hint',
+        _formatDateTime(monitorState.lastRelayHintAt),
+      ),
+      _MetricRowData(
+        'Relay Disabled Until',
+        _formatDateTime(monitorState.relayTemporarilyDisabledUntil),
+      ),
+      _MetricRowData('Relay Last Error', monitorState.lastRelayError ?? '—'),
     ];
   }
 

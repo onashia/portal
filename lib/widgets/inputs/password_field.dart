@@ -30,7 +30,7 @@ class PasswordField extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            AppTextFormField(
+            AppTextField(
               controller: controller,
               focusNode: focusNode,
               obscureText: obscure,

@@ -36,6 +36,7 @@ app.*.map.json
 .atom/
 .history/
 .swiftpm/
+*.sublime-*
 
 # IntelliJ related
 *.iml
@@ -72,6 +73,7 @@ $RECYCLE.BIN/
 *.tmp
 .build/
 .buildlog/
+.cache/
 .svn/
 migrate_working_dir/
 
@@ -101,7 +103,6 @@ android/**/GeneratedPluginRegistrant.cpp
 android/.idea/
 android/*.iml
 android/.cxx/
-android/.gradle/
 
 # iOS
 ios/.symlinks/
@@ -177,6 +178,17 @@ web/.packages
 web/build/
 web/.flutter-plugins
 
+# Cloudflare Wrangler
+.wrangler/
+.wrangler-dryrun/
+
+# Node.js
+node_modules/
+package-lock.json
+yarn.lock
+
 # AI Assistant Files
 .opencode/
+.claude/
 AGENTS.md
+CLAUDE.md

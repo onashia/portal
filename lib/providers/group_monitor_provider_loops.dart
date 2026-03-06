@@ -1,4 +1,7 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+// Both suppressions are necessary because this part-file defines an extension
+// on GroupMonitorNotifier and must access Riverpod's @protected `state` setter
+// and `ref` property, which are legitimately available within the same library.
 
 part of 'group_monitor_provider.dart';
 
@@ -70,6 +73,7 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
       }
       _reconcileBaselineLoop();
       _reconcileBoostLoop();
+      _reconcileRelayConnection();
       return;
     }
 
@@ -88,6 +92,7 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
 
     _reconcileBaselineLoop();
     _reconcileBoostLoop();
+    _reconcileRelayConnection();
   }
 
   void _reconcileBaselineLoop() {
@@ -125,6 +130,16 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
   }
 
   void _reconcileBoostLoop() {
+    // Detect boost expiry at the poll-tick boundary. DateTime.now() is called
+    // here — once per reconcile — rather than inside a state getter so that
+    // Riverpod's equality diffing operates on a stable stored boolean.
+    if (state.isBoostActive &&
+        state.boostExpiresAt != null &&
+        !state.boostExpiresAt!.isAfter(DateTime.now())) {
+      unawaited(_clearBoost(persist: true, logExpired: true));
+      return;
+    }
+
     if (!_boostActive()) {
       _boostLoop.reset();
       return;
@@ -200,62 +215,68 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
     bool immediate = true,
     bool bypassRateLimit = false,
   }) {
-    final dispatch = shouldRequestImmediateRefresh(
+    _requestLoopRefresh(
+      loop: _baselineLoop,
       isActive: _baselineActive(),
-      isInFlight: _isAnyFetchInFlight,
+      reconcile: _reconcileBaselineLoop,
+      fetch: fetchGroupInstances,
+      scheduleNextTick: () => _scheduleNextBaselineTick(),
       immediate: immediate,
+      bypassRateLimit: bypassRateLimit,
+      onQueuePending: () => _recordBaselineSkip('in_flight_queue'),
     );
-    if (dispatch.shouldReconcile) {
-      _reconcileBaselineLoop();
-      return;
-    }
-
-    _baselineLoop.cancelTimer();
-
-    if (dispatch.shouldQueuePending) {
-      _baselineLoop.queuePending(bypassRateLimit: bypassRateLimit);
-      _recordBaselineSkip('in_flight_queue');
-      return;
-    }
-
-    if (dispatch.shouldRunNow) {
-      unawaited(fetchGroupInstances(bypassRateLimit: bypassRateLimit));
-      return;
-    }
-
-    if (dispatch.shouldScheduleTick) {
-      _scheduleNextBaselineTick();
-    }
   }
 
   void _requestBoostRefresh({
     bool immediate = true,
     bool bypassRateLimit = false,
   }) {
-    final dispatch = shouldRequestImmediateRefresh(
+    _requestLoopRefresh(
+      loop: _boostLoop,
       isActive: _boostActive(),
+      reconcile: _reconcileBoostLoop,
+      fetch: fetchBoostedGroupInstances,
+      scheduleNextTick: () => _scheduleNextBoostTick(),
+      immediate: immediate,
+      bypassRateLimit: bypassRateLimit,
+    );
+  }
+
+  void _requestLoopRefresh({
+    required RefreshLoopState loop,
+    required bool isActive,
+    required void Function() reconcile,
+    required Future<void> Function({bool bypassRateLimit}) fetch,
+    required void Function() scheduleNextTick,
+    bool immediate = true,
+    bool bypassRateLimit = false,
+    void Function()? onQueuePending,
+  }) {
+    final dispatch = shouldRequestImmediateRefresh(
+      isActive: isActive,
       isInFlight: _isAnyFetchInFlight,
       immediate: immediate,
     );
     if (dispatch.shouldReconcile) {
-      _reconcileBoostLoop();
+      reconcile();
       return;
     }
 
-    _boostLoop.cancelTimer();
+    loop.cancelTimer();
 
     if (dispatch.shouldQueuePending) {
-      _boostLoop.queuePending(bypassRateLimit: bypassRateLimit);
+      loop.queuePending(bypassRateLimit: bypassRateLimit);
+      onQueuePending?.call();
       return;
     }
 
     if (dispatch.shouldRunNow) {
-      unawaited(fetchBoostedGroupInstances(bypassRateLimit: bypassRateLimit));
+      unawaited(fetch(bypassRateLimit: bypassRateLimit));
       return;
     }
 
     if (dispatch.shouldScheduleTick) {
-      _scheduleNextBoostTick();
+      scheduleNextTick();
     }
   }
 
@@ -363,6 +384,7 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
     _requestBaselineRefresh(immediate: true);
     _reconcileBoostLoop();
     _reconcileBaselineLoop();
+    _reconcileRelayConnection();
   }
 
   void _stopMonitoringInternal() {
@@ -383,6 +405,7 @@ extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
     );
     state = state.copyWith(isMonitoring: false);
     _backoffDelay = 1;
+    _reconcileRelayConnection();
 
     AppLogger.info('Stopped monitoring', subCategory: 'group_monitor');
   }

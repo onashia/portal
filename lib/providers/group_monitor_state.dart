@@ -12,6 +12,17 @@ class GroupMonitorState {
   final Map<String, List<GroupInstanceWithGroup>> groupInstances;
   final String? newestInstanceId;
   final bool autoInviteEnabled;
+  final bool relayAssistEnabled;
+  final bool relayConnected;
+  final int relayHintsPublished;
+  final int relayHintsReceived;
+  final DateTime? lastRelayHintAt;
+  final String? lastRelayError;
+  final DateTime? relayTemporarilyDisabledUntil;
+  // Stored as a field rather than computed from boostExpiresAt so that
+  // Riverpod's equality diffing operates on a stable boolean instead of
+  // calling DateTime.now() inside operator== on every rebuild.
+  final bool isBoostActive;
   final String? boostedGroupId;
   final DateTime? boostExpiresAt;
   final int boostPollCount;
@@ -35,6 +46,14 @@ class GroupMonitorState {
     this.groupInstances = const {},
     this.newestInstanceId,
     this.autoInviteEnabled = true,
+    this.relayAssistEnabled = true,
+    this.relayConnected = false,
+    this.relayHintsPublished = 0,
+    this.relayHintsReceived = 0,
+    this.lastRelayHintAt,
+    this.lastRelayError,
+    this.relayTemporarilyDisabledUntil,
+    this.isBoostActive = false,
     this.boostedGroupId,
     this.boostExpiresAt,
     this.boostPollCount = 0,
@@ -57,8 +76,16 @@ class GroupMonitorState {
     List<LimitedUserGroups>? allGroups,
     Set<String>? selectedGroupIds,
     Map<String, List<GroupInstanceWithGroup>>? groupInstances,
-    String? newestInstanceId,
+    Object? newestInstanceId = _unset,
     bool? autoInviteEnabled,
+    bool? relayAssistEnabled,
+    bool? relayConnected,
+    int? relayHintsPublished,
+    int? relayHintsReceived,
+    Object? lastRelayHintAt = _unset,
+    Object? lastRelayError = _unset,
+    Object? relayTemporarilyDisabledUntil = _unset,
+    bool? isBoostActive,
     Object? boostedGroupId = _unset,
     Object? boostExpiresAt = _unset,
     int? boostPollCount,
@@ -80,8 +107,24 @@ class GroupMonitorState {
       allGroups: allGroups ?? this.allGroups,
       selectedGroupIds: selectedGroupIds ?? this.selectedGroupIds,
       groupInstances: groupInstances ?? this.groupInstances,
-      newestInstanceId: newestInstanceId ?? this.newestInstanceId,
+      newestInstanceId: newestInstanceId == _unset
+          ? this.newestInstanceId
+          : newestInstanceId as String?,
       autoInviteEnabled: autoInviteEnabled ?? this.autoInviteEnabled,
+      relayAssistEnabled: relayAssistEnabled ?? this.relayAssistEnabled,
+      relayConnected: relayConnected ?? this.relayConnected,
+      relayHintsPublished: relayHintsPublished ?? this.relayHintsPublished,
+      relayHintsReceived: relayHintsReceived ?? this.relayHintsReceived,
+      lastRelayHintAt: lastRelayHintAt == _unset
+          ? this.lastRelayHintAt
+          : lastRelayHintAt as DateTime?,
+      lastRelayError: lastRelayError == _unset
+          ? this.lastRelayError
+          : lastRelayError as String?,
+      relayTemporarilyDisabledUntil: relayTemporarilyDisabledUntil == _unset
+          ? this.relayTemporarilyDisabledUntil
+          : relayTemporarilyDisabledUntil as DateTime?,
+      isBoostActive: isBoostActive ?? this.isBoostActive,
       boostedGroupId: boostedGroupId == _unset
           ? this.boostedGroupId
           : boostedGroupId as String?,
@@ -125,8 +168,7 @@ class GroupMonitorState {
     );
   }
 
-  bool get isBoostActive =>
-      boostedGroupId != null &&
-      boostExpiresAt != null &&
-      boostExpiresAt!.isAfter(DateTime.now());
+  bool get isRelayTemporarilyDisabled =>
+      relayTemporarilyDisabledUntil != null &&
+      relayTemporarilyDisabledUntil!.isAfter(DateTime.now());
 }

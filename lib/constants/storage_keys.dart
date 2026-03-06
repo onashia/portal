@@ -16,4 +16,7 @@ class StorageKeys {
 
   /// Boosted group expiration timestamp (ISO-8601)
   static const String boostExpiresAt = 'boostExpiresAt';
+
+  /// Relay assist setting for boosted-group fanout
+  static const String relayAssistEnabled = 'relayAssistEnabled';
 }

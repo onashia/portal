@@ -1,4 +1,7 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+// Both suppressions are necessary because this part-file defines an extension
+// on GroupMonitorNotifier and must access Riverpod's @protected `state` setter
+// and `ref` property, which are legitimately available within the same library.
 
 part of 'group_monitor_provider.dart';
 
@@ -221,23 +224,12 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         subCategory: 'group_monitor',
       );
 
-      if (previousInstances.isEmpty && instances.isNotEmpty) {
-        try {
-          await _autoInviteService.attemptAutoInvite(
-            instances: instances,
-            groupId: groupId,
-            enabled: state.autoInviteEnabled && state.isMonitoring,
-            hasBaseline: _hasBaseline,
-          );
-        } catch (e, s) {
-          AppLogger.error(
-            'Failed to auto-invite for group $groupId',
-            subCategory: 'group_monitor',
-            error: e,
-            stackTrace: s,
-          );
-        }
-      }
+      await _attemptAutoInviteIfNewInstances(
+        previousInstances: previousInstances,
+        instances: instances,
+        groupId: groupId,
+        laneLabel: 'group',
+      );
 
       final merged = mergeFetchedGroupInstancesWithDiff(
         groupId: groupId,
@@ -274,7 +266,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     final nextGroupInstances = processingResult.didInstancesChange
         ? processingResult.groupInstances
         : executionResult.previousGroupInstances;
-    final didErrorsChange = !collection_eq.areStringMapsEquivalent(
+    final didErrorsChange = !collection_eq.areMapsEquivalent(
       executionResult.previousGroupErrors,
       executionResult.newGroupErrors,
     );
@@ -580,23 +572,12 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         didBoostFirstSeenChange = state.boostFirstSeenAfter != delta;
       }
 
-      if (previousInstances.isEmpty && instances.isNotEmpty) {
-        try {
-          await _autoInviteService.attemptAutoInvite(
-            instances: instances,
-            groupId: groupId,
-            enabled: state.autoInviteEnabled && state.isMonitoring,
-            hasBaseline: _hasBaseline,
-          );
-        } catch (e, s) {
-          AppLogger.error(
-            'Failed to auto-invite for boosted group $groupId',
-            subCategory: 'group_monitor',
-            error: e,
-            stackTrace: s,
-          );
-        }
-      }
+      await _attemptAutoInviteIfNewInstances(
+        previousInstances: previousInstances,
+        instances: instances,
+        groupId: groupId,
+        laneLabel: 'boosted group',
+      );
 
       final merged = mergeFetchedGroupInstancesWithDiff(
         groupId: groupId,
@@ -606,6 +587,14 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       );
       final newInstances = merged.newInstances;
       final mergedInstances = merged.effectiveInstances;
+
+      if (newInstances.isNotEmpty) {
+        _publishRelayHintForNewBoostedInstances(
+          groupId: groupId,
+          newInstances: newInstances,
+          detectedAt: pollStart,
+        );
+      }
 
       var didGroupInstancesChange = false;
       Map<String, List<GroupInstanceWithGroup>> nextGroupInstances =
@@ -675,8 +664,35 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     } finally {
       _isBoostFetching = false;
       if (ref.mounted) {
+        _reconcileRelayConnection();
         _drainPendingRefreshesOrScheduleTicks();
       }
+    }
+  }
+
+  Future<void> _attemptAutoInviteIfNewInstances({
+    required List<GroupInstanceWithGroup> previousInstances,
+    required List<Instance> instances,
+    required String groupId,
+    required String laneLabel,
+  }) async {
+    if (previousInstances.isNotEmpty || instances.isEmpty) {
+      return;
+    }
+    try {
+      await _autoInviteService.attemptAutoInvite(
+        instances: instances,
+        groupId: groupId,
+        enabled: state.autoInviteEnabled && state.isMonitoring,
+        hasBaseline: _hasBaseline,
+      );
+    } catch (e, s) {
+      AppLogger.error(
+        'Failed to auto-invite for $laneLabel $groupId',
+        subCategory: 'group_monitor',
+        error: e,
+        stackTrace: s,
+      );
     }
   }
 

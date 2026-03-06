@@ -66,13 +66,7 @@ class TwoFactorAuthService {
         );
       }
     } catch (e, s) {
-      logDioException('2FA verify', e, subCategory: 'auth');
-      AppLogger.error(
-        '2FA verification failed with exception',
-        subCategory: 'auth',
-        error: e,
-        stackTrace: s,
-      );
+      logAuthException('2FA verify', e, s);
       return TwoFactorAuthResult(
         status: TwoFactorAuthResultStatus.failure,
         errorMessage: formatApiError('2FA verification failed', e),

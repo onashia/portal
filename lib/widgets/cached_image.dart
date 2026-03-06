@@ -9,34 +9,24 @@ class CachedImage extends ConsumerStatefulWidget {
   final String imageUrl;
   final double? width;
   final double? height;
-  final bool enableDecodeSizing;
   final BoxShape shape;
   final BoxFit fit;
   final IconData? fallbackIcon;
   final Widget? fallbackWidget;
   final Color? fallbackBackgroundColor;
-  final Color? backgroundColor;
-  final BoxBorder? border;
-  final List<BoxShadow>? boxShadow;
   final bool showLoadingIndicator;
-  final VoidCallback? onTap;
 
   const CachedImage({
     super.key,
     required this.imageUrl,
     this.width,
     this.height,
-    this.enableDecodeSizing = true,
     this.shape = BoxShape.rectangle,
     this.fit = BoxFit.cover,
     this.fallbackIcon,
     this.fallbackWidget,
     this.fallbackBackgroundColor,
-    this.backgroundColor,
-    this.border,
-    this.boxShadow,
     this.showLoadingIndicator = true,
-    this.onTap,
   });
 
   @override
@@ -89,7 +79,7 @@ class _CachedImageState extends ConsumerState<CachedImage> {
 
         final bytes = _cachedBytes ?? snapshot.data;
         if (bytes != null) {
-          return _buildImage(bytes, context, true);
+          return _buildImage(bytes, context);
         }
 
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -146,19 +136,25 @@ class _CachedImageState extends ConsumerState<CachedImage> {
     return bytes;
   }
 
-  Widget _buildImage(
-    Uint8List bytes,
-    BuildContext context,
-    bool applyBackgroundColor,
-  ) {
-    final decodeDimensions = _resolveDecodeDimensions(context);
+  Widget _buildImage(Uint8List bytes, BuildContext context) {
+    final effectiveDpr = MediaQuery.devicePixelRatioOf(
+      context,
+    ).clamp(1.0, 2.0).toDouble();
+    final cacheWidth = _resolveDecodeDimension(widget.width, effectiveDpr);
+    final cacheHeight = _resolveDecodeDimension(widget.height, effectiveDpr);
+
     final imageWidget = Image.memory(
       bytes,
       width: widget.width,
       height: widget.height,
       fit: widget.fit,
-      cacheWidth: decodeDimensions.cacheWidth,
-      cacheHeight: decodeDimensions.cacheHeight,
+      // Only hint decode size when both dimensions are explicitly provided.
+      cacheWidth: (cacheWidth != null && cacheHeight != null)
+          ? cacheWidth
+          : null,
+      cacheHeight: (cacheWidth != null && cacheHeight != null)
+          ? cacheHeight
+          : null,
       gaplessPlayback: true,
     );
 
@@ -176,35 +172,10 @@ class _CachedImageState extends ConsumerState<CachedImage> {
       shapedWidget = imageWidget;
     }
 
-    final container = _buildBaseContainer(
-      color: applyBackgroundColor
-          ? _resolveSurfaceColor(context, useFallbackBackground: false)
-          : null,
+    return _buildBaseContainer(
+      color: _resolveSurfaceColor(context),
       child: shapedWidget,
     );
-
-    return _wrapTapIfNeeded(container);
-  }
-
-  ({int? cacheWidth, int? cacheHeight}) _resolveDecodeDimensions(
-    BuildContext context,
-  ) {
-    if (!widget.enableDecodeSizing) {
-      return (cacheWidth: null, cacheHeight: null);
-    }
-
-    final effectiveDpr = MediaQuery.devicePixelRatioOf(
-      context,
-    ).clamp(1.0, 2.0).toDouble();
-    final cacheWidth = _resolveDecodeDimension(widget.width, effectiveDpr);
-    final cacheHeight = _resolveDecodeDimension(widget.height, effectiveDpr);
-
-    // Require explicit valid width+height so decode hints stay predictable.
-    if (cacheWidth == null || cacheHeight == null) {
-      return (cacheWidth: null, cacheHeight: null);
-    }
-
-    return (cacheWidth: cacheWidth, cacheHeight: cacheHeight);
   }
 
   int? _resolveDecodeDimension(double? logicalSize, double effectiveDpr) {
@@ -221,8 +192,8 @@ class _CachedImageState extends ConsumerState<CachedImage> {
   }
 
   Widget _buildLoading(BuildContext context) {
-    final container = _buildBaseContainer(
-      color: _resolveSurfaceColor(context, useFallbackBackground: true),
+    return _buildBaseContainer(
+      color: _resolveSurfaceColor(context),
       child: Center(
         child: SizedBox(
           width: (widget.width ?? 48) * 0.3,
@@ -234,63 +205,40 @@ class _CachedImageState extends ConsumerState<CachedImage> {
         ),
       ),
     );
-
-    return _wrapTapIfNeeded(container);
   }
 
   Widget _buildFallback(BuildContext context) {
-    if (widget.fallbackWidget != null) {
-      final container = _buildBaseContainer(
-        color: _resolveSurfaceColor(context, useFallbackBackground: true),
-        child: widget.fallbackWidget,
-      );
-
-      return _wrapTapIfNeeded(container);
-    }
-
-    final container = _buildBaseContainer(
-      color: _resolveSurfaceColor(context, useFallbackBackground: true),
-      child: widget.fallbackIcon != null
-          ? Icon(
-              widget.fallbackIcon,
-              size: (widget.width ?? 48) * 0.5,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            )
-          : null,
+    return _buildBaseContainer(
+      color: _resolveSurfaceColor(context),
+      child:
+          widget.fallbackWidget ??
+          (widget.fallbackIcon != null
+              ? Icon(
+                  widget.fallbackIcon,
+                  size: (widget.width ?? 48) * 0.5,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                )
+              : null),
     );
-
-    return _wrapTapIfNeeded(container);
   }
 
   Widget _buildBaseContainer({required Color? color, required Widget? child}) {
     return Container(
       width: widget.width,
       height: widget.height,
-      decoration: BoxDecoration(
-        shape: widget.shape,
-        color: color,
-        border: widget.border,
-        boxShadow: widget.boxShadow,
-      ),
+      decoration: BoxDecoration(shape: widget.shape, color: color),
       child: child,
     );
   }
 
-  Widget _wrapTapIfNeeded(Widget child) {
-    if (widget.onTap == null) {
-      return child;
-    }
-    return GestureDetector(onTap: widget.onTap, child: child);
-  }
-
-  Color _resolveSurfaceColor(
-    BuildContext context, {
-    required bool useFallbackBackground,
-  }) {
-    final defaultColor = Theme.of(context).colorScheme.surfaceContainerHighest;
-    if (useFallbackBackground) {
-      return widget.fallbackBackgroundColor ?? defaultColor;
-    }
-    return widget.backgroundColor ?? defaultColor;
+  /// Returns the surface color used as the container background for all states
+  /// (loaded, loading, fallback).
+  ///
+  /// Previously, loaded vs. fallback states resolved different parameter slots
+  /// (`backgroundColor` vs. `fallbackBackgroundColor`); both are now unified
+  /// here after the `backgroundColor` parameter was removed.
+  Color _resolveSurfaceColor(BuildContext context) {
+    return widget.fallbackBackgroundColor ??
+        Theme.of(context).colorScheme.surfaceContainerHighest;
   }
 }

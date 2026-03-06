@@ -50,24 +50,6 @@ void main() {
     expect(resizedProvider.height, 112);
   });
 
-  testWidgets('opt-out disables decode sizing', (tester) async {
-    await tester.pumpWidget(
-      _buildHarness(
-        const CachedImage(
-          imageUrl: imageUrl,
-          width: 56,
-          height: 56,
-          enableDecodeSizing: false,
-        ),
-        dpr: 3.0,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final imageWidget = tester.widget<Image>(find.byType(Image));
-    expect(imageWidget.image, isNot(isA<ResizeImage>()));
-  });
-
   testWidgets('invalid or missing dimensions skip decode sizing', (
     tester,
   ) async {
@@ -97,86 +79,6 @@ void main() {
     await tester.pumpAndSettle();
     imageWidget = tester.widget<Image>(find.byType(Image));
     expect(imageWidget.image, isNot(isA<ResizeImage>()));
-  });
-
-  testWidgets('loading and fallback wrappers keep tap + background behavior', (
-    tester,
-  ) async {
-    var loadingTaps = 0;
-    await tester.pumpWidget(
-      _buildHarness(
-        CachedImage(
-          imageUrl: 'https://api.vrchat.cloud/api/1/file_loading_wrap_test/1',
-          width: 40,
-          height: 40,
-          fallbackBackgroundColor: Colors.orange,
-          onTap: () => loadingTaps += 1,
-        ),
-      ),
-    );
-
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    final loadingContainerFinder = find.ancestor(
-      of: find.byType(CircularProgressIndicator),
-      matching: find.byType(Container),
-    );
-    final loadingContainer = tester.widget<Container>(
-      loadingContainerFinder.first,
-    );
-    final loadingDecoration = loadingContainer.decoration! as BoxDecoration;
-    expect(loadingDecoration.color, Colors.orange);
-
-    await tester.tap(find.byType(CircularProgressIndicator));
-    expect(loadingTaps, 1);
-
-    var fallbackTaps = 0;
-    await tester.pumpWidget(
-      _buildHarness(
-        CachedImage(
-          imageUrl: '',
-          width: 40,
-          height: 40,
-          fallbackIcon: Icons.public,
-          fallbackBackgroundColor: Colors.orange,
-          onTap: () => fallbackTaps += 1,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final fallbackContainerFinder = find.ancestor(
-      of: find.byIcon(Icons.public),
-      matching: find.byType(Container),
-    );
-    final fallbackContainer = tester.widget<Container>(
-      fallbackContainerFinder.first,
-    );
-    final fallbackDecoration = fallbackContainer.decoration! as BoxDecoration;
-    expect(fallbackDecoration.color, Colors.orange);
-
-    await tester.tap(find.byIcon(Icons.public));
-    expect(fallbackTaps, 1);
-  });
-
-  testWidgets('loaded image remains tappable with shared wrapper', (
-    tester,
-  ) async {
-    var taps = 0;
-    await tester.pumpWidget(
-      _buildHarness(
-        CachedImage(
-          imageUrl: imageUrl,
-          width: 40,
-          height: 40,
-          onTap: () => taps += 1,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.byType(Image), findsOneWidget);
-    await tester.tap(find.byType(Image));
-    expect(taps, 1);
   });
 
   testWidgets('empty url still renders fallback', (tester) async {

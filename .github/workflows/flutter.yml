@@ -58,7 +58,7 @@ jobs:
         run: flutter test
 
       - name: Build macOS
-        run: flutter build macos --release
+        run: flutter build macos --release --dart-define=PORTAL_RELAY_APP_SECRET=${{ secrets.PORTAL_RELAY_APP_SECRET }}
 
       - name: Sanitize ref name
         id: sanitize
@@ -97,7 +97,7 @@ jobs:
         run: flutter test
 
       - name: Build Windows
-        run: flutter build windows --release
+        run: flutter build windows --release --dart-define=PORTAL_RELAY_APP_SECRET=${{ secrets.PORTAL_RELAY_APP_SECRET }}
 
       - name: Sanitize ref name
         id: sanitize

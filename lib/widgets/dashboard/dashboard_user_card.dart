@@ -16,6 +16,15 @@ class DashboardUserCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final streamedUser = ref.watch(authStreamedUserProvider);
+    final textTheme = Theme.of(context).textTheme;
+    final nameText = Text(
+      streamedUser?.displayName ?? currentUser.displayName,
+      style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+    );
+    final userInfoText = Text(
+      _resolveUserInfoText(streamedUser),
+      style: textTheme.bodyMedium,
+    );
     return Padding(
       padding: EdgeInsets.all(context.m3e.spacing.lg),
       child: LayoutBuilder(
@@ -37,17 +46,9 @@ class DashboardUserCard extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            streamedUser?.displayName ??
-                                currentUser.displayName,
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
+                          nameText,
                           SizedBox(height: context.m3e.spacing.xs),
-                          Text(
-                            _resolveUserInfoText(streamedUser),
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
+                          userInfoText,
                         ],
                       ),
                     ),
@@ -72,17 +73,9 @@ class DashboardUserCard extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        streamedUser?.displayName ?? currentUser.displayName,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      nameText,
                       SizedBox(height: context.m3e.spacing.xs),
-                      Text(
-                        _resolveUserInfoText(streamedUser),
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
+                      userInfoText,
                     ],
                   ),
                 ),

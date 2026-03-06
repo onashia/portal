@@ -14,8 +14,8 @@ import '../widgets/login/login_error_message.dart';
 import '../widgets/login/login_branding.dart';
 import '../widgets/login/login_form_card.dart';
 import '../widgets/login/login_form_fields.dart';
+import '../widgets/common/theme_mode_toggle_button.dart';
 import '../widgets/login/login_scaffolds.dart';
-import '../widgets/login/login_theme_toggle.dart';
 import '../widgets/login/two_factor_form_fields.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -117,7 +117,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
           title: 'portal.',
           icon: Icons.tonality,
           showBranding: false,
-          actions: const [LoginThemeToggle()],
+          actions: const [ThemeModeToggleButton()],
         ),
         body: EmptyState(
           icon: Icons.error_outline,
@@ -144,7 +144,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
         title: 'portal.',
         icon: Icons.tonality,
         showBranding: false,
-        actions: const [LoginThemeToggle()],
+        actions: const [ThemeModeToggleButton()],
       ),
       body: DragToResizeArea(
         child: Semantics(

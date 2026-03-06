@@ -1,8 +1,11 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:portal/constants/app_constants.dart';
 import 'package:portal/models/group_instance_with_group.dart';
+import 'package:portal/models/relay_hint_message.dart';
 import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/api_rate_limit_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
@@ -10,11 +13,143 @@ import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/providers/group_monitor_storage.dart';
 import 'package:portal/providers/polling_lifecycle.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
+import 'package:portal/services/invite_service.dart';
+import 'package:portal/services/relay_hint_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import 'test_helpers/auth_test_harness.dart';
 import 'test_helpers/fake_vrchat_models.dart';
+
+class _RelayHintServiceFake extends RelayHintService {
+  _RelayHintServiceFake()
+    : super(bootstrapUrl: 'https://example.com/bootstrap');
+
+  final StreamController<RelayHintMessage> _hints =
+      StreamController<RelayHintMessage>.broadcast();
+  final StreamController<RelayConnectionStatus> _statuses =
+      StreamController<RelayConnectionStatus>.broadcast();
+  bool _isDisposed = false;
+
+  /// Counts how many times [connect] has been called.
+  int connectCallCount = 0;
+
+  /// When non-null, overrides [runtimeDisabledUntil] so that tests can
+  /// simulate the service's own cooldown value being read by
+  /// [_reconcileRelayConnection].
+  DateTime? runtimeDisabledUntilOverride;
+
+  @override
+  Stream<RelayHintMessage> get hints => _hints.stream;
+
+  @override
+  Stream<RelayConnectionStatus> get statuses => _statuses.stream;
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  DateTime? get runtimeDisabledUntil => runtimeDisabledUntilOverride;
+
+  @override
+  Future<void> connect({
+    required String groupId,
+    required String clientId,
+  }) async {
+    connectCallCount += 1;
+    if (!_statuses.isClosed) {
+      _statuses.add(const RelayConnectionStatus(connected: true));
+    }
+  }
+
+  @override
+  Future<void> disconnect() async {
+    if (!_statuses.isClosed) {
+      _statuses.add(const RelayConnectionStatus(connected: false));
+    }
+  }
+
+  @override
+  Future<void> publishHint(RelayHintMessage hint) async {}
+
+  Future<void> emitHint(RelayHintMessage hint) async {
+    if (!_hints.isClosed) {
+      _hints.add(hint);
+    }
+  }
+
+  Future<void> emitStatus(RelayConnectionStatus status) async {
+    if (!_statuses.isClosed) {
+      _statuses.add(status);
+    }
+  }
+
+  @override
+  Future<void> dispose() async {
+    if (_isDisposed) {
+      return;
+    }
+    _isDisposed = true;
+    await _hints.close();
+    await _statuses.close();
+  }
+}
+
+class _CancelableInviteServiceFake implements InviteService {
+  final Completer<void> started = Completer<void>();
+  CancelToken? lastCancelToken;
+
+  @override
+  Future<void> inviteSelfToInstance(Instance instance) async {}
+
+  @override
+  Future<void> inviteSelfToLocation({
+    required String worldId,
+    required String instanceId,
+  }) async {}
+
+  @override
+  Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
+    required String worldId,
+    required String instanceId,
+    Duration maxWindow = const Duration(seconds: 25),
+    CancelToken? cancelToken,
+  }) async {
+    lastCancelToken = cancelToken;
+    if (!started.isCompleted) {
+      started.complete();
+    }
+    if (cancelToken == null) {
+      return InviteRetryOutcome.sent;
+    }
+    if (cancelToken.isCancelled) {
+      return InviteRetryOutcome.cancelled;
+    }
+    await cancelToken.whenCancel;
+    return InviteRetryOutcome.cancelled;
+  }
+}
+
+class _ThrowingInviteServiceFake implements InviteService {
+  @override
+  Future<void> inviteSelfToInstance(Instance instance) async {}
+
+  @override
+  Future<void> inviteSelfToLocation({
+    required String worldId,
+    required String instanceId,
+  }) async {}
+
+  @override
+  Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
+    required String worldId,
+    required String instanceId,
+    Duration maxWindow = const Duration(seconds: 25),
+    CancelToken? cancelToken,
+  }) {
+    throw StateError('unexpected invite failure');
+  }
+}
 
 ({
   ProviderContainer container,
@@ -1248,6 +1383,7 @@ void main() {
         notifier.state = GroupMonitorState(
           selectedGroupIds: const {'grp_alpha'},
           isMonitoring: true,
+          isBoostActive: true,
           boostedGroupId: 'grp_alpha',
           boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
         );
@@ -1269,6 +1405,7 @@ void main() {
       notifier.state = GroupMonitorState(
         selectedGroupIds: const {'grp_alpha'},
         isMonitoring: true,
+        isBoostActive: true,
         boostedGroupId: 'grp_alpha',
         boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
       );
@@ -1326,6 +1463,7 @@ void main() {
       notifier.state = GroupMonitorState(
         selectedGroupIds: const {'grp_alpha'},
         isMonitoring: true,
+        isBoostActive: true,
         boostedGroupId: 'grp_alpha',
         boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
       );
@@ -1464,6 +1602,478 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 40));
 
       expect(container.read(provider).lastBaselineAttemptAt, isNotNull);
+    });
+  });
+
+  group('relay hint lifecycle cancellation', () {
+    test('cancels in-flight relay invite work on notifier dispose', () async {
+      final relayService = _RelayHintServiceFake();
+      final inviteService = _CancelableInviteServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [
+          relayHintServiceProvider.overrideWithValue(relayService),
+          inviteServiceProvider.overrideWithValue(inviteService),
+        ],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+
+      final observedRelayErrors = <String?>[];
+      final subscription = container.listen<GroupMonitorState>(
+        provider,
+        (_, next) => observedRelayErrors.add(next.lastRelayError),
+        fireImmediately: true,
+      );
+
+      notifier.state = GroupMonitorState(
+        isMonitoring: true,
+        autoInviteEnabled: true,
+        isBoostActive: true,
+        boostedGroupId: 'grp_11111111-1111-1111-1111-111111111111',
+        boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+      );
+
+      final hint = RelayHintMessage.create(
+        groupId: 'grp_11111111-1111-1111-1111-111111111111',
+        worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+        instanceId: '12345~alpha',
+        nUsers: 9,
+        sourceClientId: 'relay_peer',
+      );
+      await relayService.emitHint(hint);
+      await inviteService.started.future;
+
+      final tokenBeforeDispose = inviteService.lastCancelToken;
+      expect(tokenBeforeDispose, isNotNull);
+      expect(tokenBeforeDispose!.isCancelled, isFalse);
+
+      container.dispose();
+      await Future<void>.delayed(Duration.zero);
+      subscription.close();
+
+      expect(tokenBeforeDispose.isCancelled, isTrue);
+      expect(observedRelayErrors.whereType<String>(), isEmpty);
+    });
+
+    test('records relay failure for unexpected invite exceptions', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [
+          relayHintServiceProvider.overrideWithValue(relayService),
+          inviteServiceProvider.overrideWithValue(_ThrowingInviteServiceFake()),
+        ],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+      final observedRelayErrors = <String?>[];
+      final subscription = container.listen<GroupMonitorState>(
+        provider,
+        (_, next) => observedRelayErrors.add(next.lastRelayError),
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+
+      notifier.state = GroupMonitorState(
+        isMonitoring: true,
+        autoInviteEnabled: true,
+        isBoostActive: true,
+        boostedGroupId: 'grp_11111111-1111-1111-1111-111111111111',
+        boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+      );
+
+      final hint = RelayHintMessage.create(
+        groupId: 'grp_11111111-1111-1111-1111-111111111111',
+        worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+        instanceId: '12345~alpha',
+        nUsers: 9,
+        sourceClientId: 'relay_peer',
+      );
+      await relayService.emitHint(hint);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(observedRelayErrors, contains('unexpected_invite_error'));
+    });
+  });
+
+  group('relay circuit breaker', () {
+    test(
+      'opens circuit after threshold consecutive connection errors',
+      () async {
+        final relayService = _RelayHintServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        addTearDown(container.dispose);
+
+        final states = <GroupMonitorState>[];
+        final subscription = container.listen<GroupMonitorState>(
+          provider,
+          (_, next) => states.add(next),
+          fireImmediately: true,
+        );
+        addTearDown(subscription.close);
+
+        // Emit connection errors up to the circuit breaker threshold (4).
+        for (var i = 0; i < AppConstants.relayCircuitBreakerThreshold; i++) {
+          await relayService.emitStatus(
+            const RelayConnectionStatus(
+              connected: false,
+              error: 'test_connection_error',
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+        }
+
+        // The circuit breaker state is emitted synchronously before
+        // disconnect() fires. Check that the states list captured it.
+        final circuitBreakerState = states.firstWhere(
+          (s) => s.lastRelayError == 'relay_circuit_breaker',
+          orElse: () => throw StateError('Circuit breaker state not emitted'),
+        );
+        expect(circuitBreakerState.relayTemporarilyDisabledUntil, isNotNull);
+        expect(
+          circuitBreakerState.relayTemporarilyDisabledUntil!.isAfter(
+            DateTime.now(),
+          ),
+          isTrue,
+        );
+        expect(circuitBreakerState.relayConnected, isFalse);
+      },
+    );
+
+    // A successful connection must reset the streak so that a subsequent run
+    // of N-1 errors does not re-open the circuit.
+    test('streak_resets_on_successful_connection', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      addTearDown(container.dispose);
+
+      final states = <GroupMonitorState>[];
+      final subscription = container.listen<GroupMonitorState>(
+        provider,
+        (_, next) => states.add(next),
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+
+      // Emit one fewer error than the threshold (streak not yet at limit).
+      for (var i = 0; i < AppConstants.relayCircuitBreakerThreshold - 1; i++) {
+        await relayService.emitStatus(
+          const RelayConnectionStatus(
+            connected: false,
+            error: 'test_connection_error',
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      // A successful connection resets the streak to zero.
+      await relayService.emitStatus(
+        const RelayConnectionStatus(connected: true),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(provider).relayConnected, isTrue);
+
+      // Another N-1 errors should NOT open the circuit (streak was reset).
+      for (var i = 0; i < AppConstants.relayCircuitBreakerThreshold - 1; i++) {
+        await relayService.emitStatus(
+          const RelayConnectionStatus(
+            connected: false,
+            error: 'test_connection_error',
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      // Circuit breaker must NOT have fired in any observed state.
+      expect(
+        states.any((s) => s.lastRelayError == 'relay_circuit_breaker'),
+        isFalse,
+        reason: 'circuit should not open when streak was reset by a success',
+      );
+    });
+
+    // After the circuit opens, the cooldown stored in
+    // runtimeDisabledUntilOverride propagates back to state whenever
+    // _reconcileRelayConnection runs, so connect() is not called again.
+    test('circuit_breaker_cooldown_prevents_reconnect', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      // Open the circuit by emitting the threshold number of errors.
+      for (var i = 0; i < AppConstants.relayCircuitBreakerThreshold; i++) {
+        await relayService.emitStatus(
+          const RelayConnectionStatus(
+            connected: false,
+            error: 'test_connection_error',
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      // Simulate the relay service's own cooldown (what runtimeDisabledUntil
+      // would return after a real server-side disable or circuit open).
+      relayService.runtimeDisabledUntilOverride = DateTime.now().add(
+        const Duration(minutes: 10),
+      );
+      final countAtBreak = relayService.connectCallCount;
+
+      // Toggle auto-invite off then on to trigger _reconcileRelayConnection()
+      // twice without waiting for a real polling timer.
+      await notifier
+          .toggleAutoInvite(); // off — clears lastRelayError, syncs cooldown
+      await Future<void>.delayed(Duration.zero);
+      await notifier
+          .toggleAutoInvite(); // on  — cooldown still future, connect() blocked
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        relayService.connectCallCount,
+        countAtBreak,
+        reason: 'connect() must not be called while cooldown is in the future',
+      );
+    });
+
+    // Once the cooldown has elapsed, _reconcileRelayConnection() must call
+    // connect() again so the client recovers without manual intervention.
+    test('circuit_breaker_resets_after_cooldown', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      // Open the circuit.
+      for (var i = 0; i < AppConstants.relayCircuitBreakerThreshold; i++) {
+        await relayService.emitStatus(
+          const RelayConnectionStatus(
+            connected: false,
+            error: 'test_connection_error',
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      // Leave runtimeDisabledUntilOverride as null (cooldown expired).
+      final countAtBreak = relayService.connectCallCount;
+
+      // Set the state so _shouldConnectRelay() can return true once the
+      // cooldown is cleared.  Direct state assignment is used here to avoid
+      // side effects from the full setBoostedGroup() flow.
+      notifier.state = notifier.state.copyWith(
+        isMonitoring: true,
+        autoInviteEnabled: true,
+        isBoostActive: true,
+        boostedGroupId: 'grp_alpha',
+      );
+
+      // Toggle auto-invite off: clears lastRelayError and sets
+      // relayTemporarilyDisabledUntil from runtimeDisabledUntilOverride (null).
+      await notifier.toggleAutoInvite(); // off
+      await Future<void>.delayed(Duration.zero);
+
+      // Toggle auto-invite on: cooldown is now null → connect() fires.
+      await notifier.toggleAutoInvite(); // on
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        relayService.connectCallCount,
+        greaterThan(countAtBreak),
+        reason: 'connect() must be called once the cooldown has elapsed',
+      );
+      expect(container.read(provider).relayConnected, isTrue);
+    });
+  });
+
+  group('relay hint filtering and deduplication', () {
+    /// Returns a [GroupMonitorState] with all prerequisites for relay hint
+    /// processing satisfied: monitoring, auto-invite, boost active for [groupId].
+    GroupMonitorState activeState({
+      String groupId = 'grp_11111111-1111-1111-1111-111111111111',
+    }) => GroupMonitorState(
+      isMonitoring: true,
+      autoInviteEnabled: true,
+      isBoostActive: true,
+      boostedGroupId: groupId,
+      boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+    );
+
+    RelayHintMessage validHint({
+      String groupId = 'grp_11111111-1111-1111-1111-111111111111',
+    }) => RelayHintMessage.create(
+      groupId: groupId,
+      worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+      instanceId: '12345~alpha',
+      nUsers: 9,
+      sourceClientId: 'relay_peer',
+    );
+
+    test('hint_for_monitored_group_increments_relayHintsReceived', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      notifier.state = activeState();
+
+      await relayService.emitHint(validHint());
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(container.read(provider).relayHintsReceived, 1);
+    });
+
+    test('hint_for_wrong_group_is_ignored', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      notifier.state = activeState(
+        groupId: 'grp_11111111-1111-1111-1111-111111111111',
+      );
+
+      await relayService.emitHint(
+        validHint(groupId: 'grp_22222222-2222-2222-2222-222222222222'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(container.read(provider).relayHintsReceived, 0);
+    });
+
+    test('duplicate_hint_id_is_deduplicated', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      notifier.state = activeState();
+
+      final hint = validHint();
+      await relayService.emitHint(hint);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await relayService.emitHint(hint); // same hint again
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(container.read(provider).relayHintsReceived, 1);
+    });
+
+    test('duplicate_instance_key_is_deduplicated', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      notifier.state = activeState();
+
+      // Two hints with different hintIds but same worldId+instanceId (same instanceKey).
+      final hint1 = RelayHintMessage.create(
+        groupId: 'grp_11111111-1111-1111-1111-111111111111',
+        worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+        instanceId: '12345~alpha',
+        nUsers: 9,
+        sourceClientId: 'peer_a',
+      );
+      final hint2 = RelayHintMessage.create(
+        groupId: 'grp_11111111-1111-1111-1111-111111111111',
+        worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+        instanceId: '12345~alpha',
+        nUsers: 9,
+        sourceClientId: 'peer_b',
+      );
+
+      await relayService.emitHint(hint1);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await relayService.emitHint(hint2);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(container.read(provider).relayHintsReceived, 1);
+    });
+
+    test('invalid_or_expired_hint_records_relay_failure', () async {
+      final relayService = _RelayHintServiceFake();
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      notifier.state = activeState();
+
+      final observedErrors = <String?>[];
+      final subscription = container.listen<GroupMonitorState>(
+        provider,
+        (_, next) => observedErrors.add(next.lastRelayError),
+        fireImmediately: false,
+      );
+      addTearDown(subscription.close);
+
+      // An expired hint (expiresAt in the past).
+      final expiredHint = RelayHintMessage(
+        version: '1',
+        hintId: 'hint_expired',
+        groupId: 'grp_alpha',
+        worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+        instanceId: '12345~alpha',
+        nUsers: 1,
+        detectedAt: DateTime.utc(2000),
+        expiresAt: DateTime.utc(2000),
+        sourceClientId: 'peer_a',
+      );
+      await relayService.emitHint(expiredHint);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        observedErrors,
+        contains('invalid_or_expired_hint'),
+        reason: 'expired hint must record a relay failure',
+      );
+      expect(container.read(provider).relayHintsReceived, 0);
     });
   });
 

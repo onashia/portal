@@ -23,6 +23,8 @@ class AppTextField extends StatelessWidget {
   final bool obscureText;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
+  final ValueChanged<String>? onFieldSubmitted;
+  final FormFieldValidator<String>? validator;
   final bool enabled;
 
   const AppTextField({
@@ -36,12 +38,44 @@ class AppTextField extends StatelessWidget {
     this.obscureText = false,
     this.onChanged,
     this.onSubmitted,
+    this.onFieldSubmitted,
+    this.validator,
     this.enabled = true,
-  });
+  }) : assert(
+         onSubmitted == null || onFieldSubmitted == null,
+         'Provide onSubmitted (TextField mode) or onFieldSubmitted '
+         '(TextFormField mode), not both.',
+       ),
+       assert(
+         validator == null || onSubmitted == null,
+         'onSubmitted is ignored in TextFormField mode (validator present); '
+         'use onFieldSubmitted instead.',
+       ),
+       assert(
+         validator != null || onFieldSubmitted == null,
+         'onFieldSubmitted is ignored in TextField mode (no validator); '
+         'use onSubmitted instead.',
+       );
 
   @override
   Widget build(BuildContext context) {
     final effectiveDecoration = _buildAppInputDecoration(context, decoration);
+
+    if (validator != null) {
+      return TextFormField(
+        controller: controller,
+        focusNode: focusNode,
+        decoration: effectiveDecoration,
+        keyboardType: keyboardType,
+        textInputAction: textInputAction,
+        inputFormatters: inputFormatters,
+        obscureText: obscureText,
+        onChanged: onChanged,
+        onFieldSubmitted: onFieldSubmitted,
+        validator: validator,
+        enabled: enabled,
+      );
+    }
 
     return TextField(
       controller: controller,
@@ -53,54 +87,6 @@ class AppTextField extends StatelessWidget {
       obscureText: obscureText,
       onChanged: onChanged,
       onSubmitted: onSubmitted,
-      enabled: enabled,
-    );
-  }
-}
-
-class AppTextFormField extends StatelessWidget {
-  final TextEditingController? controller;
-  final FocusNode? focusNode;
-  final InputDecoration? decoration;
-  final TextInputType? keyboardType;
-  final TextInputAction? textInputAction;
-  final List<TextInputFormatter>? inputFormatters;
-  final bool obscureText;
-  final ValueChanged<String>? onChanged;
-  final ValueChanged<String>? onFieldSubmitted;
-  final FormFieldValidator<String>? validator;
-  final bool enabled;
-
-  const AppTextFormField({
-    super.key,
-    this.controller,
-    this.focusNode,
-    this.decoration,
-    this.keyboardType,
-    this.textInputAction,
-    this.inputFormatters,
-    this.obscureText = false,
-    this.onChanged,
-    this.onFieldSubmitted,
-    this.validator,
-    this.enabled = true,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final effectiveDecoration = _buildAppInputDecoration(context, decoration);
-
-    return TextFormField(
-      controller: controller,
-      focusNode: focusNode,
-      decoration: effectiveDecoration,
-      keyboardType: keyboardType,
-      textInputAction: textInputAction,
-      inputFormatters: inputFormatters,
-      obscureText: obscureText,
-      onChanged: onChanged,
-      onFieldSubmitted: onFieldSubmitted,
-      validator: validator,
       enabled: enabled,
     );
   }

@@ -52,11 +52,3 @@ bool areMapsEquivalent<K, V extends Object>(
 
   return true;
 }
-
-/// Convenience wrapper for comparing maps with string keys and string values.
-bool areStringMapsEquivalent(
-  Map<String, String> previous,
-  Map<String, String> next,
-) {
-  return areMapsEquivalent(previous, next);
-}

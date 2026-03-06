@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 
+import '../../constants/app_constants.dart';
 import '../../constants/ui_constants.dart';
 import '../../providers/group_calendar_provider.dart';
 import '../../providers/group_monitor_provider.dart';
@@ -38,6 +39,11 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
         widget.userId,
       ).select((monitorState) => monitorState.autoInviteEnabled),
     );
+    final relayAssistEnabled = ref.watch(
+      groupMonitorProvider(
+        widget.userId,
+      ).select((monitorState) => monitorState.relayAssistEnabled),
+    );
 
     final actions = [
       ToolbarActionM3E(
@@ -49,6 +55,17 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
         },
         tooltip: autoInviteEnabled ? 'Auto-Invite On' : 'Auto-Invite Off',
         label: autoInviteEnabled ? 'Auto-Invite On' : 'Auto-Invite Off',
+      ),
+      ToolbarActionM3E(
+        icon: relayAssistEnabled ? Icons.hub : Icons.hub_outlined,
+        onPressed: () {
+          ref
+              .read(groupMonitorProvider(widget.userId).notifier)
+              .toggleRelayAssist();
+        },
+        enabled: AppConstants.relayAssistEnabled,
+        tooltip: relayAssistEnabled ? 'Relay Assist On' : 'Relay Assist Off',
+        label: relayAssistEnabled ? 'Relay Assist On' : 'Relay Assist Off',
       ),
       ToolbarActionM3E(
         icon: Icons.refresh,

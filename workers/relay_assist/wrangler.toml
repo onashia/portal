@@ -1,0 +1,17 @@
+name = "portal-relay-assist"
+main = "src/index.js"
+compatibility_date = "2026-03-03"
+
+[durable_objects]
+bindings = [
+  { name = "RELAY_ROOM", class_name = "RelayRoom" },
+  { name = "BOOTSTRAP_RL", class_name = "BootstrapRateLimiter" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RelayRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["BootstrapRateLimiter"]

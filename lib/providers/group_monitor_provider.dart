@@ -1,16 +1,21 @@
 import 'dart:async';
+import 'dart:math' as math;
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../constants/app_constants.dart';
 import '../models/group_instance_with_group.dart';
+import '../models/relay_hint_message.dart';
 import '../services/api_rate_limit_coordinator.dart';
 import '../services/auto_invite_service.dart';
 import '../services/invite_service.dart';
+import '../services/relay_hint_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/collection_equivalence.dart' as collection_eq;
+import '../utils/dedupe_tracker.dart';
 import 'api_call_counter.dart';
 import 'auth_provider.dart';
 import 'group_instance_merging.dart';
@@ -32,6 +37,7 @@ export 'group_monitor_state.dart';
 part 'group_monitor_provider_fetch.dart';
 part 'group_monitor_provider_loops.dart';
 part 'group_monitor_provider_persistence.dart';
+part 'group_monitor_provider_relay.dart';
 
 class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   GroupMonitorNotifier(this.arg);
@@ -50,7 +56,16 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   DateTime? _boostStartedAt;
   int _boostPollCount = 0;
   bool _boostFirstSeenLogged = false;
-  late final AutoInviteService _autoInviteService;
+  int _relayFailureStreak = 0;
+  final _relayHintDedupe = DedupeTracker();
+  final _relayPublishDedupe = DedupeTracker();
+  final Set<CancelToken> _relayInviteCancelTokens = <CancelToken>{};
+  StreamSubscription<RelayHintMessage>? _relayHintSubscription;
+  StreamSubscription<RelayConnectionStatus>? _relayStatusSubscription;
+  late InviteService _inviteService;
+  late RelayHintService _relayHintService;
+  late String _relayClientId;
+  late AutoInviteService _autoInviteService;
 
   @visibleForTesting
   bool get hasActivePollingTimer => _baselineLoop.hasTimer;
@@ -68,7 +83,18 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   @override
   GroupMonitorState build() {
-    _autoInviteService = AutoInviteService(ref.read(inviteServiceProvider));
+    _inviteService = ref.read(inviteServiceProvider);
+    _autoInviteService = AutoInviteService(_inviteService);
+    _relayHintService = ref.read(relayHintServiceProvider);
+    if (AppConstants.relayAssistEnabled && !_relayHintService.isConfigured) {
+      AppLogger.warning(
+        'Relay assist is enabled but not configured (missing app secret or bootstrap URL). '
+        'Relay will be inactive for this session.',
+        subCategory: 'relay',
+      );
+    }
+    _relayClientId = _createRelayClientId(userId: arg);
+    _bindRelayStreams();
 
     _listenForAuthChanges();
     ref.onDispose(() {
@@ -76,11 +102,21 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       _boostLoop.reset();
       _selectionRefreshDebounceTimer?.cancel();
       _selectionRefreshDebounceTimer = null;
+      _cancelAllRelayInviteTokens();
+      _relayHintSubscription?.cancel();
+      _relayHintSubscription = null;
+      _relayStatusSubscription?.cancel();
+      _relayStatusSubscription = null;
+      unawaited(_relayHintService.disconnect());
     });
     _loadSelectedGroups();
     _loadAutoInviteSetting();
+    _loadRelayAssistSetting();
     _loadBoostSettings();
-    return const GroupMonitorState(isLoading: true);
+    return const GroupMonitorState(
+      isLoading: true,
+      relayAssistEnabled: AppConstants.relayAssistEnabled,
+    );
   }
 
   void _resetBoostRuntimeTracking({DateTime? startedAt}) {
@@ -94,6 +130,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     required DateTime? expiresAt,
   }) {
     state = state.copyWith(
+      isBoostActive:
+          groupId != null &&
+          expiresAt != null &&
+          expiresAt.isAfter(DateTime.now()),
       boostedGroupId: groupId,
       boostExpiresAt: expiresAt,
       boostPollCount: 0,
@@ -103,19 +143,42 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     );
   }
 
-  Future<void> toggleAutoInvite() async {
-    final newValue = !state.autoInviteEnabled;
-    state = state.copyWith(autoInviteEnabled: newValue);
+  Future<void> toggleAutoInvite() => _toggleBoolSetting(
+    currentValue: state.autoInviteEnabled,
+    applyToState: (v) => state.copyWith(autoInviteEnabled: v),
+    persist: GroupMonitorStorage.saveAutoInviteEnabled,
+    settingName: 'Auto-invite',
+    actionDescription: 'save auto-invite setting',
+  );
+
+  Future<void> toggleRelayAssist() => _toggleBoolSetting(
+    currentValue: state.relayAssistEnabled,
+    applyToState: (v) => state.copyWith(relayAssistEnabled: v),
+    persist: GroupMonitorStorage.saveRelayAssistEnabled,
+    settingName: 'Relay assist',
+    actionDescription: 'save relay assist setting',
+  );
+
+  Future<void> _toggleBoolSetting({
+    required bool currentValue,
+    required GroupMonitorState Function(bool) applyToState,
+    required Future<void> Function(bool) persist,
+    required String settingName,
+    required String actionDescription,
+  }) async {
+    final newValue = !currentValue;
+    state = applyToState(newValue);
     final didPersist = await _persistStorageWrite(
-      actionDescription: 'save auto-invite setting',
-      action: () => GroupMonitorStorage.saveAutoInviteEnabled(newValue),
+      actionDescription: actionDescription,
+      action: () => persist(newValue),
     );
     if (didPersist) {
       AppLogger.info(
-        'Auto-invite set to $newValue',
+        '$settingName set to $newValue',
         subCategory: 'group_monitor',
       );
     }
+    _reconcileRelayConnection();
   }
 
   Future<void> setBoostedGroup(String? groupId) async {
@@ -160,6 +223,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     if (state.isMonitoring) {
       _requestBoostRefresh(immediate: true);
     }
+    _reconcileRelayConnection();
   }
 
   Future<void> clearBoost() async {
@@ -246,11 +310,41 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   }
 
   Future<void> clearSelectedGroups() => _clearSelectedGroupsInternal();
+
+  void _registerRelayInviteCancelToken(CancelToken token) {
+    _relayInviteCancelTokens.add(token);
+  }
+
+  void _unregisterRelayInviteCancelToken(CancelToken token) {
+    _relayInviteCancelTokens.remove(token);
+  }
+
+  void _cancelAllRelayInviteTokens() {
+    if (_relayInviteCancelTokens.isEmpty) {
+      return;
+    }
+
+    final tokens = _relayInviteCancelTokens.toList(growable: false);
+    _relayInviteCancelTokens.clear();
+    for (final token in tokens) {
+      if (!token.isCancelled) {
+        token.cancel('group_monitor_disposed');
+      }
+    }
+  }
 }
 
 final inviteServiceProvider = Provider<InviteService>((ref) {
   final api = ref.read(vrchatApiProvider);
   return InviteService(api);
+});
+
+final relayHintServiceProvider = Provider<RelayHintService>((ref) {
+  final service = RelayHintService();
+  ref.onDispose(() {
+    unawaited(service.dispose());
+  });
+  return service;
 });
 
 final groupMonitorProvider =
