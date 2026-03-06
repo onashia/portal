@@ -14,4 +14,4 @@ new_sqlite_classes = ["RelayRoom"]
 
 [[migrations]]
 tag = "v2"
-new_classes = ["BootstrapRateLimiter"]
+new_sqlite_classes = ["BootstrapRateLimiter"]

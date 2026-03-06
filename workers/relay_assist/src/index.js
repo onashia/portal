@@ -361,6 +361,17 @@ export class RelayRoom {
     }
   }
 
+  webSocketError(ws, error) {
+    const metadata = ws.deserializeAttachment() || {};
+    if (metadata.clientId) {
+      this.publishWindowByClient.delete(metadata.clientId);
+    }
+    console.error(
+      `[RelayRoom] webSocketError clientId=${metadata.clientId ?? 'unknown'}:`,
+      error,
+    );
+  }
+
   #canPublish(clientId, now) {
     if (!clientId) {
       return false;
@@ -396,6 +407,10 @@ export class RelayRoom {
     const expiresAtMs = Number(hint.expiresAtMs || 0);
 
     if (!hintId || !groupId || !worldId || !instanceId || !sourceClientId) {
+      return false;
+    }
+
+    if (hintId.length > 256) {
       return false;
     }
 

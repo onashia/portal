@@ -126,6 +126,24 @@ class _FakeWebSocketChannel extends Fake implements WebSocketChannel {
   }
 }
 
+/// Fake WebSocket channel whose [ready] future immediately rejects, simulating
+/// a failed WebSocket handshake after the bootstrap succeeds.
+class _FailingWebSocketChannel extends Fake implements WebSocketChannel {
+  _FailingWebSocketChannel({required this.error});
+
+  final Object error;
+
+  @override
+  Future<void> get ready => Future.error(error);
+
+  @override
+  WebSocketSink get sink =>
+      _FakeWebSocketSink(onAdd: (_) {}, onClose: () async {});
+
+  @override
+  Stream<dynamic> get stream => const Stream.empty();
+}
+
 /// Fake heartbeat monitor that lets tests trigger stale callbacks on demand,
 /// eliminating wall-clock waits from the heartbeat lifecycle tests.
 class _FakeHeartbeatMonitor extends Fake implements RelayHeartbeatMonitor {
@@ -606,6 +624,82 @@ void main() {
       expect(errorStatus.connected, isFalse);
       expect(errorStatus.error, isNotNull);
     });
+  });
+
+  group('RelayHintService channel.ready failure', () {
+    test(
+      'emits disconnected status and schedules reconnect when ready throws',
+      () async {
+        final fakeScheduler = _FakeReconnectScheduler();
+        final statuses = <RelayConnectionStatus>[];
+
+        final service = RelayHintService(
+          bootstrapClient: _FakeBootstrapClient(Uri.parse('ws://test.invalid')),
+          heartbeatMonitor: _FakeHeartbeatMonitor(),
+          reconnectScheduler: fakeScheduler,
+          channelConnector: (_) => _FailingWebSocketChannel(
+            error: WebSocketChannelException('handshake failed'),
+          ),
+        );
+        addTearDown(service.dispose);
+
+        final sub = service.statuses.listen(statuses.add);
+        addTearDown(sub.cancel);
+
+        await service.connect(groupId: 'grp', clientId: 'client');
+        await pumpEventQueue();
+
+        // A reconnect must be scheduled after the ready failure.
+        expect(fakeScheduler._pendingCallback, isNotNull);
+
+        // The status stream must emit at least one disconnected status with an
+        // error message (the inner catch emits the specific handshake error;
+        // _handleDisconnect may emit an additional bare disconnected status).
+        expect(statuses, isNotEmpty);
+        expect(statuses.every((s) => !s.connected), isTrue);
+        expect(statuses.any((s) => s.error != null), isTrue);
+      },
+    );
+  });
+
+  group('RelayHintService dispose during active connection', () {
+    test(
+      'tears down cleanly without errors or callbacks after dispose',
+      () async {
+        final fakeChannel = _FakeWebSocketChannel();
+        final statuses = <RelayConnectionStatus>[];
+        final errors = <Object>[];
+
+        final service = RelayHintService(
+          bootstrapClient: _FakeBootstrapClient(Uri.parse('ws://test.invalid')),
+          heartbeatMonitor: _FakeHeartbeatMonitor(),
+          reconnectScheduler: _FakeReconnectScheduler(),
+          channelConnector: (_) => fakeChannel,
+        );
+
+        final sub = service.statuses.listen(statuses.add, onError: errors.add);
+        addTearDown(sub.cancel);
+
+        await service.connect(groupId: 'grp', clientId: 'client');
+        await pumpEventQueue();
+
+        // Confirm we are connected before disposing.
+        expect(statuses.any((s) => s.connected), isTrue);
+
+        // Dispose while the connection is active — must not throw.
+        service.dispose();
+        await pumpEventQueue();
+
+        // No stream errors should have been emitted.
+        expect(errors, isEmpty);
+
+        // Further status events are no longer broadcast after dispose.
+        final countBeforeEmit = statuses.length;
+        fakeChannel.emit('unexpected');
+        await pumpEventQueue();
+        expect(statuses.length, countBeforeEmit);
+      },
+    );
   });
 
   group('RelayHintService.isHeartbeatStale', () {

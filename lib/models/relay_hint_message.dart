@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+
 import '../constants/app_constants.dart';
 
 class RelayHintMessage {
@@ -25,6 +27,10 @@ class RelayHintMessage {
     required this.sourceClientId,
   });
 
+  /// Creates a new hint for the given [groupId], [worldId], and [instanceId].
+  ///
+  /// Sets [expiresAt] to [AppConstants.relayHintTtlSeconds] seconds from [now]
+  /// (defaults to [DateTime.now]).
   factory RelayHintMessage.create({
     required String groupId,
     required String worldId,
@@ -50,6 +56,7 @@ class RelayHintMessage {
     );
   }
 
+  /// Deserializes a hint from the JSON map received over the relay WebSocket.
   factory RelayHintMessage.fromJson(Map<String, dynamic> json) {
     return RelayHintMessage(
       version: json['version']?.toString() ?? '1',
@@ -68,6 +75,8 @@ class RelayHintMessage {
     );
   }
 
+  /// Serializes this hint to a JSON map for transmission over the relay
+  /// WebSocket.
   Map<String, dynamic> toJson() {
     return {
       'version': version,
@@ -82,6 +91,10 @@ class RelayHintMessage {
     };
   }
 
+  /// Returns true if all ID fields pass format validation.
+  ///
+  /// Does not check expiry — use [isExpired] for that. Mirrors server-side
+  /// validation in workers/relay_assist/src/index.js.
   bool get isStructurallyValid {
     return hintId.isNotEmpty &&
         groupId.isNotEmpty &&
@@ -96,10 +109,12 @@ class RelayHintMessage {
     caseSensitive: false,
   );
 
+  static final _instanceIdPattern = RegExp(r'^\d');
+
   static bool _isValidWorldId(String id) => _worldIdPattern.hasMatch(id);
 
   static bool _isValidInstanceId(String id) =>
-      id.isNotEmpty && RegExp(r'^\d').hasMatch(id);
+      id.isNotEmpty && _instanceIdPattern.hasMatch(id);
 
   /// Returns true if this hint has expired.
   ///
@@ -112,6 +127,7 @@ class RelayHintMessage {
     return !expiresAt.isAfter(current.subtract(grace));
   }
 
+  /// Composite key uniquely identifying the instance: `groupId|worldId|instanceId`.
   String get instanceKey => '$groupId|$worldId|$instanceId';
 
   static String _generateHintId({
@@ -126,9 +142,20 @@ class RelayHintMessage {
   static final math.Random _random = math.Random.secure();
 }
 
+@immutable
 class RelayConnectionStatus {
   final bool connected;
   final String? error;
 
   const RelayConnectionStatus({required this.connected, this.error});
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RelayConnectionStatus &&
+          connected == other.connected &&
+          error == other.error;
+
+  @override
+  int get hashCode => Object.hash(connected, error);
 }
