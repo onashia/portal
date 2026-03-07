@@ -21,7 +21,7 @@
 
 <p align="center">
   <!-- GIF cycling between the login page and dashboard -->
-  <img src="docs/preview.gif" alt="Portal — login and dashboard" />
+  <img src="https://github.com/user-attachments/assets/d67737ac-87d9-48c0-b083-e71eafd2225a" alt="Portal — login and dashboard" />
 </p>
 
 ## Features
