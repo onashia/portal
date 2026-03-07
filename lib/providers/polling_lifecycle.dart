@@ -46,6 +46,10 @@ RefreshRequestDecision resolveRefreshRequestDecision({
   return (shouldQueuePending: isInFlight, shouldRunNow: !isInFlight);
 }
 
+/// Merges an incoming refresh request into the pending state.
+///
+/// The bypass flag is sticky: once any queued request has requested a bypass,
+/// the merged pending state retains bypass even if the new request does not.
 PendingRefreshState mergePendingRefreshState({
   required bool currentPendingBypassRateLimit,
   required bool nextBypassRateLimit,
@@ -102,6 +106,13 @@ class RefreshLoopState {
   }
 }
 
+/// Decides how to handle an incoming refresh request.
+///
+/// Dispatch table:
+/// - inactive                 → reconcile loop (fix invariants, don't fetch)
+/// - active + in-flight       → queue pending (drain after current fetch)
+/// - active + not in-flight + immediate → run now
+/// - active + not in-flight + not immediate → schedule next tick
 RefreshDispatchDecision shouldRequestImmediateRefresh({
   required bool isActive,
   required bool isInFlight,
@@ -161,6 +172,13 @@ bool shouldDrainPendingRefresh({
   return isMounted && !isInFlight && hasPendingRefresh && isActive;
 }
 
+/// Returns how long to wait before the next fetch attempt given an active
+/// rate-limit cooldown.
+///
+/// [safetyBuffer] is added on top of [remainingCooldown] so the cooldown has
+/// definitively expired server-side before the next request fires. When the
+/// cooldown has already elapsed (≤ zero), the buffer alone is returned as a
+/// minimal nudge rather than firing immediately.
 Duration resolveCooldownAwareDelay({
   required Duration? remainingCooldown,
   required Duration fallbackDelay,

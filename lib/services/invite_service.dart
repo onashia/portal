@@ -251,6 +251,11 @@ class InviteService {
     }
   }
 
+  /// Returns the delay before the next retry attempt.
+  ///
+  /// Uses a near-Fibonacci schedule (700 → 1200 → 2000 → 3000 → 5000 → 8000 ms)
+  /// with up to 250 ms of random jitter. The last bucket is repeated for any
+  /// attempt beyond the sixth.
   Duration _retryDelayForAttempt(int attempt) {
     const scheduleMs = <int>[700, 1200, 2000, 3000, 5000, 8000];
     final index = (attempt - 1).clamp(0, scheduleMs.length - 1);

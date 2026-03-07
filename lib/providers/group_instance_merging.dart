@@ -28,6 +28,8 @@ bool areGroupInstanceListsEquivalent(
     for (final entry in previous) entry.instance.instanceId: entry,
   };
 
+  // Guard against duplicates within the previous list itself — if the map is
+  // shorter than the list, at least two entries shared an instanceId.
   if (previousByInstanceId.length != previous.length) {
     return false;
   }
@@ -117,6 +119,8 @@ mergeFetchedGroupInstancesWithDiff({
     }
   }
 
+  // Return the previous list by identity when nothing changed so that
+  // Riverpod's equality diffing can short-circuit without a deep comparison.
   return (
     effectiveInstances: didChange ? mergedInstances : previousInstances,
     newInstances: newInstances,

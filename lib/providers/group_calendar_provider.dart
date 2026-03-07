@@ -260,6 +260,11 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     );
   }
 
+  /// Restores loop invariants after any state change (auth, selection, etc.).
+  ///
+  /// Checks the current session and selection, then ensures a timer is running
+  /// if one is needed. Does not trigger an immediate fetch — call
+  /// [_requestCalendarRefresh] for that.
   void _reconcileCalendarLoop() {
     if (!_canRefreshForCurrentSession()) {
       _handleSessionIneligible();
@@ -288,6 +293,11 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     }
   }
 
+  /// Called in the `finally` block after every fetch completes.
+  ///
+  /// If a refresh was queued while the previous fetch was in-flight, run it
+  /// now. Otherwise schedule the next periodic tick (or reconcile if the loop
+  /// is no longer active).
   void _drainPendingRefreshesOrScheduleTick() {
     final active = ref.mounted ? _calendarActive() : false;
     if (shouldDrainPendingRefresh(
@@ -453,6 +463,10 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     }
   }
 
+  /// Guarantees group metadata is available before building today's event list.
+  ///
+  /// Group details (name, icon, etc.) may not yet be loaded if the calendar
+  /// refreshes before the group monitor's first poll completes.
   Future<void> _ensureGroupDetails(GroupMonitorState monitorState) async {
     final selectedGroupIds = monitorState.selectedGroupIds;
     if (selectedGroupIds.isEmpty) {
@@ -506,6 +520,10 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     return todayEvents;
   }
 
+  /// Returns true for events that should be excluded from display.
+  ///
+  /// The VRChat API returns draft and soft-deleted events in the same response
+  /// as published ones, so we filter them out client-side.
   bool _shouldSkipEvent(CalendarEvent event) {
     if (event.isDraft == true) {
       return true;
@@ -519,6 +537,10 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   }
 }
 
+/// Sorts calendar events by start time, then end time, then group ID.
+///
+/// The group ID tiebreaker produces a stable, deterministic order when two
+/// groups schedule events at the same time.
 @visibleForTesting
 int compareGroupCalendarEvents(GroupCalendarEvent a, GroupCalendarEvent b) {
   final startCompare = a.event.startsAt.compareTo(b.event.startsAt);
