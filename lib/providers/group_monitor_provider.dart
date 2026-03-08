@@ -19,6 +19,8 @@ import '../utils/dedupe_tracker.dart';
 import 'api_call_counter.dart';
 import 'auth_provider.dart';
 import 'group_instance_merging.dart';
+import 'group_monitor_api.dart';
+import 'group_instance_normalization.dart';
 import 'group_instance_selection.dart';
 import 'group_invite_and_boost.dart';
 import 'group_monitor_fetching.dart';
@@ -57,6 +59,12 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   int _boostPollCount = 0;
   bool _boostFirstSeenLogged = false;
   int _relayFailureStreak = 0;
+  final Map<String, ({Instance instance, DateTime fetchedAt})>
+  _enrichedInstanceByKey =
+      <String, ({Instance instance, DateTime fetchedAt})>{};
+  final Map<String, DateTime> _enrichmentFailureUntilByKey =
+      <String, DateTime>{};
+  final _enrichmentFailureLogDedupe = DedupeTracker();
   final _relayHintDedupe = DedupeTracker();
   final _relayPublishDedupe = DedupeTracker();
   final Set<CancelToken> _relayInviteCancelTokens = <CancelToken>{};

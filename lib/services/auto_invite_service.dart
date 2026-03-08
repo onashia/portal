@@ -50,9 +50,23 @@ class AutoInviteService {
       return null;
     }
 
+    AppLogger.info(
+      'Attempting auto-invite for group $groupId '
+      '(${target.instance.worldId}:${target.instance.instanceId}, '
+      'users=${target.instance.nUsers})',
+      subCategory: 'group_monitor',
+    );
+
     final start = DateTime.now();
     await inviteService.inviteSelfToInstance(target.instance);
     final latencyMs = DateTime.now().difference(start).inMilliseconds;
+
+    AppLogger.info(
+      'Auto-invite completed for group $groupId '
+      '(${target.instance.worldId}:${target.instance.instanceId}, '
+      'latency=${latencyMs}ms)',
+      subCategory: 'group_monitor',
+    );
 
     return AutoInviteResult(target: target, latencyMs: latencyMs);
   }
@@ -81,20 +95,70 @@ class AutoInviteService {
     List<Instance> instances,
     String groupId,
   ) {
-    Instance? best;
-    for (final instance in instances) {
-      if (best == null || instance.nUsers > best.nUsers) {
-        best = instance;
+    final sorted = instances.toList(growable: false)
+      ..sort((a, b) {
+        final aDeprioritized = shouldDeprioritizeSelfInviteForCapacity(a);
+        final bDeprioritized = shouldDeprioritizeSelfInviteForCapacity(b);
+        if (aDeprioritized != bDeprioritized) {
+          return aDeprioritized ? 1 : -1;
+        }
+        return b.nUsers.compareTo(a.nUsers);
+      });
+
+    Instance? topCandidate;
+    for (final instance in sorted) {
+      topCandidate ??= instance;
+      if (!shouldAttemptSelfInviteForInstance(instance)) {
+        final hasInvalidIdentifiers =
+            instance.worldId.isEmpty || instance.instanceId.isEmpty;
+        final skipReason = hasInvalidIdentifiers
+            ? 'invalid instance identifiers'
+            : 'instance metadata denies invite requests';
+        AppLogger.warning(
+          'Skipping invite candidate: $skipReason for group $groupId '
+          '(${instance.worldId}:${instance.instanceId}, users=${instance.nUsers})',
+          subCategory: 'group_monitor',
+        );
+        continue;
       }
+
+      if (shouldDeprioritizeSelfInviteForCapacity(instance)) {
+        AppLogger.info(
+          'Proceeding with low-capacity invite candidate for group $groupId '
+          '(${instance.worldId}:${instance.instanceId}, users=${instance.nUsers})',
+          subCategory: 'group_monitor',
+        );
+      } else if (instance.canRequestInvite == false) {
+        AppLogger.info(
+          'Proceeding with group invite candidate despite '
+          'canRequestInvite=false for group $groupId '
+          '(${instance.worldId}:${instance.instanceId}, users=${instance.nUsers})',
+          subCategory: 'group_monitor',
+        );
+      }
+
+      if (!identical(instance, topCandidate)) {
+        final reason = shouldDeprioritizeSelfInviteForCapacity(topCandidate)
+            ? 'after deprioritizing higher-priority full candidates'
+            : 'after skipping higher-priority invalid candidates';
+        AppLogger.info(
+          'Selected lower-population invite candidate for group $groupId '
+          '(${instance.worldId}:${instance.instanceId}, users=${instance.nUsers}) '
+          '$reason',
+          subCategory: 'group_monitor',
+        );
+      }
+
+      return GroupInstanceWithGroup(instance: instance, groupId: groupId);
     }
 
-    if (best == null) {
+    if (topCandidate == null) {
       return null;
     }
 
-    if (!shouldAttemptSelfInviteForInstance(best)) {
+    if (!shouldAttemptSelfInviteForInstance(topCandidate)) {
       final hasInvalidIdentifiers =
-          best.worldId.isEmpty || best.instanceId.isEmpty;
+          topCandidate.worldId.isEmpty || topCandidate.instanceId.isEmpty;
       final skipReason = hasInvalidIdentifiers
           ? 'invalid instance identifiers'
           : 'instance metadata denies invite requests';
@@ -102,8 +166,7 @@ class AutoInviteService {
         'Skipping invite: $skipReason for group $groupId',
         subCategory: 'group_monitor',
       );
-      return null;
     }
-    return GroupInstanceWithGroup(instance: best, groupId: groupId);
+    return null;
   }
 }

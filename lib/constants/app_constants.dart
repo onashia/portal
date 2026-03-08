@@ -45,6 +45,9 @@ class AppConstants {
   static const int vrchatApiReceiveTimeoutSeconds = 20;
   static const int groupInstancesRequestTimeoutSeconds = 20;
   static const int groupInstancesMaxConcurrentRequests = 4;
+  static const int groupInstanceEnrichmentTtlSeconds = 30;
+  static const int groupInstanceEnrichmentFailureCooldownSeconds = 10;
+  static const int groupInstanceEnrichmentLogDedupeSeconds = 30;
   static const int boostPollingIntervalSeconds = 10;
   static const int boostPollingJitterSeconds = 2;
   static const int boostDurationMinutes = 15;

@@ -65,6 +65,42 @@ class AlwaysFailingInviteService implements InviteService {
   }
 }
 
+Instance _buildInviteableTestInstance({
+  required String worldId,
+  required String instanceId,
+  required int userCount,
+  required bool? canRequestInvite,
+  bool? hasCapacityForYou,
+}) {
+  final world = buildTestWorld(
+    id: worldId.isEmpty ? 'wrld_fallback' : worldId,
+    name: 'World',
+  );
+  return Instance(
+    canRequestInvite: canRequestInvite,
+    clientNumber: 'unknown',
+    hasCapacityForYou: hasCapacityForYou,
+    id: 'inst_${instanceId.isEmpty ? 'fallback' : instanceId}',
+    instanceId: instanceId,
+    location: '$worldId:$instanceId',
+    nUsers: userCount,
+    name: 'Instance $instanceId',
+    photonRegion: Region.us,
+    platforms: InstancePlatforms(android: 0, standalonewindows: userCount),
+    queueEnabled: false,
+    queueSize: 0,
+    recommendedCapacity: 16,
+    region: InstanceRegion.us,
+    secureName: 'secure-${instanceId.isEmpty ? 'fallback' : instanceId}',
+    strict: false,
+    tags: const [],
+    type: InstanceType.group,
+    userCount: userCount,
+    world: world,
+    worldId: worldId,
+  );
+}
+
 void main() {
   group('AutoInviteService.attemptAutoInvite', () {
     late FakeInviteService fakeInviteService;
@@ -159,6 +195,229 @@ void main() {
       expect(result, isNotNull);
       expect(result!.latencyMs, greaterThanOrEqualTo(0));
       expect(result.latencyMs, lessThan(1000));
+    });
+
+    test(
+      'does not block on canRequestInvite false when ids are valid',
+      () async {
+        final instances = [
+          _buildInviteableTestInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+            canRequestInvite: false,
+          ),
+          _buildInviteableTestInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 8,
+            canRequestInvite: true,
+          ),
+        ];
+
+        final result = await autoInviteService.attemptAutoInvite(
+          instances: instances,
+          groupId: 'grp_alpha',
+          enabled: true,
+          hasBaseline: true,
+        );
+
+        expect(result, isNotNull);
+        expect(result!.target.instance.instanceId, 'inst_a');
+        expect(fakeInviteService.invitedInstances.single.instanceId, 'inst_a');
+      },
+    );
+
+    test(
+      'skips invalid top-population candidate and invites next eligible instance',
+      () async {
+        final instances = [
+          _buildInviteableTestInstance(
+            worldId: '',
+            instanceId: 'inst_a',
+            userCount: 10,
+            canRequestInvite: true,
+          ),
+          _buildInviteableTestInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 8,
+            canRequestInvite: true,
+          ),
+        ];
+
+        final result = await autoInviteService.attemptAutoInvite(
+          instances: instances,
+          groupId: 'grp_alpha',
+          enabled: true,
+          hasBaseline: true,
+        );
+
+        expect(result, isNotNull);
+        expect(result!.target.instance.instanceId, 'inst_b');
+        expect(fakeInviteService.invitedInstances.single.instanceId, 'inst_b');
+      },
+    );
+
+    test('treats null canRequestInvite as eligible', () async {
+      final instances = [
+        _buildInviteableTestInstance(
+          worldId: 'wrld_alpha',
+          instanceId: 'inst_a',
+          userCount: 10,
+          canRequestInvite: null,
+        ),
+        _buildInviteableTestInstance(
+          worldId: 'wrld_alpha',
+          instanceId: 'inst_b',
+          userCount: 8,
+          canRequestInvite: true,
+        ),
+      ];
+
+      final result = await autoInviteService.attemptAutoInvite(
+        instances: instances,
+        groupId: 'grp_alpha',
+        enabled: true,
+        hasBaseline: true,
+      );
+
+      expect(result, isNotNull);
+      expect(result!.target.instance.instanceId, 'inst_a');
+      expect(fakeInviteService.invitedInstances.single.instanceId, 'inst_a');
+    });
+
+    test('returns null when all candidates have invalid identifiers', () async {
+      final instances = [
+        _buildInviteableTestInstance(
+          worldId: '',
+          instanceId: 'inst_a',
+          userCount: 10,
+          canRequestInvite: false,
+        ),
+        _buildInviteableTestInstance(
+          worldId: 'wrld_alpha',
+          instanceId: '',
+          userCount: 8,
+          canRequestInvite: false,
+        ),
+      ];
+
+      final result = await autoInviteService.attemptAutoInvite(
+        instances: instances,
+        groupId: 'grp_alpha',
+        enabled: true,
+        hasBaseline: true,
+      );
+
+      expect(result, isNull);
+      expect(fakeInviteService.invitedInstances, isEmpty);
+    });
+
+    test('deprioritizes candidates with hasCapacityForYou false', () async {
+      final instances = [
+        _buildInviteableTestInstance(
+          worldId: 'wrld_alpha',
+          instanceId: 'inst_a',
+          userCount: 10,
+          canRequestInvite: false,
+          hasCapacityForYou: false,
+        ),
+        _buildInviteableTestInstance(
+          worldId: 'wrld_alpha',
+          instanceId: 'inst_b',
+          userCount: 9,
+          canRequestInvite: true,
+          hasCapacityForYou: true,
+        ),
+        _buildInviteableTestInstance(
+          worldId: 'wrld_alpha',
+          instanceId: 'inst_c',
+          userCount: 8,
+          canRequestInvite: true,
+          hasCapacityForYou: true,
+        ),
+      ];
+
+      final result = await autoInviteService.attemptAutoInvite(
+        instances: instances,
+        groupId: 'grp_alpha',
+        enabled: true,
+        hasBaseline: true,
+      );
+
+      expect(result, isNotNull);
+      expect(result!.target.instance.instanceId, 'inst_b');
+      expect(fakeInviteService.invitedInstances.single.instanceId, 'inst_b');
+    });
+
+    test(
+      'uses best valid-id candidate when all candidates report hasCapacityForYou false',
+      () async {
+        final instances = [
+          _buildInviteableTestInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+            canRequestInvite: false,
+            hasCapacityForYou: false,
+          ),
+          _buildInviteableTestInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 8,
+            canRequestInvite: true,
+            hasCapacityForYou: false,
+          ),
+        ];
+
+        final result = await autoInviteService.attemptAutoInvite(
+          instances: instances,
+          groupId: 'grp_alpha',
+          enabled: true,
+          hasBaseline: true,
+        );
+
+        expect(result, isNotNull);
+        expect(result!.target.instance.instanceId, 'inst_a');
+        expect(fakeInviteService.invitedInstances.single.instanceId, 'inst_a');
+      },
+    );
+
+    test('preserves highest-priority valid candidate ordering', () async {
+      final instances = [
+        _buildInviteableTestInstance(
+          worldId: '',
+          instanceId: 'inst_invalid',
+          userCount: 12,
+          canRequestInvite: true,
+        ),
+        _buildInviteableTestInstance(
+          worldId: 'wrld_alpha',
+          instanceId: 'inst_a',
+          userCount: 10,
+          canRequestInvite: false,
+          hasCapacityForYou: false,
+        ),
+        _buildInviteableTestInstance(
+          worldId: 'wrld_alpha',
+          instanceId: 'inst_b',
+          userCount: 9,
+          canRequestInvite: true,
+          hasCapacityForYou: true,
+        ),
+      ];
+
+      final result = await autoInviteService.attemptAutoInvite(
+        instances: instances,
+        groupId: 'grp_alpha',
+        enabled: true,
+        hasBaseline: true,
+      );
+
+      expect(result, isNotNull);
+      expect(result!.target.instance.instanceId, 'inst_b');
+      expect(fakeInviteService.invitedInstances.single.instanceId, 'inst_b');
     });
 
     test('propagates invite service errors', () async {

@@ -8,7 +8,7 @@ part of 'group_monitor_provider.dart';
 typedef FetchContext = ({List<String> selectedGroupIds, DateTime attemptAt});
 
 typedef FetchExecutionResult = ({
-  dynamic api,
+  GroupMonitorApi api,
   Map<String, List<GroupInstanceWithGroup>> previousGroupInstances,
   Map<String, String> previousGroupErrors,
   Map<String, List<GroupInstanceWithGroup>> newGroupInstances,
@@ -102,7 +102,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       subCategory: 'group_monitor',
     );
 
-    final api = ref.read(vrchatApiProvider);
+    final api = ref.read(groupMonitorApiProvider);
     final previousGroupInstances = state.groupInstances;
     final previousGroupErrors = state.groupErrors;
     final newGroupInstances = <String, List<GroupInstanceWithGroup>>{};
@@ -137,12 +137,10 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
             .read(apiCallCounterProvider.notifier)
             .incrementApiCall(lane: ApiRequestLane.groupBaseline);
         try {
-          return await api.rawApi
-              .getUsersApi()
-              .getUserGroupInstancesForGroup(
-                userId: arg,
+          return await api
+              .getGroupInstances(
                 groupId: groupId,
-                extra: apiRequestLaneExtra(ApiRequestLane.groupBaseline),
+                lane: ApiRequestLane.groupBaseline,
               )
               .timeout(
                 const Duration(
@@ -193,6 +191,16 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
   ) async {
     final responses = executionResult.responses;
     final previousGroupInstances = executionResult.previousGroupInstances;
+    final retainedKeys = <String>{
+      for (final groupResponse in responses)
+        if (groupResponse.response != null)
+          for (final groupInstance
+              in groupResponse.response.data ?? const <GroupInstance>[])
+            groupInstanceStableKey(
+              worldId: groupInstance.world.id,
+              instanceId: groupInstance.instanceId,
+            ),
+    };
     final newInstances = <GroupInstanceWithGroup>[];
     var newestInstance = executionResult.newestInstance;
     var didInstancesChange = executionResult.didInstancesChange;
@@ -217,7 +225,14 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         continue;
       }
 
-      final instances = response.data?.instances ?? [];
+      final instances = await _normalizeAndEnrichFetchedGroupInstances(
+        api: executionResult.api,
+        groupId: groupId,
+        groupInstances: response.data ?? const <GroupInstance>[],
+        retainedKeys: retainedKeys,
+        lane: ApiRequestLane.groupBaseline,
+        laneLabel: 'baseline',
+      );
 
       AppLogger.debug(
         'Group returned ${instances.length} instances',
@@ -293,6 +308,10 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       polledGroupCount: context.selectedGroupIds.length,
       totalInstances: totalInstances,
     );
+    _pruneEnrichmentState(
+      DateTime.now(),
+      retainedKeys: _activeEnrichmentKeysFor(nextGroupInstances),
+    );
     _backoffDelay = 1;
 
     if (processingResult.newInstances.isNotEmpty) {
@@ -338,11 +357,9 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
           .read(apiCallCounterProvider.notifier)
           .incrementApiCall(lane: ApiRequestLane.userGroups);
 
-      final api = ref.read(vrchatApiProvider);
-      final response = await api.rawApi.getUsersApi().getUserGroups(
-        userId: arg,
-        extra: apiRequestLaneExtra(ApiRequestLane.userGroups),
-      );
+      final response = await ref
+          .read(groupMonitorApiProvider)
+          .getUserGroups(userId: arg);
       final groups = response.data ?? [];
 
       AppLogger.info(
@@ -447,8 +464,14 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         executionResult,
         context,
       );
+      if (!ref.mounted) {
+        return;
+      }
       _finalizeFetch(processingResult, executionResult, context);
     } catch (e, s) {
+      if (!ref.mounted) {
+        return;
+      }
       await _handleFetchError(e, s, attemptAt);
     } finally {
       _isFetchingBaseline = false;
@@ -525,14 +548,9 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       ref
           .read(apiCallCounterProvider.notifier)
           .incrementApiCall(lane: ApiRequestLane.groupBoost);
-      final api = ref.read(vrchatApiProvider);
-      final response = await api.rawApi
-          .getUsersApi()
-          .getUserGroupInstancesForGroup(
-            userId: arg,
-            groupId: groupId,
-            extra: apiRequestLaneExtra(ApiRequestLane.groupBoost),
-          )
+      final api = ref.read(groupMonitorApiProvider);
+      final response = await api
+          .getGroupInstances(groupId: groupId, lane: ApiRequestLane.groupBoost)
           .timeout(
             const Duration(
               seconds: AppConstants.groupInstancesRequestTimeoutSeconds,
@@ -542,13 +560,25 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         return;
       }
 
-      final instances = response.data?.instances ?? [];
-      final fetchedAt = response.data?.fetchedAt;
-      final latencyMs = DateTime.now().difference(pollStart).inMilliseconds;
+      final fetchedAt = DateTime.now();
+      final instances = await _normalizeAndEnrichFetchedGroupInstances(
+        api: api,
+        groupId: groupId,
+        groupInstances: response.data ?? const <GroupInstance>[],
+        retainedKeys: {
+          for (final groupInstance in response.data ?? const <GroupInstance>[])
+            groupInstanceStableKey(
+              worldId: groupInstance.world.id,
+              instanceId: groupInstance.instanceId,
+            ),
+        },
+        lane: ApiRequestLane.groupBoost,
+        laneLabel: 'boost',
+      );
+      final latencyMs = fetchedAt.difference(pollStart).inMilliseconds;
       AppLogger.debug(
         'Boost poll #$_boostPollCount for $groupId latency=${latencyMs}ms '
-        'instances=${instances.length}'
-        '${fetchedAt != null ? ' fetchedAt=$fetchedAt' : ''}',
+        'instances=${instances.length} fetchedAt=$fetchedAt',
         subCategory: 'group_monitor',
       );
       final previousInstances = state.groupInstances[groupId] ?? [];
@@ -641,6 +671,10 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       }
 
       _hasBaseline = true;
+      _pruneEnrichmentState(
+        DateTime.now(),
+        retainedKeys: _activeEnrichmentKeysFor(nextGroupInstances),
+      );
 
       if (newInstances.isNotEmpty) {
         AppLogger.info(
@@ -680,12 +714,18 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       return;
     }
     try {
-      await _autoInviteService.attemptAutoInvite(
+      final result = await _autoInviteService.attemptAutoInvite(
         instances: instances,
         groupId: groupId,
         enabled: state.autoInviteEnabled && state.isMonitoring,
         hasBaseline: _hasBaseline,
       );
+      if (result == null) {
+        AppLogger.debug(
+          'Auto-invite skipped for $laneLabel $groupId: no eligible target',
+          subCategory: 'group_monitor',
+        );
+      }
     } catch (e, s) {
       AppLogger.error(
         'Failed to auto-invite for $laneLabel $groupId',
@@ -696,12 +736,307 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     }
   }
 
+  Future<List<Instance>> _normalizeAndEnrichFetchedGroupInstances({
+    required GroupMonitorApi api,
+    required String groupId,
+    required List<GroupInstance> groupInstances,
+    required Set<String> retainedKeys,
+    required ApiRequestLane lane,
+    required String laneLabel,
+  }) async {
+    final now = DateTime.now();
+    _pruneEnrichmentState(now, retainedKeys: retainedKeys);
+
+    var instances = groupInstances
+        .map(
+          (groupInstance) => normalizeGroupInstance(
+            groupInstance: groupInstance,
+            groupId: groupId,
+            enrichedInstance: _cachedEnrichedInstance(
+              worldId: groupInstance.world.id,
+              instanceId: groupInstance.instanceId,
+              now: now,
+            ),
+          ),
+        )
+        .toList(growable: false);
+
+    instances = await _enrichBestCandidateIfNeeded(
+      api: api,
+      instances: instances,
+      groupId: groupId,
+      lane: lane,
+      laneLabel: laneLabel,
+    );
+    return instances;
+  }
+
+  Future<List<Instance>> _enrichBestCandidateIfNeeded({
+    required GroupMonitorApi api,
+    required List<Instance> instances,
+    required String groupId,
+    required ApiRequestLane lane,
+    required String laneLabel,
+  }) async {
+    if (instances.isEmpty) {
+      return instances;
+    }
+
+    Instance? best;
+    for (final candidate in instances) {
+      if (best == null || candidate.nUsers > best.nUsers) {
+        best = candidate;
+      }
+    }
+    if (best == null || best.worldId.isEmpty || best.instanceId.isEmpty) {
+      AppLogger.debug(
+        'Skipping instance enrichment for $groupId ($laneLabel): '
+        'highest-population candidate has invalid identifiers',
+        subCategory: 'group_monitor',
+      );
+      return instances;
+    }
+
+    final now = DateTime.now();
+    final key = groupInstanceStableKey(
+      worldId: best.worldId,
+      instanceId: best.instanceId,
+    );
+    final cachedEntry = _enrichedInstanceByKey[key];
+    if (cachedEntry != null &&
+        now.difference(cachedEntry.fetchedAt) >
+            const Duration(
+              seconds: AppConstants.groupInstanceEnrichmentTtlSeconds,
+            )) {
+      _enrichedInstanceByKey.remove(key);
+      AppLogger.debug(
+        'Re-enriching instance after cache expiry for $groupId '
+        '${best.worldId}:${best.instanceId} ($laneLabel)',
+        subCategory: 'group_monitor',
+      );
+    }
+
+    if (_cachedEnrichedInstance(
+          worldId: best.worldId,
+          instanceId: best.instanceId,
+          now: now,
+        ) !=
+        null) {
+      AppLogger.debug(
+        'Instance enrichment cache hit for $groupId '
+        '${best.worldId}:${best.instanceId} ($laneLabel)',
+        subCategory: 'group_monitor',
+      );
+      return instances;
+    }
+
+    final blockedUntil = _enrichmentFailureUntilByKey[key];
+    if (blockedUntil != null && blockedUntil.isAfter(now)) {
+      AppLogger.debug(
+        'Skipping instance enrichment due to cooldown for $groupId '
+        '${best.worldId}:${best.instanceId} ($laneLabel)',
+        subCategory: 'group_monitor',
+      );
+      return instances;
+    }
+
+    AppLogger.debug(
+      'Enriching best instance for $groupId ${best.worldId}:${best.instanceId} '
+      '($laneLabel)',
+      subCategory: 'group_monitor',
+    );
+
+    ref.read(apiCallCounterProvider.notifier).incrementApiCall(lane: lane);
+    try {
+      final response = await api
+          .getInstance(
+            worldId: best.worldId,
+            instanceId: best.instanceId,
+            lane: lane,
+          )
+          .timeout(
+            const Duration(
+              seconds: AppConstants.groupInstancesRequestTimeoutSeconds,
+            ),
+          );
+
+      final enriched = response.data;
+      if (enriched == null) {
+        _recordEnrichmentFailure(
+          key: key,
+          groupId: groupId,
+          instance: best,
+          laneLabel: laneLabel,
+          reason: 'empty_response',
+        );
+        return instances;
+      }
+
+      _enrichedInstanceByKey[key] = (instance: enriched, fetchedAt: now);
+      _enrichmentFailureUntilByKey.remove(key);
+      AppLogger.info(
+        'Instance enrichment succeeded for $groupId '
+        '${best.worldId}:${best.instanceId} ($laneLabel)',
+        subCategory: 'group_monitor',
+      );
+
+      final nextInstances = instances.toList(growable: false);
+      final index = nextInstances.indexWhere(
+        (candidate) =>
+            candidate.worldId == best!.worldId &&
+            candidate.instanceId == best.instanceId,
+      );
+      if (index == -1) {
+        return instances;
+      }
+      nextInstances[index] = mergeDiscoveryInstanceWithEnrichment(
+        discoveryInstance: nextInstances[index],
+        enrichedInstance: enriched,
+        groupId: groupId,
+      );
+      return nextInstances;
+    } on DioException catch (e, s) {
+      final statusCode = e.response?.statusCode;
+      _recordEnrichmentFailure(
+        key: key,
+        groupId: groupId,
+        instance: best,
+        laneLabel: laneLabel,
+        reason: statusCode == null ? e.type.name : 'status_$statusCode',
+        error: e,
+        stackTrace: s,
+      );
+      return instances;
+    } catch (e, s) {
+      _recordEnrichmentFailure(
+        key: key,
+        groupId: groupId,
+        instance: best,
+        laneLabel: laneLabel,
+        reason: 'unexpected',
+        error: e,
+        stackTrace: s,
+      );
+      return instances;
+    }
+  }
+
+  Instance? _cachedEnrichedInstance({
+    required String worldId,
+    required String instanceId,
+    required DateTime now,
+  }) {
+    final key = groupInstanceStableKey(
+      worldId: worldId,
+      instanceId: instanceId,
+    );
+    final cached = _enrichedInstanceByKey[key];
+    if (cached == null) {
+      return null;
+    }
+
+    final ttl = Duration(
+      seconds: AppConstants.groupInstanceEnrichmentTtlSeconds,
+    );
+    if (now.difference(cached.fetchedAt) > ttl) {
+      _enrichedInstanceByKey.remove(key);
+      return null;
+    }
+
+    return cached.instance;
+  }
+
+  void _recordEnrichmentFailure({
+    required String key,
+    required String groupId,
+    required Instance instance,
+    required String laneLabel,
+    required String reason,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    final now = DateTime.now();
+    _enrichmentFailureUntilByKey[key] = now.add(
+      const Duration(
+        seconds: AppConstants.groupInstanceEnrichmentFailureCooldownSeconds,
+      ),
+    );
+
+    final logKey = '$laneLabel|$key|$reason';
+    final dedupeTtl = const Duration(
+      seconds: AppConstants.groupInstanceEnrichmentLogDedupeSeconds,
+    );
+    if (_enrichmentFailureLogDedupe.isBlocked(logKey, now)) {
+      return;
+    }
+    _enrichmentFailureLogDedupe.record(logKey, now: now, ttl: dedupeTtl);
+
+    final message =
+        'Instance enrichment failed for $groupId '
+        '${instance.worldId}:${instance.instanceId} ($laneLabel, reason=$reason)';
+    if (error is DioException) {
+      final statusCode = error.response?.statusCode;
+      final isTransient =
+          statusCode == null ||
+          statusCode == 404 ||
+          statusCode == 409 ||
+          statusCode == 429 ||
+          statusCode >= 500;
+      if (isTransient) {
+        AppLogger.warning(message, subCategory: 'group_monitor');
+        return;
+      }
+    }
+
+    AppLogger.error(
+      message,
+      subCategory: 'group_monitor',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
+
+  void _pruneEnrichmentState(
+    DateTime now, {
+    Set<String> retainedKeys = const {},
+  }) {
+    _enrichmentFailureLogDedupe.prune(now);
+    _enrichmentFailureUntilByKey.removeWhere(
+      (_, blockedUntil) => !blockedUntil.isAfter(now),
+    );
+    _enrichedInstanceByKey.removeWhere(
+      (_, cached) =>
+          now.difference(cached.fetchedAt) >
+          const Duration(
+            seconds: AppConstants.groupInstanceEnrichmentTtlSeconds,
+          ),
+    );
+
+    final activeKeys = <String>{
+      ..._activeEnrichmentKeysFor(state.groupInstances),
+      ...retainedKeys,
+    };
+    _enrichedInstanceByKey.removeWhere((key, _) => !activeKeys.contains(key));
+  }
+
+  Set<String> _activeEnrichmentKeysFor(
+    Map<String, List<GroupInstanceWithGroup>> groupInstances,
+  ) {
+    return <String>{
+      for (final groupEntries in groupInstances.values)
+        for (final entry in groupEntries)
+          groupInstanceStableKey(
+            worldId: entry.instance.worldId,
+            instanceId: entry.instance.instanceId,
+          ),
+    };
+  }
+
   Future<World?> _fetchWorldDetailsInternal(String worldId) async {
     try {
-      final api = ref.read(vrchatApiProvider);
-      final response = await api.rawApi.getWorldsApi().getWorld(
-        worldId: worldId,
-      );
+      final response = await ref
+          .read(groupMonitorApiProvider)
+          .getWorld(worldId: worldId);
       return response.data;
     } catch (e, s) {
       AppLogger.error(

@@ -48,6 +48,21 @@ Instance buildTestInstance({
   );
 }
 
+GroupInstance buildTestGroupInstance({
+  required String instanceId,
+  required World world,
+  required int memberCount,
+  String? location,
+}) {
+  final resolvedLocation = location ?? '${world.id}:$instanceId';
+  return GroupInstance(
+    instanceId: instanceId,
+    location: resolvedLocation,
+    memberCount: memberCount,
+    world: world,
+  );
+}
+
 LimitedUserGroups buildTestGroup({
   required String groupId,
   required String name,

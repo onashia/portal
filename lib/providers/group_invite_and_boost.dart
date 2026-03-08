@@ -2,11 +2,19 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 import 'group_monitor_storage.dart';
 
 bool shouldAttemptSelfInviteForInstance(Instance instance) {
+  return hasValidSelfInviteIdentifiers(instance);
+}
+
+bool hasValidSelfInviteIdentifiers(Instance instance) {
   if (instance.worldId.isEmpty || instance.instanceId.isEmpty) {
     return false;
   }
 
-  return instance.canRequestInvite != false;
+  return true;
+}
+
+bool shouldDeprioritizeSelfInviteForCapacity(Instance instance) {
+  return instance.hasCapacityForYou == false;
 }
 
 ({
