@@ -5,22 +5,9 @@ import 'invite_service.dart';
 import '../models/group_instance_with_group.dart';
 import '../models/relay_hint_message.dart';
 
-/// Encapsulates the result of an auto-invite operation.
-class AutoInviteResult {
-  /// The target instance the user was invited to.
-  final GroupInstanceWithGroup target;
-
-  /// The time in milliseconds the invite operation took.
-  final int latencyMs;
-
-  const AutoInviteResult({required this.target, required this.latencyMs});
-}
-
 /// Service for automatically inviting users to group instances.
 ///
-/// Handles selection of the most populated instance and tracks invite latency.
-/// This is used when a group becomes active during monitoring to automatically
-/// join the best available instance.
+/// Dispatches invites to an already resolved target and handles relay hints.
 class AutoInviteService {
   AutoInviteService(this.inviteService);
 
@@ -29,13 +16,13 @@ class AutoInviteService {
   /// Attempts to automatically invite to an already resolved target.
   ///
   /// Only invites if [enabled] and [hasBaseline] are true.
-  Future<AutoInviteResult?> attemptAutoInviteTarget({
+  Future<void> attemptAutoInviteTarget({
     required GroupInstanceWithGroup target,
     required bool enabled,
     required bool hasBaseline,
   }) async {
     if (!enabled || !hasBaseline) {
-      return null;
+      return;
     }
 
     AppLogger.info(
@@ -55,8 +42,6 @@ class AutoInviteService {
       'latency=${latencyMs}ms)',
       subCategory: 'group_monitor',
     );
-
-    return AutoInviteResult(target: target, latencyMs: latencyMs);
   }
 
   /// Attempts to auto-invite from a relay hint even when local instance polling

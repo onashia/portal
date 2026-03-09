@@ -100,50 +100,34 @@ void main() {
       );
     });
 
-    test('returns null when disabled', () async {
-      final result = await autoInviteService.attemptAutoInviteTarget(
+    test('returns early when disabled', () async {
+      await autoInviteService.attemptAutoInviteTarget(
         target: target,
         enabled: false,
         hasBaseline: true,
       );
 
-      expect(result, isNull);
       expect(fakeInviteService.invitedInstances, isEmpty);
     });
 
-    test('returns null when no baseline', () async {
-      final result = await autoInviteService.attemptAutoInviteTarget(
+    test('returns early when no baseline', () async {
+      await autoInviteService.attemptAutoInviteTarget(
         target: target,
         enabled: true,
         hasBaseline: false,
       );
 
-      expect(result, isNull);
       expect(fakeInviteService.invitedInstances, isEmpty);
     });
 
     test('sends invite to resolved target', () async {
-      final result = await autoInviteService.attemptAutoInviteTarget(
+      await autoInviteService.attemptAutoInviteTarget(
         target: target,
         enabled: true,
         hasBaseline: true,
       );
 
-      expect(result, isNotNull);
-      expect(result!.target, same(target));
       expect(fakeInviteService.invitedInstances.single.instanceId, 'inst_a');
-    });
-
-    test('tracks latency correctly', () async {
-      final result = await autoInviteService.attemptAutoInviteTarget(
-        target: target,
-        enabled: true,
-        hasBaseline: true,
-      );
-
-      expect(result, isNotNull);
-      expect(result!.latencyMs, greaterThanOrEqualTo(0));
-      expect(result.latencyMs, lessThan(1000));
     });
 
     test('propagates invite service errors', () async {

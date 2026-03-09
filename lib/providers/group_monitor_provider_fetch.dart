@@ -226,7 +226,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       }
 
       final instances = await _normalizeAndEnrichFetchedGroupInstances(
-        api: executionResult.api,
         groupId: groupId,
         groupInstances: response.data ?? const <GroupInstance>[],
         retainedKeys: retainedKeys,
@@ -563,7 +562,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
 
       final fetchedAt = DateTime.now();
       final instances = await _normalizeAndEnrichFetchedGroupInstances(
-        api: api,
         groupId: groupId,
         groupInstances: response.data ?? const <GroupInstance>[],
         retainedKeys: {
@@ -722,16 +720,10 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     try {
       final resolved = await _inviteCandidateResolver
           .resolveBestAutoInviteTarget(
-            api: ref.read(groupMonitorApiProvider),
             discoveryInstances: instances,
             groupId: groupId,
             lane: lane,
             laneLabel: laneLabel,
-            onApiCall: (lane) {
-              ref
-                  .read(apiCallCounterProvider.notifier)
-                  .incrementApiCall(lane: lane);
-            },
           );
       if (!ref.mounted) {
         return;
@@ -755,7 +747,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       }
 
       await _autoInviteService.attemptAutoInviteTarget(
-        target: resolved.toGroupInstanceWithGroup(groupId),
+        target: resolved,
         enabled: enabled,
         hasBaseline: _hasBaseline,
       );
@@ -770,44 +762,23 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
   }
 
   Future<List<Instance>> _normalizeAndEnrichFetchedGroupInstances({
-    required GroupMonitorApi api,
     required String groupId,
     required List<GroupInstance> groupInstances,
     required Set<String> retainedKeys,
     required ApiRequestLane lane,
     required String laneLabel,
   }) async {
-    final now = DateTime.now();
-    _pruneEnrichmentState(now, retainedKeys: retainedKeys);
-
-    var instances = groupInstances
-        .map(
-          (groupInstance) => normalizeGroupInstance(
-            groupInstance: groupInstance,
-            groupId: groupId,
-            enrichedInstance: _inviteCandidateResolver.cachedEnrichedInstance(
-              worldId: groupInstance.world.id,
-              instanceId: groupInstance.instanceId,
-              now: now,
-            ),
-          ),
-        )
-        .toList(growable: false);
-
-    instances = await _inviteCandidateResolver
-        .enrichHighestPopulationInstanceForDisplay(
-          api: api,
-          discoveryInstances: instances,
-          groupId: groupId,
-          lane: lane,
-          laneLabel: laneLabel,
-          onApiCall: (lane) {
-            ref
-                .read(apiCallCounterProvider.notifier)
-                .incrementApiCall(lane: lane);
-          },
-        );
-    return instances;
+    final effectiveRetainedKeys = <String>{
+      ..._activeEnrichmentKeysFor(state.groupInstances),
+      ...retainedKeys,
+    };
+    return _inviteCandidateResolver.normalizeAndEnrichFetchedGroupInstances(
+      groupInstances: groupInstances,
+      groupId: groupId,
+      retainedKeys: effectiveRetainedKeys,
+      lane: lane,
+      laneLabel: laneLabel,
+    );
   }
 
   void _pruneEnrichmentState(

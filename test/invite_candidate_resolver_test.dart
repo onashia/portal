@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/constants/app_constants.dart';
-import 'package:portal/providers/group_instance_normalization.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
 import 'package:portal/services/invite_candidate_resolver.dart';
 import 'package:vrchat_dart/vrchat_dart.dart' hide Response;
@@ -84,30 +83,43 @@ Instance _buildEnrichedInstance({
 
 String _key(String worldId, String instanceId) => '$worldId|$instanceId';
 
+InviteCandidateResolver _buildResolver(
+  FakeGroupMonitorApi api, {
+  List<ApiRequestLane>? observedLanes,
+}) {
+  return InviteCandidateResolver(
+    fetchInstance:
+        ({
+          required String worldId,
+          required String instanceId,
+          required ApiRequestLane lane,
+        }) {
+          observedLanes?.add(lane);
+          return api.getInstance(
+            worldId: worldId,
+            instanceId: instanceId,
+            lane: lane,
+          );
+        },
+  );
+}
+
+typedef _ResolverScenario = ({
+  String description,
+  List<Instance> discoveryInstances,
+  Map<String, Instance> enrichedInstancesByKey,
+  Map<String, Object> instanceErrorsByKey,
+  Set<String> nullInstanceResponseKeys,
+  int maxCandidatesToVerify,
+  String? expectedInstanceId,
+  Map<String, int?> expectedCallCounts,
+});
+
 void main() {
   group('InviteCandidateResolver.resolveBestAutoInviteTarget', () {
-    late InviteCandidateResolver resolver;
-    late List<ApiRequestLane> observedLanes;
-
-    setUp(() {
-      resolver = InviteCandidateResolver();
-      observedLanes = <ApiRequestLane>[];
-    });
-
-    test('picks first verified eligible candidate by discovery size', () async {
-      final api = FakeGroupMonitorApi(
-        enrichedInstancesByKey: {
-          _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
-            worldId: 'wrld_alpha',
-            instanceId: 'inst_a',
-            userCount: 10,
-            hasCapacityForYou: true,
-          ),
-        },
-      );
-
-      final resolved = await resolver.resolveBestAutoInviteTarget(
-        api: api,
+    final scenarios = <_ResolverScenario>[
+      (
+        description: 'picks first verified eligible candidate',
         discoveryInstances: [
           _buildDiscoveryInstance(
             worldId: 'wrld_alpha',
@@ -120,845 +132,23 @@ void main() {
             userCount: 8,
           ),
         ],
-        groupId: 'grp_alpha',
-        lane: ApiRequestLane.groupBoost,
-        laneLabel: 'boost',
-        onApiCall: observedLanes.add,
-      );
-
-      expect(resolved, isNotNull);
-      expect(resolved!.effectiveInstance.instanceId, 'inst_a');
-      expect(
-        resolved.verificationState,
-        InviteCandidateVerificationState.verifiedEligible,
-      );
-      expect(observedLanes, [ApiRequestLane.groupBoost]);
-    });
-
-    test(
-      'treats queueEnabled without queue entries as still inviteable',
-      () async {
-        final api = FakeGroupMonitorApi(
-          enrichedInstancesByKey: {
-            _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-              hasCapacityForYou: true,
-              queueEnabled: true,
-              queueSize: 0,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-        );
-
-        expect(resolved, isNotNull);
-        expect(resolved!.effectiveInstance.instanceId, 'inst_a');
-        expect(resolved.effectiveInstance.queueEnabled, isTrue);
-        expect(resolved.effectiveInstance.queueSize, 0);
-        expect(
-          resolved.verificationState,
-          InviteCandidateVerificationState.verifiedEligible,
-        );
-      },
-    );
-
-    test('falls back to the next verified eligible candidate', () async {
-      final api = FakeGroupMonitorApi(
         enrichedInstancesByKey: {
           _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
             worldId: 'wrld_alpha',
             instanceId: 'inst_a',
             userCount: 10,
-            hasCapacityForYou: false,
-          ),
-          _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
-            worldId: 'wrld_alpha',
-            instanceId: 'inst_b',
-            userCount: 9,
             hasCapacityForYou: true,
           ),
         },
-      );
-
-      final resolved = await resolver.resolveBestAutoInviteTarget(
-        api: api,
-        discoveryInstances: [
-          _buildDiscoveryInstance(
-            worldId: 'wrld_alpha',
-            instanceId: 'inst_a',
-            userCount: 10,
-          ),
-          _buildDiscoveryInstance(
-            worldId: 'wrld_alpha',
-            instanceId: 'inst_b',
-            userCount: 9,
-          ),
-        ],
-        groupId: 'grp_alpha',
-        lane: ApiRequestLane.groupBoost,
-        laneLabel: 'boost',
-      );
-
-      expect(resolved, isNotNull);
-      expect(resolved!.effectiveInstance.instanceId, 'inst_b');
-      expect(
-        resolved.verificationState,
-        InviteCandidateVerificationState.verifiedEligible,
-      );
-      expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_a')], 1);
-      expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_b')], 1);
-    });
-
-    test('can fall through multiple full or queued candidates', () async {
-      final api = FakeGroupMonitorApi(
-        enrichedInstancesByKey: {
-          _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
-            worldId: 'wrld_alpha',
-            instanceId: 'inst_a',
-            userCount: 10,
-            hasCapacityForYou: false,
-          ),
-          _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
-            worldId: 'wrld_alpha',
-            instanceId: 'inst_b',
-            userCount: 9,
-            hasCapacityForYou: true,
-            queueEnabled: true,
-            queueSize: 2,
-          ),
-          _key('wrld_alpha', 'inst_c'): _buildEnrichedInstance(
-            worldId: 'wrld_alpha',
-            instanceId: 'inst_c',
-            userCount: 8,
-            hasCapacityForYou: true,
-          ),
-        },
-      );
-
-      final resolved = await resolver.resolveBestAutoInviteTarget(
-        api: api,
-        discoveryInstances: [
-          _buildDiscoveryInstance(
-            worldId: 'wrld_alpha',
-            instanceId: 'inst_a',
-            userCount: 10,
-          ),
-          _buildDiscoveryInstance(
-            worldId: 'wrld_alpha',
-            instanceId: 'inst_b',
-            userCount: 9,
-          ),
-          _buildDiscoveryInstance(
-            worldId: 'wrld_alpha',
-            instanceId: 'inst_c',
-            userCount: 8,
-          ),
-        ],
-        groupId: 'grp_alpha',
-        lane: ApiRequestLane.groupBoost,
-        laneLabel: 'boost',
-      );
-
-      expect(resolved, isNotNull);
-      expect(resolved!.effectiveInstance.instanceId, 'inst_c');
-      expect(
-        resolved.verificationState,
-        InviteCandidateVerificationState.verifiedEligible,
-      );
-    });
-
-    test(
-      'falls back to current unresolved candidate when cap is reached',
-      () async {
-        final api = FakeGroupMonitorApi(
-          enrichedInstancesByKey: {
-            _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-              hasCapacityForYou: false,
-            ),
-            _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-              hasCapacityForYou: true,
-              queueEnabled: true,
-              queueSize: 1,
-            ),
-            _key('wrld_alpha', 'inst_c'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_c',
-              userCount: 8,
-              hasCapacityForYou: false,
-            ),
-            _key('wrld_alpha', 'inst_d'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_d',
-              userCount: 7,
-              hasCapacityForYou: true,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_c',
-              userCount: 8,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_d',
-              userCount: 7,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-          maxCandidatesToVerify: 3,
-        );
-
-        expect(resolved, isNotNull);
-        expect(resolved!.effectiveInstance.instanceId, 'inst_d');
-        expect(
-          resolved.verificationState,
-          InviteCandidateVerificationState.unresolvedFallback,
-        );
-        expect(
-          api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_d')],
-          isNull,
-        );
-      },
-    );
-
-    test(
-      'skips cached full candidate when cap is reached and falls back later',
-      () async {
-        final api = FakeGroupMonitorApi(
-          enrichedInstancesByKey: {
-            _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-              hasCapacityForYou: false,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-              hasCapacityForYou: false,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_c',
-              userCount: 8,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-          maxCandidatesToVerify: 1,
-        );
-
-        expect(resolved, isNotNull);
-        expect(resolved!.effectiveInstance.instanceId, 'inst_c');
-        expect(
-          resolved.verificationState,
-          InviteCandidateVerificationState.unresolvedFallback,
-        );
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_a')], 1);
-        expect(
-          api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_b')],
-          isNull,
-        );
-        expect(
-          api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_c')],
-          isNull,
-        );
-      },
-    );
-
-    test(
-      'skips cached queued candidate when cap is reached and returns null',
-      () async {
-        final api = FakeGroupMonitorApi(
-          enrichedInstancesByKey: {
-            _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-              hasCapacityForYou: false,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-              hasCapacityForYou: true,
-              queueEnabled: true,
-              queueSize: 2,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-          maxCandidatesToVerify: 1,
-        );
-
-        expect(resolved, isNull);
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_a')], 1);
-        expect(
-          api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_b')],
-          isNull,
-        );
-      },
-    );
-
-    test(
-      'falls back to current unresolved candidate when later verification is unavailable',
-      () async {
-        final api = FakeGroupMonitorApi(
-          enrichedInstancesByKey: {
-            _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-              hasCapacityForYou: false,
-            ),
-            _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-              hasCapacityForYou: false,
-            ),
-          },
-          instanceErrorsByKey: {
-            _key('wrld_alpha', 'inst_c'): DioException(
-              requestOptions: RequestOptions(
-                path: '/instances/wrld_alpha:inst_c',
-              ),
-              response: Response<void>(
-                requestOptions: RequestOptions(
-                  path: '/instances/wrld_alpha:inst_c',
-                ),
-                statusCode: 429,
-              ),
-              type: DioExceptionType.badResponse,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_c',
-              userCount: 8,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-        );
-
-        expect(resolved, isNotNull);
-        expect(resolved!.effectiveInstance.instanceId, 'inst_c');
-        expect(
-          resolved.verificationState,
-          InviteCandidateVerificationState.unresolvedFallback,
-        );
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_a')], 1);
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_b')], 1);
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_c')], 1);
-      },
-    );
-
-    test(
-      'returns null when all verified candidates are full or queued',
-      () async {
-        final api = FakeGroupMonitorApi(
-          enrichedInstancesByKey: {
-            _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-              hasCapacityForYou: false,
-            ),
-            _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-              hasCapacityForYou: true,
-              queueEnabled: true,
-              queueSize: 3,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-        );
-
-        expect(resolved, isNull);
-      },
-    );
-
-    test(
-      'treats canRequestInvite false as advisory when capacity is valid',
-      () async {
-        final api = FakeGroupMonitorApi(
-          enrichedInstancesByKey: {
-            _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-              canRequestInvite: false,
-              hasCapacityForYou: true,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-        );
-
-        expect(resolved, isNotNull);
-        expect(resolved!.effectiveInstance.instanceId, 'inst_a');
-        expect(resolved.effectiveInstance.canRequestInvite, isFalse);
-        expect(
-          resolved.verificationState,
-          InviteCandidateVerificationState.verifiedEligible,
-        );
-      },
-    );
-
-    test(
-      'uses current unresolved fallback after cap is exhausted by proven-bad candidate',
-      () async {
-        final api = FakeGroupMonitorApi(
-          enrichedInstancesByKey: {
-            _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-              hasCapacityForYou: false,
-            ),
-            _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-              hasCapacityForYou: true,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-          maxCandidatesToVerify: 1,
-        );
-
-        expect(resolved, isNotNull);
-        expect(resolved!.effectiveInstance.instanceId, 'inst_b');
-        expect(
-          resolved.verificationState,
-          InviteCandidateVerificationState.unresolvedFallback,
-        );
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_a')], 1);
-        expect(
-          api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_b')],
-          isNull,
-        );
-      },
-    );
-
-    test(
-      'skips a 404 candidate and selects the next verified candidate',
-      () async {
-        final api = FakeGroupMonitorApi(
-          enrichedInstancesByKey: {
-            _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-              hasCapacityForYou: true,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-        );
-
-        expect(resolved, isNotNull);
-        expect(resolved!.effectiveInstance.instanceId, 'inst_b');
-        expect(
-          resolved.verificationState,
-          InviteCandidateVerificationState.verifiedEligible,
-        );
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_a')], 1);
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_b')], 1);
-      },
-    );
-
-    test(
-      'skips an empty response candidate and selects the next verified candidate',
-      () async {
-        final api = FakeGroupMonitorApi(
-          enrichedInstancesByKey: {
-            _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-              hasCapacityForYou: true,
-            ),
-          },
-          nullInstanceResponseKeys: {_key('wrld_alpha', 'inst_a')},
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-        );
-
-        expect(resolved, isNotNull);
-        expect(resolved!.effectiveInstance.instanceId, 'inst_b');
-        expect(
-          resolved.verificationState,
-          InviteCandidateVerificationState.verifiedEligible,
-        );
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_a')], 1);
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_b')], 1);
-      },
-    );
-
-    test(
-      'does not let an invalid candidate exhaust the verification cap',
-      () async {
-        final api = FakeGroupMonitorApi(
-          enrichedInstancesByKey: {
-            _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-              hasCapacityForYou: true,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-          maxCandidatesToVerify: 1,
-        );
-
-        expect(resolved, isNotNull);
-        expect(resolved!.effectiveInstance.instanceId, 'inst_b');
-        expect(
-          resolved.verificationState,
-          InviteCandidateVerificationState.verifiedEligible,
-        );
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_a')], 1);
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_b')], 1);
-      },
-    );
-
-    test(
-      'falls back to current candidate when first verification is transiently unavailable',
-      () async {
-        final api = FakeGroupMonitorApi(
-          instanceErrorsByKey: {
-            _key('wrld_alpha', 'inst_a'): DioException(
-              requestOptions: RequestOptions(
-                path: '/instances/wrld_alpha:inst_a',
-              ),
-              response: Response<void>(
-                requestOptions: RequestOptions(
-                  path: '/instances/wrld_alpha:inst_a',
-                ),
-                statusCode: 429,
-              ),
-              type: DioExceptionType.badResponse,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-        );
-
-        expect(resolved, isNotNull);
-        expect(resolved!.effectiveInstance.instanceId, 'inst_a');
-        expect(
-          resolved.verificationState,
-          InviteCandidateVerificationState.unresolvedFallback,
-        );
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_a')], 1);
-        expect(
-          api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_b')],
-          isNull,
-        );
-      },
-    );
-
-    test(
-      'falls back to current candidate when first verification hits a server error',
-      () async {
-        final api = FakeGroupMonitorApi(
-          instanceErrorsByKey: {
-            _key('wrld_alpha', 'inst_a'): DioException(
-              requestOptions: RequestOptions(
-                path: '/instances/wrld_alpha:inst_a',
-              ),
-              response: Response<void>(
-                requestOptions: RequestOptions(
-                  path: '/instances/wrld_alpha:inst_a',
-                ),
-                statusCode: 503,
-              ),
-              type: DioExceptionType.badResponse,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-        );
-
-        expect(resolved, isNotNull);
-        expect(resolved!.effectiveInstance.instanceId, 'inst_a');
-        expect(
-          resolved.verificationState,
-          InviteCandidateVerificationState.unresolvedFallback,
-        );
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_a')], 1);
-        expect(
-          api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_b')],
-          isNull,
-        );
-      },
-    );
-
-    test(
-      'skips invalid identifiers before selecting a verified candidate',
-      () async {
-        final api = FakeGroupMonitorApi(
-          enrichedInstancesByKey: {
-            _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-              hasCapacityForYou: true,
-            ),
-          },
-        );
-
-        final resolved = await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [
-            _buildDiscoveryInstance(
-              worldId: '',
-              instanceId: 'inst_a',
-              userCount: 10,
-            ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-            ),
-          ],
-          groupId: 'grp_alpha',
-          lane: ApiRequestLane.groupBoost,
-          laneLabel: 'boost',
-        );
-
-        expect(resolved, isNotNull);
-        expect(resolved!.effectiveInstance.instanceId, 'inst_b');
-        expect(
-          resolved.verificationState,
-          InviteCandidateVerificationState.verifiedEligible,
-        );
-        expect(api.getInstanceCallCountByKey[_key('', 'inst_a')], isNull);
-        expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_b')], 1);
-      },
-    );
-
-    test('returns null when every candidate has invalid identifiers', () async {
-      final api = FakeGroupMonitorApi();
-
-      final resolved = await resolver.resolveBestAutoInviteTarget(
-        api: api,
+        instanceErrorsByKey: const {},
+        nullInstanceResponseKeys: const {},
+        maxCandidatesToVerify: 3,
+        expectedInstanceId: 'inst_a',
+        expectedCallCounts: {_key('wrld_alpha', 'inst_a'): 1},
+      ),
+      (
+        description:
+            'skips invalid identifiers before selecting verified candidate',
         discoveryInstances: [
           _buildDiscoveryInstance(
             worldId: '',
@@ -967,72 +157,367 @@ void main() {
           ),
           _buildDiscoveryInstance(
             worldId: 'wrld_alpha',
-            instanceId: '',
+            instanceId: 'inst_b',
             userCount: 9,
           ),
         ],
-        groupId: 'grp_alpha',
-        lane: ApiRequestLane.groupBoost,
-        laneLabel: 'boost',
-      );
+        enrichedInstancesByKey: {
+          _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+            hasCapacityForYou: true,
+          ),
+        },
+        instanceErrorsByKey: const {},
+        nullInstanceResponseKeys: const {},
+        maxCandidatesToVerify: 1,
+        expectedInstanceId: 'inst_b',
+        expectedCallCounts: {
+          _key('', 'inst_a'): null,
+          _key('wrld_alpha', 'inst_b'): 1,
+        },
+      ),
+      (
+        description: 'skips verified full candidate and falls through',
+        discoveryInstances: [
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+          ),
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+          ),
+        ],
+        enrichedInstancesByKey: {
+          _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+            hasCapacityForYou: false,
+          ),
+          _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+            hasCapacityForYou: true,
+          ),
+        },
+        instanceErrorsByKey: const {},
+        nullInstanceResponseKeys: const {},
+        maxCandidatesToVerify: 3,
+        expectedInstanceId: 'inst_b',
+        expectedCallCounts: {
+          _key('wrld_alpha', 'inst_a'): 1,
+          _key('wrld_alpha', 'inst_b'): 1,
+        },
+      ),
+      (
+        description:
+            'skips verified queued candidate when queue size is greater than zero',
+        discoveryInstances: [
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+          ),
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+          ),
+        ],
+        enrichedInstancesByKey: {
+          _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+            hasCapacityForYou: true,
+            queueEnabled: true,
+            queueSize: 2,
+          ),
+          _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+            hasCapacityForYou: true,
+          ),
+        },
+        instanceErrorsByKey: const {},
+        nullInstanceResponseKeys: const {},
+        maxCandidatesToVerify: 3,
+        expectedInstanceId: 'inst_b',
+        expectedCallCounts: {
+          _key('wrld_alpha', 'inst_a'): 1,
+          _key('wrld_alpha', 'inst_b'): 1,
+        },
+      ),
+      (
+        description:
+            'keeps queue-enabled candidate eligible when queue is empty',
+        discoveryInstances: [
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+          ),
+        ],
+        enrichedInstancesByKey: {
+          _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+            hasCapacityForYou: true,
+            queueEnabled: true,
+            queueSize: 0,
+          ),
+        },
+        instanceErrorsByKey: const {},
+        nullInstanceResponseKeys: const {},
+        maxCandidatesToVerify: 1,
+        expectedInstanceId: 'inst_a',
+        expectedCallCounts: {_key('wrld_alpha', 'inst_a'): 1},
+      ),
+      (
+        description:
+            'falls back to unresolved candidate on transient verification failure',
+        discoveryInstances: [
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+          ),
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+          ),
+        ],
+        enrichedInstancesByKey: const {},
+        instanceErrorsByKey: {
+          _key('wrld_alpha', 'inst_a'): DioException(
+            requestOptions: RequestOptions(
+              path: '/instances/wrld_alpha:inst_a',
+            ),
+            response: Response<void>(
+              requestOptions: RequestOptions(
+                path: '/instances/wrld_alpha:inst_a',
+              ),
+              statusCode: 429,
+            ),
+            type: DioExceptionType.badResponse,
+          ),
+        },
+        nullInstanceResponseKeys: const {},
+        maxCandidatesToVerify: 3,
+        expectedInstanceId: 'inst_a',
+        expectedCallCounts: {
+          _key('wrld_alpha', 'inst_a'): 1,
+          _key('wrld_alpha', 'inst_b'): null,
+        },
+      ),
+      (
+        description:
+            'skips a 404 candidate and selects the next verified candidate',
+        discoveryInstances: [
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+          ),
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+          ),
+        ],
+        enrichedInstancesByKey: {
+          _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+            hasCapacityForYou: true,
+          ),
+        },
+        instanceErrorsByKey: const {},
+        nullInstanceResponseKeys: const {},
+        maxCandidatesToVerify: 3,
+        expectedInstanceId: 'inst_b',
+        expectedCallCounts: {
+          _key('wrld_alpha', 'inst_a'): 1,
+          _key('wrld_alpha', 'inst_b'): 1,
+        },
+      ),
+      (
+        description:
+            'falls back to current unresolved candidate when verification cap is reached',
+        discoveryInstances: [
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+          ),
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+          ),
+        ],
+        enrichedInstancesByKey: {
+          _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+            hasCapacityForYou: false,
+          ),
+          _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+            hasCapacityForYou: true,
+          ),
+        },
+        instanceErrorsByKey: const {},
+        nullInstanceResponseKeys: const {},
+        maxCandidatesToVerify: 1,
+        expectedInstanceId: 'inst_b',
+        expectedCallCounts: {
+          _key('wrld_alpha', 'inst_a'): 1,
+          _key('wrld_alpha', 'inst_b'): null,
+        },
+      ),
+      (
+        description:
+            'returns null when all candidates are invalid or verified unavailable',
+        discoveryInstances: [
+          _buildDiscoveryInstance(
+            worldId: '',
+            instanceId: 'inst_a',
+            userCount: 10,
+          ),
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+          ),
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_c',
+            userCount: 8,
+          ),
+        ],
+        enrichedInstancesByKey: {
+          _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+            hasCapacityForYou: false,
+          ),
+          _key('wrld_alpha', 'inst_c'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_c',
+            userCount: 8,
+            hasCapacityForYou: true,
+            queueEnabled: true,
+            queueSize: 3,
+          ),
+        },
+        instanceErrorsByKey: const {},
+        nullInstanceResponseKeys: const {},
+        maxCandidatesToVerify: 3,
+        expectedInstanceId: null,
+        expectedCallCounts: {
+          _key('', 'inst_a'): null,
+          _key('wrld_alpha', 'inst_b'): 1,
+          _key('wrld_alpha', 'inst_c'): 1,
+        },
+      ),
+    ];
 
-      expect(resolved, isNull);
-    });
+    for (final scenario in scenarios) {
+      test(scenario.description, () async {
+        final api = FakeGroupMonitorApi(
+          enrichedInstancesByKey: scenario.enrichedInstancesByKey,
+          instanceErrorsByKey: scenario.instanceErrorsByKey,
+          nullInstanceResponseKeys: scenario.nullInstanceResponseKeys,
+        );
+        final observedLanes = <ApiRequestLane>[];
+        final resolver = _buildResolver(api, observedLanes: observedLanes);
+
+        final resolved = await resolver.resolveBestAutoInviteTarget(
+          discoveryInstances: scenario.discoveryInstances,
+          groupId: 'grp_alpha',
+          lane: ApiRequestLane.groupBoost,
+          laneLabel: 'boost',
+          maxCandidatesToVerify: scenario.maxCandidatesToVerify,
+        );
+
+        expect(resolved?.instance.instanceId, scenario.expectedInstanceId);
+        for (final expected in scenario.expectedCallCounts.entries) {
+          expect(api.getInstanceCallCountByKey[expected.key], expected.value);
+        }
+        expect(observedLanes, everyElement(ApiRequestLane.groupBoost));
+      });
+    }
   });
 
-  group(
-    'InviteCandidateResolver.enrichHighestPopulationInstanceForDisplay',
-    () {
-      test(
-        'only applies verified negative metadata to the enriched candidate',
-        () async {
-          final resolver = InviteCandidateResolver();
-          final api = FakeGroupMonitorApi(
-            enrichedInstancesByKey: {
-              _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
-                worldId: 'wrld_alpha',
-                instanceId: 'inst_a',
-                userCount: 10,
-                hasCapacityForYou: false,
-                queueEnabled: true,
-                queueSize: 3,
-              ),
-            },
-          );
-          final discoveryInstances = [
-            _buildDiscoveryInstance(
+  group('InviteCandidateResolver.normalizeAndEnrichFetchedGroupInstances', () {
+    test(
+      'applies verified metadata only to the highest-population candidate',
+      () async {
+        final api = FakeGroupMonitorApi(
+          enrichedInstancesByKey: {
+            _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
               worldId: 'wrld_alpha',
               instanceId: 'inst_a',
               userCount: 10,
+              hasCapacityForYou: false,
+              queueEnabled: true,
+              queueSize: 3,
             ),
-            _buildDiscoveryInstance(
-              worldId: 'wrld_alpha',
-              instanceId: 'inst_b',
-              userCount: 9,
-            ),
-          ];
-
-          final effective = await resolver
-              .enrichHighestPopulationInstanceForDisplay(
-                api: api,
-                discoveryInstances: discoveryInstances,
-                groupId: 'grp_alpha',
-                lane: ApiRequestLane.groupBoost,
-                laneLabel: 'boost',
-              );
-
-          expect(effective[0].hasCapacityForYou, isFalse);
-          expect(effective[0].queueEnabled, isTrue);
-          expect(effective[0].queueSize, 3);
-          expect(effective[1].hasCapacityForYou, isNull);
-          expect(effective[1].queueEnabled, isFalse);
-          expect(effective[1].queueSize, 0);
-        },
-      );
-
-      test('reuses cached enrichment across repeated resolutions', () async {
-        final resolver = InviteCandidateResolver();
+          },
+        );
+        final resolver = _buildResolver(api);
         final world = buildTestWorld(id: 'wrld_alpha', name: 'World');
+
+        final effective = await resolver
+            .normalizeAndEnrichFetchedGroupInstances(
+              groupInstances: [
+                buildTestGroupInstance(
+                  instanceId: 'inst_a',
+                  world: world,
+                  memberCount: 10,
+                ),
+                buildTestGroupInstance(
+                  instanceId: 'inst_b',
+                  world: world,
+                  memberCount: 9,
+                ),
+              ],
+              groupId: 'grp_alpha',
+              retainedKeys: {
+                _key('wrld_alpha', 'inst_a'),
+                _key('wrld_alpha', 'inst_b'),
+              },
+              lane: ApiRequestLane.groupBoost,
+              laneLabel: 'boost',
+            );
+
+        expect(effective[0].hasCapacityForYou, isFalse);
+        expect(effective[0].queueEnabled, isTrue);
+        expect(effective[0].queueSize, 3);
+        expect(effective[1].hasCapacityForYou, isNull);
+        expect(effective[1].queueEnabled, isFalse);
+        expect(effective[1].queueSize, 0);
+      },
+    );
+
+    test(
+      'reuses cached enrichment across repeated fetch normalization',
+      () async {
         final api = FakeGroupMonitorApi(
           enrichedInstancesByKey: {
             _key('wrld_alpha', 'inst_a'): _buildEnrichedInstance(
@@ -1043,36 +528,117 @@ void main() {
             ),
           },
         );
-        final discoveryInstance = normalizeGroupInstance(
-          groupInstance: buildTestGroupInstance(
+        final resolver = _buildResolver(api);
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World');
+        final groupInstances = [
+          buildTestGroupInstance(
             instanceId: 'inst_a',
             world: world,
             memberCount: 10,
           ),
-          groupId: 'grp_alpha',
-        );
+        ];
 
-        await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [discoveryInstance],
+        await resolver.normalizeAndEnrichFetchedGroupInstances(
+          groupInstances: groupInstances,
           groupId: 'grp_alpha',
+          retainedKeys: {_key('wrld_alpha', 'inst_a')},
           lane: ApiRequestLane.groupBoost,
           laneLabel: 'boost',
-          maxCandidatesToVerify:
-              AppConstants.groupInstanceInviteVerificationMaxCandidates,
         );
-        await resolver.resolveBestAutoInviteTarget(
-          api: api,
-          discoveryInstances: [discoveryInstance],
+        await resolver.normalizeAndEnrichFetchedGroupInstances(
+          groupInstances: groupInstances,
           groupId: 'grp_alpha',
+          retainedKeys: {_key('wrld_alpha', 'inst_a')},
           lane: ApiRequestLane.groupBoost,
           laneLabel: 'boost',
-          maxCandidatesToVerify:
-              AppConstants.groupInstanceInviteVerificationMaxCandidates,
         );
 
         expect(api.getInstanceCallCountByKey[_key('wrld_alpha', 'inst_a')], 1);
-      });
-    },
-  );
+      },
+    );
+
+    test(
+      'preserves transient failure cooldown for instances that briefly disappear',
+      () async {
+        final key = _key('wrld_alpha', 'inst_a');
+        final api = FakeGroupMonitorApi(
+          instanceErrorsByKey: {
+            key: DioException(
+              requestOptions: RequestOptions(
+                path: '/instances/wrld_alpha:inst_a',
+              ),
+              response: Response<void>(
+                requestOptions: RequestOptions(
+                  path: '/instances/wrld_alpha:inst_a',
+                ),
+                statusCode: 429,
+              ),
+              type: DioExceptionType.badResponse,
+            ),
+          },
+        );
+        final resolver = _buildResolver(api);
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World');
+        final groupInstances = [
+          buildTestGroupInstance(
+            instanceId: 'inst_a',
+            world: world,
+            memberCount: 10,
+          ),
+        ];
+
+        await resolver.normalizeAndEnrichFetchedGroupInstances(
+          groupInstances: groupInstances,
+          groupId: 'grp_alpha',
+          retainedKeys: {key},
+          lane: ApiRequestLane.groupBoost,
+          laneLabel: 'boost',
+        );
+        expect(api.getInstanceCallCountByKey[key], 1);
+
+        resolver.pruneState(DateTime.now(), retainedKeys: const {});
+
+        api.instanceErrorsByKey.remove(key);
+        api.enrichedInstancesByKey[key] = _buildEnrichedInstance(
+          worldId: 'wrld_alpha',
+          instanceId: 'inst_a',
+          userCount: 10,
+          hasCapacityForYou: true,
+        );
+
+        await resolver.normalizeAndEnrichFetchedGroupInstances(
+          groupInstances: groupInstances,
+          groupId: 'grp_alpha',
+          retainedKeys: {key},
+          lane: ApiRequestLane.groupBoost,
+          laneLabel: 'boost',
+        );
+        expect(
+          api.getInstanceCallCountByKey[key],
+          1,
+          reason: 'active cooldown should suppress re-fetch after reappearance',
+        );
+
+        resolver.pruneState(
+          DateTime.now().add(
+            const Duration(
+              seconds:
+                  AppConstants.groupInstanceEnrichmentFailureCooldownSeconds +
+                  1,
+            ),
+          ),
+          retainedKeys: const {},
+        );
+
+        await resolver.normalizeAndEnrichFetchedGroupInstances(
+          groupInstances: groupInstances,
+          groupId: 'grp_alpha',
+          retainedKeys: {key},
+          lane: ApiRequestLane.groupBoost,
+          laneLabel: 'boost',
+        );
+        expect(api.getInstanceCallCountByKey[key], 2);
+      },
+    );
+  });
 }

@@ -1,16 +1,20 @@
 import 'package:dio/dio.dart';
-import 'package:vrchat_dart/vrchat_dart.dart';
+import 'package:vrchat_dart/vrchat_dart.dart' hide Response;
 
 import '../constants/app_constants.dart';
 import '../models/group_instance_with_group.dart';
 import '../providers/group_instance_normalization.dart';
 import '../providers/group_invite_and_boost.dart';
-import '../providers/group_monitor_api.dart';
 import 'api_rate_limit_coordinator.dart';
 import '../utils/app_logger.dart';
 import '../utils/dedupe_tracker.dart';
 
-enum InviteCandidateVerificationState { verifiedEligible, unresolvedFallback }
+typedef InviteCandidateResolverFetchInstance =
+    Future<Response<Instance>> Function({
+      required String worldId,
+      required String instanceId,
+      required ApiRequestLane lane,
+    });
 
 enum _InviteCandidateVerificationOutcome {
   verifiedEligible,
@@ -31,105 +35,73 @@ typedef _EnrichmentLookupResult = ({
   _EnrichmentFailureClassification? failureClassification,
 });
 
-class ResolvedInviteCandidate {
-  const ResolvedInviteCandidate({
-    required this.discoveryInstance,
-    required this.effectiveInstance,
-    required this.verificationState,
-  });
-
-  final Instance discoveryInstance;
-  final Instance effectiveInstance;
-  final InviteCandidateVerificationState verificationState;
-
-  GroupInstanceWithGroup toGroupInstanceWithGroup(String groupId) {
-    return GroupInstanceWithGroup(
-      instance: effectiveInstance,
-      groupId: groupId,
-    );
-  }
-}
+typedef _EnrichmentState = ({
+  Instance? instance,
+  DateTime? fetchedAt,
+  DateTime? blockedUntil,
+  _EnrichmentFailureClassification? failureClassification,
+});
 
 class InviteCandidateResolver {
-  final Map<String, ({Instance instance, DateTime fetchedAt})>
-  _enrichedInstanceByKey =
-      <String, ({Instance instance, DateTime fetchedAt})>{};
-  final Map<String, DateTime> _enrichmentFailureUntilByKey =
-      <String, DateTime>{};
-  final Map<String, _EnrichmentFailureClassification>
-  _enrichmentFailureClassificationByKey =
-      <String, _EnrichmentFailureClassification>{};
+  InviteCandidateResolver({
+    required InviteCandidateResolverFetchInstance fetchInstance,
+  }) : _fetchInstance = fetchInstance;
+
+  final InviteCandidateResolverFetchInstance _fetchInstance;
+  final Map<String, _EnrichmentState> _enrichmentStateByKey =
+      <String, _EnrichmentState>{};
   final _enrichmentFailureLogDedupe = DedupeTracker();
 
   void pruneState(DateTime now, {Set<String> retainedKeys = const {}}) {
     _enrichmentFailureLogDedupe.prune(now);
-    _enrichmentFailureUntilByKey.removeWhere((key, blockedUntil) {
-      final shouldRemove = !blockedUntil.isAfter(now);
-      if (shouldRemove) {
-        _enrichmentFailureClassificationByKey.remove(key);
+    for (final key in _enrichmentStateByKey.keys.toList(growable: false)) {
+      final state = _normalizedStateForKey(key, now);
+      if (state == null) {
+        _enrichmentStateByKey.remove(key);
+        continue;
       }
-      return shouldRemove;
-    });
-    _enrichedInstanceByKey.removeWhere(
-      (_, cached) =>
-          now.difference(cached.fetchedAt) >
-          const Duration(
-            seconds: AppConstants.groupInstanceEnrichmentTtlSeconds,
-          ),
-    );
-    _enrichedInstanceByKey.removeWhere((key, _) => !retainedKeys.contains(key));
-    _enrichmentFailureClassificationByKey.removeWhere(
-      (key, _) =>
-          !_enrichmentFailureUntilByKey.containsKey(key) &&
-          !retainedKeys.contains(key),
-    );
+      if (state.blockedUntil != null) {
+        continue;
+      }
+      if (!retainedKeys.contains(key)) {
+        _enrichmentStateByKey.remove(key);
+      }
+    }
   }
 
-  Instance? cachedEnrichedInstance({
-    required String worldId,
-    required String instanceId,
-    required DateTime now,
-  }) {
-    final key = groupInstanceStableKey(
-      worldId: worldId,
-      instanceId: instanceId,
-    );
-    final cached = _enrichedInstanceByKey[key];
-    if (cached == null) {
-      return null;
-    }
-
-    final ttl = Duration(
-      seconds: AppConstants.groupInstanceEnrichmentTtlSeconds,
-    );
-    if (now.difference(cached.fetchedAt) > ttl) {
-      _enrichedInstanceByKey.remove(key);
-      return null;
-    }
-
-    return cached.instance;
-  }
-
-  Future<List<Instance>> enrichHighestPopulationInstanceForDisplay({
-    required GroupMonitorApi api,
-    required List<Instance> discoveryInstances,
+  Future<List<Instance>> normalizeAndEnrichFetchedGroupInstances({
+    required List<GroupInstance> groupInstances,
     required String groupId,
+    required Set<String> retainedKeys,
     required ApiRequestLane lane,
     required String laneLabel,
-    void Function(ApiRequestLane lane)? onApiCall,
   }) async {
+    final now = DateTime.now();
+    pruneState(now, retainedKeys: retainedKeys);
+
+    final discoveryInstances = groupInstances
+        .map(
+          (groupInstance) => normalizeGroupInstance(
+            groupInstance: groupInstance,
+            groupId: groupId,
+            enrichedInstance: _cachedEnrichedInstance(
+              worldId: groupInstance.world.id,
+              instanceId: groupInstance.instanceId,
+              now: now,
+            ),
+          ),
+        )
+        .toList(growable: false);
     if (discoveryInstances.isEmpty) {
       return discoveryInstances;
     }
 
     final best = _sortDiscoveryInstances(discoveryInstances).first;
     final result = await _loadEnrichedInstance(
-      api: api,
       discoveryInstance: best,
       groupId: groupId,
       lane: lane,
       laneLabel: laneLabel,
-      onApiCall: onApiCall,
       reasonPrefix: 'display enrichment',
     );
     final enriched = result.instance;
@@ -155,15 +127,13 @@ class InviteCandidateResolver {
     return nextInstances;
   }
 
-  Future<ResolvedInviteCandidate?> resolveBestAutoInviteTarget({
-    required GroupMonitorApi api,
+  Future<GroupInstanceWithGroup?> resolveBestAutoInviteTarget({
     required List<Instance> discoveryInstances,
     required String groupId,
     required ApiRequestLane lane,
     required String laneLabel,
     int maxCandidatesToVerify =
         AppConstants.groupInstanceInviteVerificationMaxCandidates,
-    void Function(ApiRequestLane lane)? onApiCall,
   }) async {
     if (discoveryInstances.isEmpty) {
       return null;
@@ -205,8 +175,8 @@ class InviteCandidateResolver {
           '$verifiedCount candidates ($laneLabel)',
           subCategory: 'group_monitor',
         );
-        return _buildFallbackCandidate(
-          candidate: candidate,
+        return _buildResolvedCandidate(
+          instance: candidate,
           groupId: groupId,
           laneLabel: laneLabel,
           reason: 'verification_cap_reached',
@@ -214,20 +184,16 @@ class InviteCandidateResolver {
       }
 
       final verification = await _verifyAutoInviteCandidate(
-        api: api,
         discoveryInstance: candidate,
         groupId: groupId,
         lane: lane,
         laneLabel: laneLabel,
-        onApiCall: onApiCall,
       );
       switch (verification.outcome) {
         case _InviteCandidateVerificationOutcome.verifiedEligible:
-          return ResolvedInviteCandidate(
-            discoveryInstance: candidate,
-            effectiveInstance: verification.effectiveInstance!,
-            verificationState:
-                InviteCandidateVerificationState.verifiedEligible,
+          return GroupInstanceWithGroup(
+            instance: verification.effectiveInstance!,
+            groupId: groupId,
           );
         case _InviteCandidateVerificationOutcome.fullOrQueued:
           verifiedCount += 1;
@@ -235,8 +201,8 @@ class InviteCandidateResolver {
         case _InviteCandidateVerificationOutcome.invalid:
           continue;
         case _InviteCandidateVerificationOutcome.unresolvedFallback:
-          return _buildFallbackCandidate(
-            candidate: candidate,
+          return _buildResolvedCandidate(
+            instance: candidate,
             groupId: groupId,
             laneLabel: laneLabel,
             reason: 'verification_unresolved',
@@ -260,13 +226,11 @@ class InviteCandidateResolver {
   }
 
   Future<_EnrichmentLookupResult> _loadEnrichedInstance({
-    required GroupMonitorApi api,
     required Instance discoveryInstance,
     required String groupId,
     required ApiRequestLane lane,
     required String laneLabel,
     required String reasonPrefix,
-    void Function(ApiRequestLane lane)? onApiCall,
   }) async {
     if (!hasValidSelfInviteIdentifiers(discoveryInstance)) {
       return (instance: null, failureClassification: null);
@@ -277,22 +241,7 @@ class InviteCandidateResolver {
       worldId: discoveryInstance.worldId,
       instanceId: discoveryInstance.instanceId,
     );
-    final cachedEntry = _enrichedInstanceByKey[key];
-    if (cachedEntry != null &&
-        now.difference(cachedEntry.fetchedAt) >
-            const Duration(
-              seconds: AppConstants.groupInstanceEnrichmentTtlSeconds,
-            )) {
-      _enrichedInstanceByKey.remove(key);
-      AppLogger.debug(
-        'Re-enriching instance after cache expiry for $groupId '
-        '${discoveryInstance.worldId}:${discoveryInstance.instanceId} '
-        '($laneLabel)',
-        subCategory: 'group_monitor',
-      );
-    }
-
-    final cached = cachedEnrichedInstance(
+    final cached = _cachedEnrichedInstance(
       worldId: discoveryInstance.worldId,
       instanceId: discoveryInstance.instanceId,
       now: now,
@@ -307,8 +256,8 @@ class InviteCandidateResolver {
       return (instance: cached, failureClassification: null);
     }
 
-    final blockedUntil = _enrichmentFailureUntilByKey[key];
-    if (blockedUntil != null && blockedUntil.isAfter(now)) {
+    final state = _normalizedStateForKey(key, now);
+    if (state?.blockedUntil?.isAfter(now) ?? false) {
       AppLogger.debug(
         'Skipping $reasonPrefix due to cooldown for $groupId '
         '${discoveryInstance.worldId}:${discoveryInstance.instanceId} '
@@ -317,7 +266,7 @@ class InviteCandidateResolver {
       );
       return (
         instance: null,
-        failureClassification: _enrichmentFailureClassificationByKey[key],
+        failureClassification: state!.failureClassification,
       );
     }
 
@@ -328,15 +277,13 @@ class InviteCandidateResolver {
       subCategory: 'group_monitor',
     );
 
-    onApiCall?.call(lane);
     try {
-      final response = await api
-          .getInstance(
+      final response =
+          await _fetchInstance(
             worldId: discoveryInstance.worldId,
             instanceId: discoveryInstance.instanceId,
             lane: lane,
-          )
-          .timeout(
+          ).timeout(
             const Duration(
               seconds: AppConstants.groupInstancesRequestTimeoutSeconds,
             ),
@@ -358,9 +305,12 @@ class InviteCandidateResolver {
         );
       }
 
-      _enrichedInstanceByKey[key] = (instance: enriched, fetchedAt: now);
-      _enrichmentFailureUntilByKey.remove(key);
-      _enrichmentFailureClassificationByKey.remove(key);
+      _enrichmentStateByKey[key] = (
+        instance: enriched,
+        fetchedAt: now,
+        blockedUntil: null,
+        failureClassification: null,
+      );
       AppLogger.info(
         'Instance enrichment succeeded for $groupId '
         '${discoveryInstance.worldId}:${discoveryInstance.instanceId} '
@@ -370,8 +320,6 @@ class InviteCandidateResolver {
       return (instance: enriched, failureClassification: null);
     } on DioException catch (e, s) {
       final statusCode = e.response?.statusCode;
-      // VRChat instance-detail 404s are treated as invalid targets rather than
-      // transient verification failures.
       final classification = statusCode == 404
           ? _EnrichmentFailureClassification.invalid
           : _EnrichmentFailureClassification.unresolved;
@@ -409,20 +357,16 @@ class InviteCandidateResolver {
   }
 
   Future<_InviteCandidateVerificationResult> _verifyAutoInviteCandidate({
-    required GroupMonitorApi api,
     required Instance discoveryInstance,
     required String groupId,
     required ApiRequestLane lane,
     required String laneLabel,
-    void Function(ApiRequestLane lane)? onApiCall,
   }) async {
     final result = await _loadEnrichedInstance(
-      api: api,
       discoveryInstance: discoveryInstance,
       groupId: groupId,
       lane: lane,
       laneLabel: laneLabel,
-      onApiCall: onApiCall,
       reasonPrefix: 'auto-invite verification',
     );
     final enriched = result.instance;
@@ -477,26 +421,61 @@ class InviteCandidateResolver {
     );
   }
 
-  ResolvedInviteCandidate? _buildFallbackCandidate({
-    required Instance? candidate,
+  GroupInstanceWithGroup _buildResolvedCandidate({
+    required Instance instance,
     required String groupId,
     required String laneLabel,
     required String reason,
   }) {
-    if (candidate == null) {
-      return null;
-    }
     AppLogger.info(
       'Using unresolved auto-invite fallback candidate for group '
-      '$groupId (${candidate.worldId}:${candidate.instanceId}, '
-      'users=${candidate.nUsers}, reason=$reason, lane=$laneLabel)',
+      '$groupId (${instance.worldId}:${instance.instanceId}, '
+      'users=${instance.nUsers}, reason=$reason, lane=$laneLabel)',
       subCategory: 'group_monitor',
     );
-    return ResolvedInviteCandidate(
-      discoveryInstance: candidate,
-      effectiveInstance: candidate,
-      verificationState: InviteCandidateVerificationState.unresolvedFallback,
+    return GroupInstanceWithGroup(instance: instance, groupId: groupId);
+  }
+
+  Instance? _cachedEnrichedInstance({
+    required String worldId,
+    required String instanceId,
+    required DateTime now,
+  }) {
+    final key = groupInstanceStableKey(
+      worldId: worldId,
+      instanceId: instanceId,
     );
+    return _normalizedStateForKey(key, now)?.instance;
+  }
+
+  _EnrichmentState? _normalizedStateForKey(String key, DateTime now) {
+    final state = _enrichmentStateByKey[key];
+    if (state == null) {
+      return null;
+    }
+
+    final hasFreshInstance =
+        state.instance != null &&
+        state.fetchedAt != null &&
+        now.difference(state.fetchedAt!) <=
+            const Duration(
+              seconds: AppConstants.groupInstanceEnrichmentTtlSeconds,
+            );
+    final isBlocked = state.blockedUntil?.isAfter(now) ?? false;
+
+    if (!hasFreshInstance && !isBlocked) {
+      _enrichmentStateByKey.remove(key);
+      return null;
+    }
+
+    final normalized = (
+      instance: hasFreshInstance ? state.instance : null,
+      fetchedAt: hasFreshInstance ? state.fetchedAt : null,
+      blockedUntil: isBlocked ? state.blockedUntil : null,
+      failureClassification: isBlocked ? state.failureClassification : null,
+    );
+    _enrichmentStateByKey[key] = normalized;
+    return normalized;
   }
 
   void _recordEnrichmentFailure({
@@ -510,12 +489,16 @@ class InviteCandidateResolver {
     StackTrace? stackTrace,
   }) {
     final now = DateTime.now();
-    _enrichmentFailureUntilByKey[key] = now.add(
-      const Duration(
-        seconds: AppConstants.groupInstanceEnrichmentFailureCooldownSeconds,
+    _enrichmentStateByKey[key] = (
+      instance: null,
+      fetchedAt: null,
+      blockedUntil: now.add(
+        const Duration(
+          seconds: AppConstants.groupInstanceEnrichmentFailureCooldownSeconds,
+        ),
       ),
+      failureClassification: classification,
     );
-    _enrichmentFailureClassificationByKey[key] = classification;
 
     final logKey = '$laneLabel|$key|$reason';
     final dedupeTtl = const Duration(

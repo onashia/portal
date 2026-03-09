@@ -89,7 +89,25 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   GroupMonitorState build() {
     _inviteService = ref.read(inviteServiceProvider);
     _autoInviteService = AutoInviteService(_inviteService);
-    _inviteCandidateResolver = InviteCandidateResolver();
+    _inviteCandidateResolver = InviteCandidateResolver(
+      fetchInstance:
+          ({
+            required String worldId,
+            required String instanceId,
+            required ApiRequestLane lane,
+          }) {
+            ref
+                .read(apiCallCounterProvider.notifier)
+                .incrementApiCall(lane: lane);
+            return ref
+                .read(groupMonitorApiProvider)
+                .getInstance(
+                  worldId: worldId,
+                  instanceId: instanceId,
+                  lane: lane,
+                );
+          },
+    );
     _relayHintService = ref.read(relayHintServiceProvider);
     if (AppConstants.relayAssistEnabled && !_relayHintService.isConfigured) {
       AppLogger.warning(
