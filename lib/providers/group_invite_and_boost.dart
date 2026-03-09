@@ -14,7 +14,11 @@ bool hasValidSelfInviteIdentifiers(Instance instance) {
 }
 
 bool shouldDeprioritizeSelfInviteForCapacity(Instance instance) {
-  return instance.hasCapacityForYou == false;
+  return isSelfInviteUnavailableForCapacity(instance);
+}
+
+bool isSelfInviteUnavailableForCapacity(Instance instance) {
+  return instance.hasCapacityForYou == false || instance.queueSize > 0;
 }
 
 ({

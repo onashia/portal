@@ -48,6 +48,7 @@ class AppConstants {
   static const int groupInstanceEnrichmentTtlSeconds = 30;
   static const int groupInstanceEnrichmentFailureCooldownSeconds = 10;
   static const int groupInstanceEnrichmentLogDedupeSeconds = 30;
+  static const int groupInstanceInviteVerificationMaxCandidates = 3;
   static const int boostPollingIntervalSeconds = 10;
   static const int boostPollingJitterSeconds = 2;
   static const int boostDurationMinutes = 15;

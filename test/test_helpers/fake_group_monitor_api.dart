@@ -8,6 +8,7 @@ class FakeGroupMonitorApi implements GroupMonitorApi {
     List<LimitedUserGroups>? userGroups,
     Map<String, List<GroupInstance>>? groupInstancesByGroupId,
     Map<String, Instance>? enrichedInstancesByKey,
+    Set<String>? nullInstanceResponseKeys,
     Map<String, World>? worldsById,
     this.userGroupsError,
     Map<String, Object>? groupInstancesErrorsByGroupId,
@@ -17,6 +18,7 @@ class FakeGroupMonitorApi implements GroupMonitorApi {
        groupInstancesByGroupId =
            groupInstancesByGroupId ?? <String, List<GroupInstance>>{},
        enrichedInstancesByKey = enrichedInstancesByKey ?? <String, Instance>{},
+       nullInstanceResponseKeys = nullInstanceResponseKeys ?? <String>{},
        worldsById = worldsById ?? <String, World>{},
        groupInstancesErrorsByGroupId =
            groupInstancesErrorsByGroupId ?? <String, Object>{},
@@ -26,6 +28,7 @@ class FakeGroupMonitorApi implements GroupMonitorApi {
   final List<LimitedUserGroups> userGroups;
   final Map<String, List<GroupInstance>> groupInstancesByGroupId;
   final Map<String, Instance> enrichedInstancesByKey;
+  final Set<String> nullInstanceResponseKeys;
   final Map<String, World> worldsById;
   final Object? userGroupsError;
   final Map<String, Object> groupInstancesErrorsByGroupId;
@@ -77,6 +80,15 @@ class FakeGroupMonitorApi implements GroupMonitorApi {
     final error = instanceErrorsByKey[key];
     if (error != null) {
       throw error;
+    }
+
+    if (nullInstanceResponseKeys.contains(key)) {
+      return Response<Instance>(
+        data: null as dynamic,
+        requestOptions: RequestOptions(path: '/instances/$worldId:$instanceId'),
+        statusCode: 200,
+        statusMessage: 'OK',
+      );
     }
 
     final instance = enrichedInstancesByKey[key];

@@ -153,6 +153,59 @@ class _ThrowingInviteServiceFake implements InviteService {
   }
 }
 
+class _RecordingInviteServiceFake implements InviteService {
+  final List<Instance> invitedInstances = <Instance>[];
+  final Completer<void> started = Completer<void>();
+
+  @override
+  Future<void> inviteSelfToInstance(Instance instance) async {
+    invitedInstances.add(instance);
+    if (!started.isCompleted) {
+      started.complete();
+    }
+  }
+
+  @override
+  Future<void> inviteSelfToLocation({
+    required String worldId,
+    required String instanceId,
+  }) async {}
+
+  @override
+  Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
+    required String worldId,
+    required String instanceId,
+    Duration maxWindow = const Duration(seconds: 25),
+    CancelToken? cancelToken,
+  }) async {
+    return InviteRetryOutcome.sent;
+  }
+}
+
+class _DelayedGroupMonitorApi extends FakeGroupMonitorApi {
+  _DelayedGroupMonitorApi({
+    super.groupInstancesByGroupId,
+    super.enrichedInstancesByKey,
+    required this.getInstanceDelay,
+  });
+
+  final Duration getInstanceDelay;
+
+  @override
+  Future<Response<Instance>> getInstance({
+    required String worldId,
+    required String instanceId,
+    required ApiRequestLane lane,
+  }) async {
+    await Future<void>.delayed(getInstanceDelay);
+    return super.getInstance(
+      worldId: worldId,
+      instanceId: instanceId,
+      lane: lane,
+    );
+  }
+}
+
 ({
   ProviderContainer container,
   TestAuthNotifier authNotifier,
@@ -1157,6 +1210,68 @@ void main() {
     });
   });
 
+  group('isSelfInviteUnavailableForCapacity', () {
+    Instance buildInstance({
+      bool? hasCapacityForYou,
+      bool queueEnabled = false,
+      int queueSize = 0,
+    }) {
+      final world = buildTestWorld(id: 'wrld_alpha', name: 'World');
+      return Instance(
+        clientNumber: 'unknown',
+        hasCapacityForYou: hasCapacityForYou,
+        id: 'inst_alpha',
+        instanceId: 'inst_alpha',
+        location: '${world.id}:inst_alpha',
+        nUsers: 5,
+        name: 'Instance inst_alpha',
+        photonRegion: Region.us,
+        platforms: InstancePlatforms(android: 0, standalonewindows: 5),
+        queueEnabled: queueEnabled,
+        queueSize: queueSize,
+        recommendedCapacity: 16,
+        region: InstanceRegion.us,
+        secureName: 'secure-inst_alpha',
+        strict: false,
+        tags: const [],
+        type: InstanceType.group,
+        userCount: 5,
+        world: world,
+        worldId: world.id,
+      );
+    }
+
+    test('returns false when only queueEnabled is true', () {
+      final instance = buildInstance(
+        hasCapacityForYou: true,
+        queueEnabled: true,
+        queueSize: 0,
+      );
+
+      expect(isSelfInviteUnavailableForCapacity(instance), isFalse);
+    });
+
+    test('returns true when queue has entries', () {
+      final instance = buildInstance(
+        hasCapacityForYou: true,
+        queueEnabled: true,
+        queueSize: 2,
+      );
+
+      expect(isSelfInviteUnavailableForCapacity(instance), isTrue);
+    });
+
+    test('returns true when hasCapacityForYou is false', () {
+      final instance = buildInstance(
+        hasCapacityForYou: false,
+        queueEnabled: false,
+        queueSize: 0,
+      );
+
+      expect(isSelfInviteUnavailableForCapacity(instance), isTrue);
+    });
+  });
+
   group('pending refresh decisions', () {
     test('queues pending refresh only when active and in-flight', () {
       final queueWhenActive = shouldRequestImmediateRefresh(
@@ -2008,6 +2123,541 @@ void main() {
         expect(stored.queueEnabled, isTrue);
         expect(stored.queueSize, 3);
         expect(stored.capacity, 24);
+      },
+    );
+  });
+
+  group('auto-invite state guard', () {
+    test(
+      'does not send auto-invite when auto-invite is disabled during verification',
+      () async {
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
+        final groupInstance = buildTestGroupInstance(
+          instanceId: '12345~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:12345~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 2,
+        );
+        final key = '${world.id}|${groupInstance.instanceId}';
+        final fakeApi = _DelayedGroupMonitorApi(
+          getInstanceDelay: const Duration(milliseconds: 50),
+          groupInstancesByGroupId: {'grp_alpha': const <GroupInstance>[]},
+          enrichedInstancesByKey: {
+            key: _buildMonitorInstance(
+              instanceId: groupInstance.instanceId,
+              world: world,
+              userCount: 2,
+              hasCapacityForYou: true,
+            ),
+          },
+        );
+        final inviteService = _RecordingInviteServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: fakeApi,
+          inviteService: inviteService,
+        );
+        final container = harness.container;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_alpha'},
+          autoInviteEnabled: true,
+          isMonitoring: true,
+          isBoostActive: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+        fakeApi.groupInstancesByGroupId['grp_alpha'] = [groupInstance];
+
+        final pendingFetch = notifier.fetchBoostedGroupInstances(
+          bypassRateLimit: true,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        notifier.state = notifier.state.copyWith(autoInviteEnabled: false);
+        await pendingFetch;
+
+        expect(inviteService.invitedInstances, isEmpty);
+      },
+    );
+
+    test(
+      'does not send auto-invite when monitoring stops during verification',
+      () async {
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
+        final groupInstance = buildTestGroupInstance(
+          instanceId: '12345~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:12345~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 2,
+        );
+        final key = '${world.id}|${groupInstance.instanceId}';
+        final fakeApi = _DelayedGroupMonitorApi(
+          getInstanceDelay: const Duration(milliseconds: 50),
+          groupInstancesByGroupId: {'grp_alpha': const <GroupInstance>[]},
+          enrichedInstancesByKey: {
+            key: _buildMonitorInstance(
+              instanceId: groupInstance.instanceId,
+              world: world,
+              userCount: 2,
+              hasCapacityForYou: true,
+            ),
+          },
+        );
+        final inviteService = _RecordingInviteServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: fakeApi,
+          inviteService: inviteService,
+        );
+        final container = harness.container;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_alpha'},
+          autoInviteEnabled: true,
+          isMonitoring: true,
+          isBoostActive: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+        fakeApi.groupInstancesByGroupId['grp_alpha'] = [groupInstance];
+
+        final pendingFetch = notifier.fetchBoostedGroupInstances(
+          bypassRateLimit: true,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        notifier.state = notifier.state.copyWith(isMonitoring: false);
+        await pendingFetch;
+
+        expect(inviteService.invitedInstances, isEmpty);
+      },
+    );
+
+    test(
+      'sends auto-invite when state is still enabled after verification',
+      () async {
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
+        final groupInstance = buildTestGroupInstance(
+          instanceId: '12345~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:12345~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 2,
+        );
+        final key = '${world.id}|${groupInstance.instanceId}';
+        final fakeApi = _DelayedGroupMonitorApi(
+          getInstanceDelay: const Duration(milliseconds: 20),
+          groupInstancesByGroupId: {'grp_alpha': const <GroupInstance>[]},
+          enrichedInstancesByKey: {
+            key: _buildMonitorInstance(
+              instanceId: groupInstance.instanceId,
+              world: world,
+              userCount: 2,
+              hasCapacityForYou: true,
+            ),
+          },
+        );
+        final inviteService = _RecordingInviteServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: fakeApi,
+          inviteService: inviteService,
+        );
+        final container = harness.container;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_alpha'},
+          autoInviteEnabled: true,
+          isMonitoring: true,
+          isBoostActive: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+        fakeApi.groupInstancesByGroupId['grp_alpha'] = [groupInstance];
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+
+        expect(inviteService.invitedInstances, hasLength(1));
+        expect(
+          inviteService.invitedInstances.single.instanceId,
+          groupInstance.instanceId,
+        );
+      },
+    );
+
+    test(
+      'sends auto-invite when queue is enabled but empty after verification',
+      () async {
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
+        final groupInstance = buildTestGroupInstance(
+          instanceId: '12345~group(grp_alpha)~region(use)',
+          location: 'wrld_alpha:12345~group(grp_alpha)~region(use)',
+          world: world,
+          memberCount: 1,
+        );
+        final key = '${world.id}|${groupInstance.instanceId}';
+        final fakeApi = FakeGroupMonitorApi(
+          groupInstancesByGroupId: {'grp_alpha': const <GroupInstance>[]},
+          enrichedInstancesByKey: {
+            key: _buildMonitorInstance(
+              instanceId: groupInstance.instanceId,
+              world: world,
+              userCount: 1,
+              hasCapacityForYou: true,
+              queueEnabled: true,
+              queueSize: 0,
+            ),
+          },
+        );
+        final inviteService = _RecordingInviteServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: fakeApi,
+          inviteService: inviteService,
+        );
+        final container = harness.container;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_alpha'},
+          autoInviteEnabled: true,
+          isMonitoring: true,
+          isBoostActive: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+        fakeApi.groupInstancesByGroupId['grp_alpha'] = [groupInstance];
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+
+        expect(inviteService.invitedInstances, hasLength(1));
+        expect(
+          inviteService.invitedInstances.single.instanceId,
+          groupInstance.instanceId,
+        );
+      },
+    );
+
+    test(
+      'does not send auto-invite when all verified candidates are unavailable',
+      () async {
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
+        final groupInstanceA = buildTestGroupInstance(
+          instanceId: '12345~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:12345~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 3,
+        );
+        final groupInstanceB = buildTestGroupInstance(
+          instanceId: '67890~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:67890~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 2,
+        );
+        final fakeApi = FakeGroupMonitorApi(
+          groupInstancesByGroupId: {'grp_alpha': const <GroupInstance>[]},
+          enrichedInstancesByKey: {
+            '${world.id}|${groupInstanceA.instanceId}': _buildMonitorInstance(
+              instanceId: groupInstanceA.instanceId,
+              world: world,
+              userCount: 3,
+              hasCapacityForYou: false,
+            ),
+            '${world.id}|${groupInstanceB.instanceId}': _buildMonitorInstance(
+              instanceId: groupInstanceB.instanceId,
+              world: world,
+              userCount: 2,
+              hasCapacityForYou: true,
+              queueEnabled: true,
+              queueSize: 2,
+            ),
+          },
+        );
+        final inviteService = _RecordingInviteServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: fakeApi,
+          inviteService: inviteService,
+        );
+        final container = harness.container;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_alpha'},
+          autoInviteEnabled: true,
+          isMonitoring: true,
+          isBoostActive: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+        fakeApi.groupInstancesByGroupId['grp_alpha'] = [
+          groupInstanceA,
+          groupInstanceB,
+        ];
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+
+        expect(inviteService.invitedInstances, isEmpty);
+      },
+    );
+
+    test(
+      'does not send auto-invite to cached unavailable candidate after cap is exhausted',
+      () async {
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
+        final cachedGroupInstance = buildTestGroupInstance(
+          instanceId: 'cached~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:cached~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 4,
+        );
+        final groupInstanceA = buildTestGroupInstance(
+          instanceId: 'a~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:a~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 7,
+        );
+        final groupInstanceB = buildTestGroupInstance(
+          instanceId: 'b~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:b~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 6,
+        );
+        final groupInstanceC = buildTestGroupInstance(
+          instanceId: 'c~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:c~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 5,
+        );
+        final fakeApi = FakeGroupMonitorApi(
+          groupInstancesByGroupId: {
+            'grp_alpha': [cachedGroupInstance],
+          },
+          enrichedInstancesByKey: {
+            '${world.id}|${cachedGroupInstance.instanceId}':
+                _buildMonitorInstance(
+                  instanceId: cachedGroupInstance.instanceId,
+                  world: world,
+                  userCount: 4,
+                  hasCapacityForYou: false,
+                ),
+            '${world.id}|${groupInstanceA.instanceId}': _buildMonitorInstance(
+              instanceId: groupInstanceA.instanceId,
+              world: world,
+              userCount: 7,
+              hasCapacityForYou: false,
+            ),
+            '${world.id}|${groupInstanceB.instanceId}': _buildMonitorInstance(
+              instanceId: groupInstanceB.instanceId,
+              world: world,
+              userCount: 6,
+              hasCapacityForYou: true,
+              queueEnabled: true,
+              queueSize: 2,
+            ),
+            '${world.id}|${groupInstanceC.instanceId}': _buildMonitorInstance(
+              instanceId: groupInstanceC.instanceId,
+              world: world,
+              userCount: 5,
+              hasCapacityForYou: false,
+            ),
+          },
+        );
+        final inviteService = _RecordingInviteServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: fakeApi,
+          inviteService: inviteService,
+        );
+        final container = harness.container;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_alpha'},
+          autoInviteEnabled: false,
+          isMonitoring: true,
+          isBoostActive: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+
+        notifier.state = notifier.state.copyWith(
+          autoInviteEnabled: true,
+          groupInstances: {'grp_alpha': const <GroupInstanceWithGroup>[]},
+          newestInstanceId: null,
+        );
+        fakeApi.groupInstancesByGroupId['grp_alpha'] = [
+          groupInstanceA,
+          groupInstanceB,
+          groupInstanceC,
+          cachedGroupInstance,
+        ];
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+
+        expect(inviteService.invitedInstances, isEmpty);
+        expect(
+          fakeApi
+              .getInstanceCallCountByKey['${world.id}|${cachedGroupInstance.instanceId}'],
+          1,
+        );
+      },
+    );
+
+    test(
+      'sends auto-invite for unresolved top candidate when verification fails',
+      () async {
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
+        final groupInstanceA = buildTestGroupInstance(
+          instanceId: '12345~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:12345~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 3,
+        );
+        final groupInstanceB = buildTestGroupInstance(
+          instanceId: '67890~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:67890~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 2,
+        );
+        final fakeApi = FakeGroupMonitorApi(
+          groupInstancesByGroupId: {'grp_alpha': const <GroupInstance>[]},
+          enrichedInstancesByKey: {
+            '${world.id}|${groupInstanceB.instanceId}': _buildMonitorInstance(
+              instanceId: groupInstanceB.instanceId,
+              world: world,
+              userCount: 2,
+              hasCapacityForYou: true,
+            ),
+          },
+          instanceErrorsByKey: {
+            '${world.id}|${groupInstanceA.instanceId}': DioException(
+              requestOptions: RequestOptions(
+                path: '/instances/${world.id}:${groupInstanceA.instanceId}',
+              ),
+              response: Response<void>(
+                requestOptions: RequestOptions(
+                  path: '/instances/${world.id}:${groupInstanceA.instanceId}',
+                ),
+                statusCode: 429,
+              ),
+              type: DioExceptionType.badResponse,
+            ),
+          },
+        );
+        final inviteService = _RecordingInviteServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: fakeApi,
+          inviteService: inviteService,
+        );
+        final container = harness.container;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_alpha'},
+          autoInviteEnabled: true,
+          isMonitoring: true,
+          isBoostActive: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+        fakeApi.groupInstancesByGroupId['grp_alpha'] = [
+          groupInstanceA,
+          groupInstanceB,
+        ];
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+
+        expect(inviteService.invitedInstances, hasLength(1));
+        expect(
+          inviteService.invitedInstances.single.instanceId,
+          groupInstanceA.instanceId,
+        );
+      },
+    );
+
+    test(
+      'skips a 404 top candidate and invites the next verified instance',
+      () async {
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
+        final groupInstanceA = buildTestGroupInstance(
+          instanceId: '12345~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:12345~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 3,
+        );
+        final groupInstanceB = buildTestGroupInstance(
+          instanceId: '67890~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:67890~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 2,
+        );
+        final fakeApi = FakeGroupMonitorApi(
+          groupInstancesByGroupId: {'grp_alpha': const <GroupInstance>[]},
+          enrichedInstancesByKey: {
+            '${world.id}|${groupInstanceB.instanceId}': _buildMonitorInstance(
+              instanceId: groupInstanceB.instanceId,
+              world: world,
+              userCount: 2,
+              hasCapacityForYou: true,
+            ),
+          },
+        );
+        final inviteService = _RecordingInviteServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: fakeApi,
+          inviteService: inviteService,
+        );
+        final container = harness.container;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_alpha'},
+          autoInviteEnabled: true,
+          isMonitoring: true,
+          isBoostActive: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+        fakeApi.groupInstancesByGroupId['grp_alpha'] = [
+          groupInstanceA,
+          groupInstanceB,
+        ];
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+
+        expect(inviteService.invitedInstances, hasLength(1));
+        expect(
+          inviteService.invitedInstances.single.instanceId,
+          groupInstanceB.instanceId,
+        );
       },
     );
   });

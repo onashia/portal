@@ -11,6 +11,7 @@ import '../models/group_instance_with_group.dart';
 import '../models/relay_hint_message.dart';
 import '../services/api_rate_limit_coordinator.dart';
 import '../services/auto_invite_service.dart';
+import '../services/invite_candidate_resolver.dart';
 import '../services/invite_service.dart';
 import '../services/relay_hint_service.dart';
 import '../utils/app_logger.dart';
@@ -59,12 +60,6 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   int _boostPollCount = 0;
   bool _boostFirstSeenLogged = false;
   int _relayFailureStreak = 0;
-  final Map<String, ({Instance instance, DateTime fetchedAt})>
-  _enrichedInstanceByKey =
-      <String, ({Instance instance, DateTime fetchedAt})>{};
-  final Map<String, DateTime> _enrichmentFailureUntilByKey =
-      <String, DateTime>{};
-  final _enrichmentFailureLogDedupe = DedupeTracker();
   final _relayHintDedupe = DedupeTracker();
   final _relayPublishDedupe = DedupeTracker();
   final Set<CancelToken> _relayInviteCancelTokens = <CancelToken>{};
@@ -74,6 +69,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   late RelayHintService _relayHintService;
   late String _relayClientId;
   late AutoInviteService _autoInviteService;
+  late InviteCandidateResolver _inviteCandidateResolver;
 
   @visibleForTesting
   bool get hasActivePollingTimer => _baselineLoop.hasTimer;
@@ -93,6 +89,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   GroupMonitorState build() {
     _inviteService = ref.read(inviteServiceProvider);
     _autoInviteService = AutoInviteService(_inviteService);
+    _inviteCandidateResolver = InviteCandidateResolver();
     _relayHintService = ref.read(relayHintServiceProvider);
     if (AppConstants.relayAssistEnabled && !_relayHintService.isConfigured) {
       AppLogger.warning(

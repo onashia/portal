@@ -243,6 +243,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         previousInstances: previousInstances,
         instances: instances,
         groupId: groupId,
+        lane: ApiRequestLane.groupBaseline,
         laneLabel: 'group',
       );
 
@@ -606,6 +607,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         previousInstances: previousInstances,
         instances: instances,
         groupId: groupId,
+        lane: ApiRequestLane.groupBoost,
         laneLabel: 'boosted group',
       );
 
@@ -708,24 +710,55 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     required List<GroupInstanceWithGroup> previousInstances,
     required List<Instance> instances,
     required String groupId,
+    required ApiRequestLane lane,
     required String laneLabel,
   }) async {
     if (previousInstances.isNotEmpty || instances.isEmpty) {
       return;
     }
+    if (!(state.autoInviteEnabled && state.isMonitoring) || !_hasBaseline) {
+      return;
+    }
     try {
-      final result = await _autoInviteService.attemptAutoInvite(
-        instances: instances,
-        groupId: groupId,
-        enabled: state.autoInviteEnabled && state.isMonitoring,
-        hasBaseline: _hasBaseline,
-      );
-      if (result == null) {
+      final resolved = await _inviteCandidateResolver
+          .resolveBestAutoInviteTarget(
+            api: ref.read(groupMonitorApiProvider),
+            discoveryInstances: instances,
+            groupId: groupId,
+            lane: lane,
+            laneLabel: laneLabel,
+            onApiCall: (lane) {
+              ref
+                  .read(apiCallCounterProvider.notifier)
+                  .incrementApiCall(lane: lane);
+            },
+          );
+      if (!ref.mounted) {
+        return;
+      }
+      if (resolved == null) {
         AppLogger.debug(
           'Auto-invite skipped for $laneLabel $groupId: no eligible target',
           subCategory: 'group_monitor',
         );
+        return;
       }
+
+      final enabled = state.autoInviteEnabled && state.isMonitoring;
+      if (!enabled || !_hasBaseline) {
+        AppLogger.debug(
+          'Auto-invite skipped for $laneLabel $groupId: '
+          'state changed before invite dispatch',
+          subCategory: 'group_monitor',
+        );
+        return;
+      }
+
+      await _autoInviteService.attemptAutoInviteTarget(
+        target: resolved.toGroupInstanceWithGroup(groupId),
+        enabled: enabled,
+        hasBaseline: _hasBaseline,
+      );
     } catch (e, s) {
       AppLogger.error(
         'Failed to auto-invite for $laneLabel $groupId',
@@ -752,7 +785,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
           (groupInstance) => normalizeGroupInstance(
             groupInstance: groupInstance,
             groupId: groupId,
-            enrichedInstance: _cachedEnrichedInstance(
+            enrichedInstance: _inviteCandidateResolver.cachedEnrichedInstance(
               worldId: groupInstance.world.id,
               instanceId: groupInstance.instanceId,
               now: now,
@@ -761,262 +794,33 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         )
         .toList(growable: false);
 
-    instances = await _enrichBestCandidateIfNeeded(
-      api: api,
-      instances: instances,
-      groupId: groupId,
-      lane: lane,
-      laneLabel: laneLabel,
-    );
-    return instances;
-  }
-
-  Future<List<Instance>> _enrichBestCandidateIfNeeded({
-    required GroupMonitorApi api,
-    required List<Instance> instances,
-    required String groupId,
-    required ApiRequestLane lane,
-    required String laneLabel,
-  }) async {
-    if (instances.isEmpty) {
-      return instances;
-    }
-
-    Instance? best;
-    for (final candidate in instances) {
-      if (best == null || candidate.nUsers > best.nUsers) {
-        best = candidate;
-      }
-    }
-    if (best == null || best.worldId.isEmpty || best.instanceId.isEmpty) {
-      AppLogger.debug(
-        'Skipping instance enrichment for $groupId ($laneLabel): '
-        'highest-population candidate has invalid identifiers',
-        subCategory: 'group_monitor',
-      );
-      return instances;
-    }
-
-    final now = DateTime.now();
-    final key = groupInstanceStableKey(
-      worldId: best.worldId,
-      instanceId: best.instanceId,
-    );
-    final cachedEntry = _enrichedInstanceByKey[key];
-    if (cachedEntry != null &&
-        now.difference(cachedEntry.fetchedAt) >
-            const Duration(
-              seconds: AppConstants.groupInstanceEnrichmentTtlSeconds,
-            )) {
-      _enrichedInstanceByKey.remove(key);
-      AppLogger.debug(
-        'Re-enriching instance after cache expiry for $groupId '
-        '${best.worldId}:${best.instanceId} ($laneLabel)',
-        subCategory: 'group_monitor',
-      );
-    }
-
-    if (_cachedEnrichedInstance(
-          worldId: best.worldId,
-          instanceId: best.instanceId,
-          now: now,
-        ) !=
-        null) {
-      AppLogger.debug(
-        'Instance enrichment cache hit for $groupId '
-        '${best.worldId}:${best.instanceId} ($laneLabel)',
-        subCategory: 'group_monitor',
-      );
-      return instances;
-    }
-
-    final blockedUntil = _enrichmentFailureUntilByKey[key];
-    if (blockedUntil != null && blockedUntil.isAfter(now)) {
-      AppLogger.debug(
-        'Skipping instance enrichment due to cooldown for $groupId '
-        '${best.worldId}:${best.instanceId} ($laneLabel)',
-        subCategory: 'group_monitor',
-      );
-      return instances;
-    }
-
-    AppLogger.debug(
-      'Enriching best instance for $groupId ${best.worldId}:${best.instanceId} '
-      '($laneLabel)',
-      subCategory: 'group_monitor',
-    );
-
-    ref.read(apiCallCounterProvider.notifier).incrementApiCall(lane: lane);
-    try {
-      final response = await api
-          .getInstance(
-            worldId: best.worldId,
-            instanceId: best.instanceId,
-            lane: lane,
-          )
-          .timeout(
-            const Duration(
-              seconds: AppConstants.groupInstancesRequestTimeoutSeconds,
-            ),
-          );
-
-      final enriched = response.data;
-      if (enriched == null) {
-        _recordEnrichmentFailure(
-          key: key,
+    instances = await _inviteCandidateResolver
+        .enrichHighestPopulationInstanceForDisplay(
+          api: api,
+          discoveryInstances: instances,
           groupId: groupId,
-          instance: best,
+          lane: lane,
           laneLabel: laneLabel,
-          reason: 'empty_response',
+          onApiCall: (lane) {
+            ref
+                .read(apiCallCounterProvider.notifier)
+                .incrementApiCall(lane: lane);
+          },
         );
-        return instances;
-      }
-
-      _enrichedInstanceByKey[key] = (instance: enriched, fetchedAt: now);
-      _enrichmentFailureUntilByKey.remove(key);
-      AppLogger.info(
-        'Instance enrichment succeeded for $groupId '
-        '${best.worldId}:${best.instanceId} ($laneLabel)',
-        subCategory: 'group_monitor',
-      );
-
-      final nextInstances = instances.toList(growable: false);
-      final index = nextInstances.indexWhere(
-        (candidate) =>
-            candidate.worldId == best!.worldId &&
-            candidate.instanceId == best.instanceId,
-      );
-      if (index == -1) {
-        return instances;
-      }
-      nextInstances[index] = mergeDiscoveryInstanceWithEnrichment(
-        discoveryInstance: nextInstances[index],
-        enrichedInstance: enriched,
-        groupId: groupId,
-      );
-      return nextInstances;
-    } on DioException catch (e, s) {
-      final statusCode = e.response?.statusCode;
-      _recordEnrichmentFailure(
-        key: key,
-        groupId: groupId,
-        instance: best,
-        laneLabel: laneLabel,
-        reason: statusCode == null ? e.type.name : 'status_$statusCode',
-        error: e,
-        stackTrace: s,
-      );
-      return instances;
-    } catch (e, s) {
-      _recordEnrichmentFailure(
-        key: key,
-        groupId: groupId,
-        instance: best,
-        laneLabel: laneLabel,
-        reason: 'unexpected',
-        error: e,
-        stackTrace: s,
-      );
-      return instances;
-    }
-  }
-
-  Instance? _cachedEnrichedInstance({
-    required String worldId,
-    required String instanceId,
-    required DateTime now,
-  }) {
-    final key = groupInstanceStableKey(
-      worldId: worldId,
-      instanceId: instanceId,
-    );
-    final cached = _enrichedInstanceByKey[key];
-    if (cached == null) {
-      return null;
-    }
-
-    final ttl = Duration(
-      seconds: AppConstants.groupInstanceEnrichmentTtlSeconds,
-    );
-    if (now.difference(cached.fetchedAt) > ttl) {
-      _enrichedInstanceByKey.remove(key);
-      return null;
-    }
-
-    return cached.instance;
-  }
-
-  void _recordEnrichmentFailure({
-    required String key,
-    required String groupId,
-    required Instance instance,
-    required String laneLabel,
-    required String reason,
-    Object? error,
-    StackTrace? stackTrace,
-  }) {
-    final now = DateTime.now();
-    _enrichmentFailureUntilByKey[key] = now.add(
-      const Duration(
-        seconds: AppConstants.groupInstanceEnrichmentFailureCooldownSeconds,
-      ),
-    );
-
-    final logKey = '$laneLabel|$key|$reason';
-    final dedupeTtl = const Duration(
-      seconds: AppConstants.groupInstanceEnrichmentLogDedupeSeconds,
-    );
-    if (_enrichmentFailureLogDedupe.isBlocked(logKey, now)) {
-      return;
-    }
-    _enrichmentFailureLogDedupe.record(logKey, now: now, ttl: dedupeTtl);
-
-    final message =
-        'Instance enrichment failed for $groupId '
-        '${instance.worldId}:${instance.instanceId} ($laneLabel, reason=$reason)';
-    if (error is DioException) {
-      final statusCode = error.response?.statusCode;
-      final isTransient =
-          statusCode == null ||
-          statusCode == 404 ||
-          statusCode == 409 ||
-          statusCode == 429 ||
-          statusCode >= 500;
-      if (isTransient) {
-        AppLogger.warning(message, subCategory: 'group_monitor');
-        return;
-      }
-    }
-
-    AppLogger.error(
-      message,
-      subCategory: 'group_monitor',
-      error: error,
-      stackTrace: stackTrace,
-    );
+    return instances;
   }
 
   void _pruneEnrichmentState(
     DateTime now, {
     Set<String> retainedKeys = const {},
   }) {
-    _enrichmentFailureLogDedupe.prune(now);
-    _enrichmentFailureUntilByKey.removeWhere(
-      (_, blockedUntil) => !blockedUntil.isAfter(now),
+    _inviteCandidateResolver.pruneState(
+      now,
+      retainedKeys: <String>{
+        ..._activeEnrichmentKeysFor(state.groupInstances),
+        ...retainedKeys,
+      },
     );
-    _enrichedInstanceByKey.removeWhere(
-      (_, cached) =>
-          now.difference(cached.fetchedAt) >
-          const Duration(
-            seconds: AppConstants.groupInstanceEnrichmentTtlSeconds,
-          ),
-    );
-
-    final activeKeys = <String>{
-      ..._activeEnrichmentKeysFor(state.groupInstances),
-      ...retainedKeys,
-    };
-    _enrichedInstanceByKey.removeWhere((key, _) => !activeKeys.contains(key));
   }
 
   Set<String> _activeEnrichmentKeysFor(
