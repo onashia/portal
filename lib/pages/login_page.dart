@@ -6,15 +6,13 @@ import 'package:window_manager/window_manager.dart';
 import '../constants/ui_constants.dart';
 import '../providers/auth_provider.dart';
 import '../utils/error_utils.dart';
-import '../widgets/common/empty_state.dart';
-import '../widgets/custom_title_bar.dart';
+import '../widgets/auth/auth_page_shell.dart';
 import '../widgets/login/login_submit_button.dart';
 import '../widgets/login/login_back_button.dart';
 import '../widgets/login/login_error_message.dart';
 import '../widgets/login/login_branding.dart';
 import '../widgets/login/login_form_card.dart';
 import '../widgets/login/login_form_fields.dart';
-import '../widgets/common/theme_mode_toggle_button.dart';
 import '../widgets/login/login_scaffolds.dart';
 import '../widgets/login/two_factor_form_fields.dart';
 
@@ -111,21 +109,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
     }
 
     if (authValue.hasError) {
-      final scheme = Theme.of(context).colorScheme;
-      return Scaffold(
-        appBar: CustomTitleBar(
-          title: 'portal.',
-          icon: Icons.tonality,
-          showBranding: false,
-          actions: const [ThemeModeToggleButton()],
-        ),
-        body: EmptyState(
-          icon: Icons.error_outline,
-          title: 'An error occurred',
-          message: formatUiErrorMessage(authValue.error),
-          iconColor: scheme.error,
-          padding: EdgeInsets.all(context.m3e.spacing.lg),
-        ),
+      return AuthErrorScaffold(
+        showBranding: false,
+        message: formatUiErrorMessage(authValue.error),
+        padding: EdgeInsets.all(context.m3e.spacing.lg),
       );
     }
 
@@ -139,13 +126,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
         ? authState.errorMessage
         : null;
 
-    return Scaffold(
-      appBar: CustomTitleBar(
-        title: 'portal.',
-        icon: Icons.tonality,
-        showBranding: false,
-        actions: const [ThemeModeToggleButton()],
-      ),
+    return AuthPageScaffold(
+      showBranding: false,
       body: DragToResizeArea(
         child: Semantics(
           label: 'Login form for VRChat portal',

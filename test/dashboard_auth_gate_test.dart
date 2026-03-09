@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:portal/pages/dashboard_page.dart';
 import 'package:portal/providers/auth_provider.dart';
+import 'package:portal/theme/app_theme.dart';
+import 'package:portal/widgets/custom_title_bar.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 class _MockCurrentUser extends Mock implements CurrentUser {}
@@ -94,5 +97,28 @@ void main() {
       expect(sizedBox.width, double.infinity);
       expect(sizedBox.height, double.infinity);
     });
+
+    testWidgets(
+      'dashboard loading state keeps the custom title bar visible',
+      (tester) async {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              authAsyncMetaProvider.overrideWithValue(
+                (isLoading: true, hasError: false, error: null),
+              ),
+              authStatusProvider.overrideWithValue(AuthStatus.initial),
+              authCurrentUserProvider.overrideWithValue(null),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.lightTheme,
+              home: const DashboardPage(),
+            ),
+          ),
+        );
+
+        expect(find.byType(CustomTitleBar), findsOneWidget);
+      },
+    );
   });
 }
