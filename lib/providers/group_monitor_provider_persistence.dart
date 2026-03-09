@@ -1,5 +1,3 @@
-// ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
-
 part of 'group_monitor_provider.dart';
 
 class _GroupMonitorPersistenceController {
@@ -8,16 +6,13 @@ class _GroupMonitorPersistenceController {
   final GroupMonitorNotifier notifier;
 
   void listenForAuthChanges() {
-    notifier.ref.listen<AuthSessionSnapshot>(authSessionSnapshotProvider, (
-      previous,
-      next,
-    ) {
+    notifier._listenAuthSession((previous, next) {
       final wasEligible =
           previous?.isAuthenticated == true && previous?.userId == notifier.arg;
       final isEligible = next.isAuthenticated && next.userId == notifier.arg;
 
       if (!isEligible) {
-        if (notifier.state.isMonitoring) {
+        if (notifier._currentState.isMonitoring) {
           notifier.stopMonitoring();
         } else {
           notifier._reconcileBaselineLoop();
@@ -29,7 +24,7 @@ class _GroupMonitorPersistenceController {
 
       if (!wasEligible) {
         Future.microtask(() {
-          if (!notifier.ref.mounted) {
+          if (!notifier._mounted) {
             return;
           }
           notifier._reconcileMonitoringForSelectionState();
@@ -57,17 +52,19 @@ class _GroupMonitorPersistenceController {
       }
 
       if (resolved.boostedGroupId != null && resolved.boostExpiresAt != null) {
-        notifier.state = notifier.state.copyWith(
-          isBoostActive: resolved.boostExpiresAt!.isAfter(DateTime.now()),
-          boostedGroupId: resolved.boostedGroupId,
-          boostExpiresAt: resolved.boostExpiresAt,
+        notifier._replaceState(
+          notifier._currentState.copyWith(
+            isBoostActive: resolved.boostExpiresAt!.isAfter(DateTime.now()),
+            boostedGroupId: resolved.boostedGroupId,
+            boostExpiresAt: resolved.boostExpiresAt,
+          ),
         );
         AppLogger.debug(
           'Loaded active boost settings for ${resolved.boostedGroupId}',
           subCategory: 'group_monitor',
         );
 
-        if (notifier.state.isMonitoring) {
+        if (notifier._currentState.isMonitoring) {
           notifier._requestBoostRefresh(immediate: true);
         }
       }
@@ -84,7 +81,9 @@ class _GroupMonitorPersistenceController {
   Future<void> loadAutoInviteSetting() async {
     try {
       final enabled = await GroupMonitorStorage.loadAutoInviteEnabled();
-      notifier.state = notifier.state.copyWith(autoInviteEnabled: enabled);
+      notifier._replaceState(
+        notifier._currentState.copyWith(autoInviteEnabled: enabled),
+      );
       AppLogger.debug(
         'Loaded auto-invite setting: $enabled',
         subCategory: 'group_monitor',
@@ -105,7 +104,9 @@ class _GroupMonitorPersistenceController {
       final enabled = await GroupMonitorStorage.loadRelayAssistEnabled(
         defaultValue: AppConstants.relayAssistEnabled,
       );
-      notifier.state = notifier.state.copyWith(relayAssistEnabled: enabled);
+      notifier._replaceState(
+        notifier._currentState.copyWith(relayAssistEnabled: enabled),
+      );
       AppLogger.debug(
         'Loaded relay assist setting: $enabled',
         subCategory: 'group_monitor',
@@ -126,10 +127,10 @@ class _GroupMonitorPersistenceController {
       final selectedIds = await GroupMonitorStorage.loadSelectedGroupIds();
       final loadedSelection = selectedIds.toSet();
       final shouldApplyLoadedSelection =
-          notifier.state.selectedGroupIds.isEmpty;
+          notifier._currentState.selectedGroupIds.isEmpty;
       if (shouldApplyLoadedSelection) {
-        notifier.state = notifier.state.copyWith(
-          selectedGroupIds: loadedSelection,
+        notifier._replaceState(
+          notifier._currentState.copyWith(selectedGroupIds: loadedSelection),
         );
       } else {
         AppLogger.debug(
@@ -157,10 +158,10 @@ class _GroupMonitorPersistenceController {
     bool requestBaselineRecovery = true,
   }) async {
     final hadBoost =
-        notifier.state.boostedGroupId != null ||
-        notifier.state.boostExpiresAt != null;
+        notifier._currentState.boostedGroupId != null ||
+        notifier._currentState.boostExpiresAt != null;
     notifier._boostLoop.cancelTimer();
-    notifier._boostLoop.pendingRefresh = false;
+    notifier._boostLoop.clearPending();
     notifier._resetBoostRuntimeTracking();
     notifier._applyBoostState(groupId: null, expiresAt: null);
 
@@ -177,8 +178,8 @@ class _GroupMonitorPersistenceController {
 
     if (requestBaselineRecovery &&
         hadBoost &&
-        notifier.state.isMonitoring &&
-        notifier.state.selectedGroupIds.isNotEmpty) {
+        notifier._currentState.isMonitoring &&
+        notifier._currentState.selectedGroupIds.isNotEmpty) {
       notifier._requestBaselineRefresh(immediate: true);
     }
 
@@ -202,7 +203,7 @@ class _GroupMonitorPersistenceController {
     await persistStorageWrite(
       actionDescription: 'save selected groups',
       action: () => GroupMonitorStorage.saveSelectedGroupIds(
-        notifier.state.selectedGroupIds,
+        notifier._currentState.selectedGroupIds,
       ),
     );
   }
@@ -233,16 +234,18 @@ class _GroupMonitorPersistenceController {
         requestBaselineRecovery: false,
       );
 
-      notifier.state = notifier.state.copyWith(
-        selectedGroupIds: {},
-        groupInstances: {},
-        newestInstanceId: null,
-        isBoostActive: false,
-        boostedGroupId: null,
-        boostExpiresAt: null,
-        groupErrors: {},
-        relayConnected: false,
-        lastRelayError: null,
+      notifier._replaceState(
+        notifier._currentState.copyWith(
+          selectedGroupIds: {},
+          groupInstances: {},
+          newestInstanceId: null,
+          isBoostActive: false,
+          boostedGroupId: null,
+          boostExpiresAt: null,
+          groupErrors: {},
+          relayConnected: false,
+          lastRelayError: null,
+        ),
       );
       notifier._reconcileMonitoringForSelectionState();
       notifier._reconcileRelayConnection();

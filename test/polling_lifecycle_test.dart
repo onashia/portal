@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/providers/polling_lifecycle.dart';
 
@@ -57,6 +58,113 @@ void main() {
       expect(loop.hasTimer, isFalse);
       expect(loop.pendingRefresh, isFalse);
       expect(loop.pendingBypassRateLimit, isFalse);
+    });
+  });
+
+  group('RefreshLoopController', () {
+    test('requestRefresh queues pending work while a fetch is in flight', () {
+      final controller = RefreshLoopController();
+      var queued = false;
+
+      controller.requestRefresh(
+        isActive: true,
+        isInFlight: true,
+        immediate: true,
+        bypassRateLimit: true,
+        reconcile: () => fail('should not reconcile'),
+        runNow: ({required bypassRateLimit}) {
+          fail('should not run immediately while in flight');
+        },
+        scheduleNextTick: () => fail('should not schedule next tick'),
+        onQueuePending: () {
+          queued = true;
+        },
+      );
+
+      expect(queued, isTrue);
+      expect(controller.hasPendingRefresh, isTrue);
+      final pending = controller.consumePending();
+      expect(pending.hadPending, isTrue);
+      expect(pending.bypassRateLimit, isTrue);
+    });
+
+    test('drainPendingRefresh runs queued work and clears pending state', () {
+      final controller = RefreshLoopController();
+      var drainedBypass = false;
+      controller.queuePending(bypassRateLimit: true);
+
+      final drained = controller.drainPendingRefresh(
+        isMounted: true,
+        isInFlight: false,
+        isActive: true,
+        runNow: ({required bypassRateLimit}) {
+          drainedBypass = bypassRateLimit;
+        },
+      );
+
+      expect(drained, isTrue);
+      expect(drainedBypass, isTrue);
+      expect(controller.hasPendingRefresh, isFalse);
+    });
+
+    test('scheduleNextTick fires only when still mounted', () {
+      fakeAsync((async) {
+        final controller = RefreshLoopController();
+        var fired = 0;
+
+        controller.scheduleNextTick(
+          isActive: () => true,
+          reconcile: () => fail('should not reconcile'),
+          resolveDelay: () => const Duration(seconds: 5),
+          requestRefresh: () {
+            fired += 1;
+          },
+          isMounted: () => true,
+        );
+
+        async.elapse(const Duration(seconds: 5));
+        expect(fired, 1);
+
+        controller.scheduleNextTick(
+          isActive: () => true,
+          reconcile: () => fail('should not reconcile'),
+          resolveDelay: () => const Duration(seconds: 5),
+          requestRefresh: () {
+            fired += 1;
+          },
+          isMounted: () => false,
+        );
+
+        async.elapse(const Duration(seconds: 5));
+        expect(fired, 1);
+      });
+    });
+  });
+
+  group('RefreshDebouncer', () {
+    test('reschedules and fires only the latest callback', () {
+      fakeAsync((async) {
+        final debouncer = RefreshDebouncer();
+        var fired = 0;
+
+        debouncer.schedule(
+          delay: const Duration(seconds: 2),
+          isMounted: () => true,
+          onFire: () {
+            fired += 1;
+          },
+        );
+        debouncer.schedule(
+          delay: const Duration(seconds: 2),
+          isMounted: () => true,
+          onFire: () {
+            fired += 1;
+          },
+        );
+
+        async.elapse(const Duration(seconds: 2));
+        expect(fired, 1);
+      });
     });
   });
 

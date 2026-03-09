@@ -37,7 +37,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     required DateTime attemptAt,
     required bool Function() isActive,
     required void Function() reconcile,
-    required RefreshLoopState loop,
+    required RefreshLoopController loop,
     required bool bypassRateLimit,
     required ApiRequestLane lane,
     required Duration fallbackDelay,
@@ -163,7 +163,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       bypassRateLimit: bypassRateLimit,
       lane: ApiRequestLane.groupBaseline,
       logContext: 'group_monitor',
-      fallbackDelay: Duration(seconds: _nextPollDelaySeconds()),
+      fallbackDelay: _nextPollDelay(),
       onDefer: (delay) {
         _recordBaselineSkip('cooldown', attemptAt);
         _scheduleNextBaselineTick(overrideDelay: delay);
@@ -532,7 +532,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       loop: _baselineLoop,
       bypassRateLimit: bypassRateLimit,
       lane: ApiRequestLane.groupBaseline,
-      fallbackDelay: Duration(seconds: _nextPollDelaySeconds()),
+      fallbackDelay: _nextPollDelay(),
       scheduleNextTick: _scheduleNextBaselineTick,
       setFetchInFlight: (value) => _isFetchingBaseline = value,
       prepare: _prepareFetchContext,
@@ -570,7 +570,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       loop: _boostLoop,
       bypassRateLimit: bypassRateLimit,
       lane: ApiRequestLane.groupBoost,
-      fallbackDelay: Duration(seconds: _nextBoostPollDelaySeconds()),
+      fallbackDelay: _nextBoostPollDelay(),
       scheduleNextTick: _scheduleNextBoostTick,
       setFetchInFlight: (value) => _isBoostFetching = value,
       prepare:

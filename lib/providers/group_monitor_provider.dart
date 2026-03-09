@@ -47,10 +47,9 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   final String arg;
 
-  final _baselineLoop = RefreshLoopState();
-  final _boostLoop = RefreshLoopState();
-
-  Timer? _selectionRefreshDebounceTimer;
+  final _baselineLoop = RefreshLoopController();
+  final _boostLoop = RefreshLoopController();
+  final _selectionRefreshDebouncer = RefreshDebouncer();
   int _backoffDelay = 1;
   bool _isFetchingBaseline = false;
   bool _isBoostFetching = false;
@@ -62,6 +61,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   late InviteService _inviteService;
   late AutoInviteService _autoInviteService;
   late InviteCandidateResolver _inviteCandidateResolver;
+  late _GroupMonitorLoopController _loopController;
   late _GroupMonitorRelayController _relayController;
   late _GroupMonitorPersistenceController _persistenceController;
 
@@ -70,8 +70,25 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
   bool get _isAnyFetchInFlight => _isFetchingBaseline || _isBoostFetching;
 
+  GroupMonitorState get _currentState => state;
+
+  bool get _mounted => ref.mounted;
+
+  void _replaceState(GroupMonitorState next) {
+    state = next;
+  }
+
+  T _read<T>(dynamic provider) => ref.read(provider);
+
+  void _listenAuthSession(
+    void Function(AuthSessionSnapshot? previous, AuthSessionSnapshot next)
+    listener,
+  ) {
+    ref.listen<AuthSessionSnapshot>(authSessionSnapshotProvider, listener);
+  }
+
   bool _canPollForCurrentSession() {
-    final session = ref.read(authSessionSnapshotProvider);
+    final session = _read(authSessionSnapshotProvider);
     return isSessionEligible(
       isAuthenticated: session.isAuthenticated,
       authenticatedUserId: session.userId,
@@ -102,9 +119,10 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
                 );
           },
     );
+    _loopController = _GroupMonitorLoopController(this);
     _relayController = _GroupMonitorRelayController(
       notifier: this,
-      service: ref.read(relayHintServiceProvider),
+      service: _read(relayHintServiceProvider),
     );
     _persistenceController = _GroupMonitorPersistenceController(this);
     if (AppConstants.relayAssistEnabled && !_relayController.isConfigured) {
@@ -122,8 +140,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
     ref.onDispose(() {
       _baselineLoop.reset();
       _boostLoop.reset();
-      _selectionRefreshDebounceTimer?.cancel();
-      _selectionRefreshDebounceTimer = null;
+      _selectionRefreshDebouncer.cancel();
       unawaited(_relayController.dispose());
     });
     _loadSelectedGroups();

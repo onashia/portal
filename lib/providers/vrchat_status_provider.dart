@@ -46,7 +46,7 @@ class VrchatStatusState {
 }
 
 class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
-  final _statusLoop = RefreshLoopState();
+  final _statusLoop = RefreshLoopController();
   late final VrchatStatusService _service;
   bool _isRefreshing = false;
 
@@ -56,7 +56,9 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
   bool _isAuthenticated() =>
       ref.read(authSessionSnapshotProvider).isAuthenticated;
 
-  bool _canCommitRefreshResult() => ref.mounted && _isAuthenticated();
+  bool _statusActive() => ref.mounted && _isAuthenticated();
+
+  bool _canCommitRefreshResult() => _statusActive();
 
   @override
   VrchatStatusState build() {
@@ -70,7 +72,7 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
       final isAuthenticated = next.isAuthenticated;
 
       if (!isAuthenticated) {
-        _disposeTimer();
+        _statusLoop.reset();
         final current = state.asData?.value;
         state = AsyncData(
           current?.copyWith(isLoading: true, errorMessage: null) ??
@@ -80,15 +82,18 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
       }
 
       if (!wasAuthenticated && !_isRefreshing) {
-        Future.microtask(() => refresh(bypassRateLimit: false));
+        Future.microtask(() => _requestStatusRefresh(immediate: true));
+        return;
       }
+
+      Future.microtask(_reconcileStatusLoop);
     });
 
     if (_isAuthenticated()) {
-      Future.microtask(() => refresh(bypassRateLimit: false));
+      Future.microtask(() => _requestStatusRefresh(immediate: true));
     }
 
-    ref.onDispose(_disposeTimer);
+    ref.onDispose(_statusLoop.reset);
 
     return const VrchatStatusState(isLoading: true);
   }
@@ -100,20 +105,46 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
     );
   }
 
-  void _scheduleNextRefresh({Duration? overrideDelay}) {
-    _statusLoop.cancelTimer();
-    final delay = overrideDelay ?? _statusPollingDelay();
+  void _requestStatusRefresh({
+    bool immediate = true,
+    bool bypassRateLimit = false,
+  }) {
+    _statusLoop.requestRefresh(
+      isActive: _statusActive(),
+      isInFlight: _isRefreshing,
+      immediate: immediate,
+      bypassRateLimit: bypassRateLimit,
+      reconcile: _reconcileStatusLoop,
+      runNow: ({required bypassRateLimit}) {
+        unawaited(refresh(bypassRateLimit: bypassRateLimit));
+      },
+      scheduleNextTick: () => _scheduleNextRefresh(),
+    );
+  }
 
-    _statusLoop.timer = Timer(delay, () async {
-      if (!ref.mounted) {
-        return;
-      }
-      if (!_isAuthenticated()) {
-        _disposeTimer();
-        return;
-      }
-      unawaited(refresh(bypassRateLimit: false));
-    });
+  void _scheduleNextRefresh({Duration? overrideDelay}) {
+    _statusLoop.scheduleNextTick(
+      isActive: _statusActive,
+      reconcile: _reconcileStatusLoop,
+      resolveDelay: _statusPollingDelay,
+      requestRefresh: () => _requestStatusRefresh(immediate: true),
+      isMounted: () => ref.mounted,
+      overrideDelay: overrideDelay,
+    );
+  }
+
+  void _reconcileStatusLoop() {
+    if (!_statusActive()) {
+      _statusLoop.reset();
+      return;
+    }
+
+    if (_statusLoop.shouldScheduleNext(
+      isActive: true,
+      isInFlight: _isRefreshing,
+    )) {
+      _requestStatusRefresh(immediate: true);
+    }
   }
 
   /// Refreshes VRChat status.
@@ -122,14 +153,17 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
   /// `bypassRateLimit: true` when an explicit user-triggered refresh should
   /// ignore active cooldown.
   Future<void> refresh({bool bypassRateLimit = false}) async {
-    if (!_isAuthenticated()) {
-      _disposeTimer();
+    if (!_statusActive()) {
+      _reconcileStatusLoop();
       return;
     }
 
     if (_isRefreshing) {
+      _statusLoop.queuePending(bypassRateLimit: bypassRateLimit);
       return;
     }
+
+    _statusLoop.cancelTimer();
 
     if (RefreshCooldownHandler.shouldDeferForCooldown(
       ref: ref,
@@ -170,14 +204,32 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
       );
     } finally {
       _isRefreshing = false;
-      if (_canCommitRefreshResult()) {
-        _scheduleNextRefresh();
-      }
+      _afterRefresh();
     }
   }
 
-  void _disposeTimer() {
-    _statusLoop.cancelTimer();
+  void _afterRefresh() {
+    final active = _statusActive();
+    if (_statusLoop.drainPendingRefresh(
+      isMounted: ref.mounted,
+      isInFlight: _isRefreshing,
+      isActive: active,
+      runNow: ({required bypassRateLimit}) {
+        unawaited(refresh(bypassRateLimit: bypassRateLimit));
+      },
+    )) {
+      return;
+    }
+
+    if (_statusLoop.shouldScheduleNext(
+      isActive: active,
+      isInFlight: _isRefreshing,
+    )) {
+      _scheduleNextRefresh();
+      return;
+    }
+
+    _reconcileStatusLoop();
   }
 }
 
