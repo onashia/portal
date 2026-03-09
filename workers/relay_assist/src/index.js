@@ -212,6 +212,39 @@ function bytesToBase64Url(bytes) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
+function consumeFixedWindowSlot({
+  windows,
+  key,
+  now,
+  windowMs,
+  maxPerWindow,
+}) {
+  if (!key) {
+    return false;
+  }
+
+  const current = windows.get(key);
+  if (!current || current.windowStart + windowMs <= now) {
+    windows.set(key, { windowStart: now, count: 1 });
+    return true;
+  }
+
+  if (current.count >= maxPerWindow) {
+    return false;
+  }
+
+  current.count += 1;
+  return true;
+}
+
+function pruneFixedWindows(windows, now, windowMs) {
+  for (const [key, window] of windows.entries()) {
+    if (window.windowStart + windowMs <= now) {
+      windows.delete(key);
+    }
+  }
+}
+
 // HMAC both values with a random per-call key so the outputs are always
 // 32 bytes regardless of input length, then compare with the platform's
 // constant-time timingSafeEqual. crypto.subtle.timingSafeEqual throws on
@@ -373,25 +406,13 @@ export class RelayRoom {
   }
 
   #canPublish(clientId, now) {
-    if (!clientId) {
-      return false;
-    }
-
-    const existing = this.publishWindowByClient.get(clientId);
-    if (!existing || existing.windowStart + PUBLISH_WINDOW_MS <= now) {
-      this.publishWindowByClient.set(clientId, {
-        windowStart: now,
-        count: 1,
-      });
-      return true;
-    }
-
-    if (existing.count >= MAX_PUBLISH_PER_WINDOW) {
-      return false;
-    }
-
-    existing.count += 1;
-    return true;
+    return consumeFixedWindowSlot({
+      windows: this.publishWindowByClient,
+      key: clientId,
+      now,
+      windowMs: PUBLISH_WINDOW_MS,
+      maxPerWindow: MAX_PUBLISH_PER_WINDOW,
+    });
   }
 
   #isValidHint(hint, expectedGroupId, now) {
@@ -456,31 +477,16 @@ export class BootstrapRateLimiter {
   async fetch(request) {
     const { ip } = await request.json();
     const now = Date.now();
-    this.#pruneWindowByIp(now);
-    const allowed = this.#check(ip, now);
+    pruneFixedWindows(this.windowByIp, now, BOOTSTRAP_WINDOW_MS);
+    const allowed = consumeFixedWindowSlot({
+      windows: this.windowByIp,
+      key: ip,
+      now,
+      windowMs: BOOTSTRAP_WINDOW_MS,
+      maxPerWindow: MAX_BOOTSTRAP_PER_WINDOW,
+    });
     return new Response(JSON.stringify({ allowed }), {
       headers: { 'content-type': 'application/json' },
     });
-  }
-
-  #pruneWindowByIp(now) {
-    for (const [ip, window] of this.windowByIp.entries()) {
-      if (window.windowStart + BOOTSTRAP_WINDOW_MS <= now) {
-        this.windowByIp.delete(ip);
-      }
-    }
-  }
-
-  #check(ip, now) {
-    const current = this.windowByIp.get(ip);
-    if (!current || current.windowStart + BOOTSTRAP_WINDOW_MS <= now) {
-      this.windowByIp.set(ip, { windowStart: now, count: 1 });
-      return true;
-    }
-    if (current.count >= MAX_BOOTSTRAP_PER_WINDOW) {
-      return false;
-    }
-    current.count += 1;
-    return true;
   }
 }

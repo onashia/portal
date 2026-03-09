@@ -5,9 +5,9 @@ import '../constants/app_constants.dart';
 import '../models/group_instance_with_group.dart';
 import '../providers/group_instance_normalization.dart';
 import '../providers/group_invite_and_boost.dart';
-import 'api_rate_limit_coordinator.dart';
 import '../utils/app_logger.dart';
 import '../utils/dedupe_tracker.dart';
+import 'api_rate_limit_coordinator.dart';
 
 typedef InviteCandidateResolverFetchInstance =
     Future<Response<Instance>> Function({
@@ -45,28 +45,16 @@ typedef _EnrichmentState = ({
 class InviteCandidateResolver {
   InviteCandidateResolver({
     required InviteCandidateResolverFetchInstance fetchInstance,
-  }) : _fetchInstance = fetchInstance;
+  }) : _enrichmentCache = _InstanceEnrichmentCache(
+         fetchInstance: fetchInstance,
+       ),
+       _selector = _InviteTargetSelector();
 
-  final InviteCandidateResolverFetchInstance _fetchInstance;
-  final Map<String, _EnrichmentState> _enrichmentStateByKey =
-      <String, _EnrichmentState>{};
-  final _enrichmentFailureLogDedupe = DedupeTracker();
+  final _InstanceEnrichmentCache _enrichmentCache;
+  final _InviteTargetSelector _selector;
 
   void pruneState(DateTime now, {Set<String> retainedKeys = const {}}) {
-    _enrichmentFailureLogDedupe.prune(now);
-    for (final key in _enrichmentStateByKey.keys.toList(growable: false)) {
-      final state = _normalizedStateForKey(key, now);
-      if (state == null) {
-        _enrichmentStateByKey.remove(key);
-        continue;
-      }
-      if (state.blockedUntil != null) {
-        continue;
-      }
-      if (!retainedKeys.contains(key)) {
-        _enrichmentStateByKey.remove(key);
-      }
-    }
+    _enrichmentCache.pruneState(now, retainedKeys: retainedKeys);
   }
 
   Future<List<Instance>> normalizeAndEnrichFetchedGroupInstances({
@@ -77,14 +65,14 @@ class InviteCandidateResolver {
     required String laneLabel,
   }) async {
     final now = DateTime.now();
-    pruneState(now, retainedKeys: retainedKeys);
+    _enrichmentCache.pruneState(now, retainedKeys: retainedKeys);
 
     final discoveryInstances = groupInstances
         .map(
           (groupInstance) => normalizeGroupInstance(
             groupInstance: groupInstance,
             groupId: groupId,
-            enrichedInstance: _cachedEnrichedInstance(
+            enrichedInstance: _enrichmentCache.cachedEnrichedInstance(
               worldId: groupInstance.world.id,
               instanceId: groupInstance.instanceId,
               now: now,
@@ -97,7 +85,7 @@ class InviteCandidateResolver {
     }
 
     final best = _sortDiscoveryInstances(discoveryInstances).first;
-    final result = await _loadEnrichedInstance(
+    final result = await _enrichmentCache.loadEnrichedInstance(
       discoveryInstance: best,
       groupId: groupId,
       lane: lane,
@@ -134,6 +122,26 @@ class InviteCandidateResolver {
     required String laneLabel,
     int maxCandidatesToVerify =
         AppConstants.groupInstanceInviteVerificationMaxCandidates,
+  }) {
+    return _selector.resolveBestAutoInviteTarget(
+      discoveryInstances: discoveryInstances,
+      groupId: groupId,
+      lane: lane,
+      laneLabel: laneLabel,
+      enrichmentCache: _enrichmentCache,
+      maxCandidatesToVerify: maxCandidatesToVerify,
+    );
+  }
+}
+
+class _InviteTargetSelector {
+  Future<GroupInstanceWithGroup?> resolveBestAutoInviteTarget({
+    required List<Instance> discoveryInstances,
+    required String groupId,
+    required ApiRequestLane lane,
+    required String laneLabel,
+    required _InstanceEnrichmentCache enrichmentCache,
+    required int maxCandidatesToVerify,
   }) async {
     if (discoveryInstances.isEmpty) {
       return null;
@@ -188,6 +196,7 @@ class InviteCandidateResolver {
         groupId: groupId,
         lane: lane,
         laneLabel: laneLabel,
+        enrichmentCache: enrichmentCache,
       );
       switch (verification.outcome) {
         case _InviteCandidateVerificationOutcome.verifiedEligible:
@@ -213,19 +222,128 @@ class InviteCandidateResolver {
     return null;
   }
 
-  List<Instance> _sortDiscoveryInstances(List<Instance> instances) {
-    final sorted = instances.toList(growable: false)
-      ..sort((a, b) {
-        final byUsers = b.nUsers.compareTo(a.nUsers);
-        if (byUsers != 0) {
-          return byUsers;
-        }
-        return a.instanceId.compareTo(b.instanceId);
-      });
-    return sorted;
+  Future<_InviteCandidateVerificationResult> _verifyAutoInviteCandidate({
+    required Instance discoveryInstance,
+    required String groupId,
+    required ApiRequestLane lane,
+    required String laneLabel,
+    required _InstanceEnrichmentCache enrichmentCache,
+  }) async {
+    final result = await enrichmentCache.loadEnrichedInstance(
+      discoveryInstance: discoveryInstance,
+      groupId: groupId,
+      lane: lane,
+      laneLabel: laneLabel,
+      reasonPrefix: 'auto-invite verification',
+    );
+    final enriched = result.instance;
+    if (enriched == null) {
+      return (
+        effectiveInstance: null,
+        outcome:
+            result.failureClassification ==
+                _EnrichmentFailureClassification.invalid
+            ? _InviteCandidateVerificationOutcome.invalid
+            : _InviteCandidateVerificationOutcome.unresolvedFallback,
+      );
+    }
+
+    final effective = mergeDiscoveryInstanceWithEnrichment(
+      discoveryInstance: discoveryInstance,
+      enrichedInstance: enriched,
+      groupId: groupId,
+    );
+    if (isSelfInviteUnavailableForCapacity(effective)) {
+      final reason = effective.hasCapacityForYou == false
+          ? 'no_capacity'
+          : effective.queueSize > 0
+          ? 'queue_active'
+          : 'capacity_unknown';
+      AppLogger.info(
+        'Skipping verified unavailable auto-invite candidate for group '
+        '$groupId (${effective.worldId}:${effective.instanceId}, '
+        'users=${effective.nUsers}, hasCapacityForYou='
+        '${effective.hasCapacityForYou}, queueEnabled=${effective.queueEnabled}, '
+        'queueSize=${effective.queueSize}, reason=$reason)',
+        subCategory: 'group_monitor',
+      );
+      return (
+        effectiveInstance: effective,
+        outcome: _InviteCandidateVerificationOutcome.fullOrQueued,
+      );
+    }
+
+    if (effective.canRequestInvite == false) {
+      AppLogger.info(
+        'Using verified auto-invite candidate despite canRequestInvite=false '
+        'for group $groupId (${effective.worldId}:${effective.instanceId}, '
+        'users=${effective.nUsers})',
+        subCategory: 'group_monitor',
+      );
+    }
+
+    return (
+      effectiveInstance: effective,
+      outcome: _InviteCandidateVerificationOutcome.verifiedEligible,
+    );
   }
 
-  Future<_EnrichmentLookupResult> _loadEnrichedInstance({
+  GroupInstanceWithGroup _buildResolvedCandidate({
+    required Instance instance,
+    required String groupId,
+    required String laneLabel,
+    required String reason,
+  }) {
+    AppLogger.info(
+      'Using unresolved auto-invite fallback candidate for group '
+      '$groupId (${instance.worldId}:${instance.instanceId}, '
+      'users=${instance.nUsers}, reason=$reason, lane=$laneLabel)',
+      subCategory: 'group_monitor',
+    );
+    return GroupInstanceWithGroup(instance: instance, groupId: groupId);
+  }
+}
+
+class _InstanceEnrichmentCache {
+  _InstanceEnrichmentCache({
+    required InviteCandidateResolverFetchInstance fetchInstance,
+  }) : _fetchInstance = fetchInstance;
+
+  final InviteCandidateResolverFetchInstance _fetchInstance;
+  final Map<String, _EnrichmentState> _enrichmentStateByKey =
+      <String, _EnrichmentState>{};
+  final _enrichmentFailureLogDedupe = DedupeTracker();
+
+  void pruneState(DateTime now, {Set<String> retainedKeys = const {}}) {
+    _enrichmentFailureLogDedupe.prune(now);
+    for (final key in _enrichmentStateByKey.keys.toList(growable: false)) {
+      final state = _normalizedStateForKey(key, now);
+      if (state == null) {
+        _enrichmentStateByKey.remove(key);
+        continue;
+      }
+      if (state.blockedUntil != null) {
+        continue;
+      }
+      if (!retainedKeys.contains(key)) {
+        _enrichmentStateByKey.remove(key);
+      }
+    }
+  }
+
+  Instance? cachedEnrichedInstance({
+    required String worldId,
+    required String instanceId,
+    required DateTime now,
+  }) {
+    final key = groupInstanceStableKey(
+      worldId: worldId,
+      instanceId: instanceId,
+    );
+    return _normalizedStateForKey(key, now)?.instance;
+  }
+
+  Future<_EnrichmentLookupResult> loadEnrichedInstance({
     required Instance discoveryInstance,
     required String groupId,
     required ApiRequestLane lane,
@@ -241,7 +359,7 @@ class InviteCandidateResolver {
       worldId: discoveryInstance.worldId,
       instanceId: discoveryInstance.instanceId,
     );
-    final cached = _cachedEnrichedInstance(
+    final cached = cachedEnrichedInstance(
       worldId: discoveryInstance.worldId,
       instanceId: discoveryInstance.instanceId,
       now: now,
@@ -356,98 +474,6 @@ class InviteCandidateResolver {
     }
   }
 
-  Future<_InviteCandidateVerificationResult> _verifyAutoInviteCandidate({
-    required Instance discoveryInstance,
-    required String groupId,
-    required ApiRequestLane lane,
-    required String laneLabel,
-  }) async {
-    final result = await _loadEnrichedInstance(
-      discoveryInstance: discoveryInstance,
-      groupId: groupId,
-      lane: lane,
-      laneLabel: laneLabel,
-      reasonPrefix: 'auto-invite verification',
-    );
-    final enriched = result.instance;
-    if (enriched == null) {
-      return (
-        effectiveInstance: null,
-        outcome:
-            result.failureClassification ==
-                _EnrichmentFailureClassification.invalid
-            ? _InviteCandidateVerificationOutcome.invalid
-            : _InviteCandidateVerificationOutcome.unresolvedFallback,
-      );
-    }
-
-    final effective = mergeDiscoveryInstanceWithEnrichment(
-      discoveryInstance: discoveryInstance,
-      enrichedInstance: enriched,
-      groupId: groupId,
-    );
-    if (isSelfInviteUnavailableForCapacity(effective)) {
-      final reason = effective.hasCapacityForYou == false
-          ? 'no_capacity'
-          : effective.queueSize > 0
-          ? 'queue_active'
-          : 'capacity_unknown';
-      AppLogger.info(
-        'Skipping verified unavailable auto-invite candidate for group '
-        '$groupId (${effective.worldId}:${effective.instanceId}, '
-        'users=${effective.nUsers}, hasCapacityForYou='
-        '${effective.hasCapacityForYou}, queueEnabled=${effective.queueEnabled}, '
-        'queueSize=${effective.queueSize}, reason=$reason)',
-        subCategory: 'group_monitor',
-      );
-      return (
-        effectiveInstance: effective,
-        outcome: _InviteCandidateVerificationOutcome.fullOrQueued,
-      );
-    }
-
-    if (effective.canRequestInvite == false) {
-      AppLogger.info(
-        'Using verified auto-invite candidate despite canRequestInvite=false '
-        'for group $groupId (${effective.worldId}:${effective.instanceId}, '
-        'users=${effective.nUsers})',
-        subCategory: 'group_monitor',
-      );
-    }
-
-    return (
-      effectiveInstance: effective,
-      outcome: _InviteCandidateVerificationOutcome.verifiedEligible,
-    );
-  }
-
-  GroupInstanceWithGroup _buildResolvedCandidate({
-    required Instance instance,
-    required String groupId,
-    required String laneLabel,
-    required String reason,
-  }) {
-    AppLogger.info(
-      'Using unresolved auto-invite fallback candidate for group '
-      '$groupId (${instance.worldId}:${instance.instanceId}, '
-      'users=${instance.nUsers}, reason=$reason, lane=$laneLabel)',
-      subCategory: 'group_monitor',
-    );
-    return GroupInstanceWithGroup(instance: instance, groupId: groupId);
-  }
-
-  Instance? _cachedEnrichedInstance({
-    required String worldId,
-    required String instanceId,
-    required DateTime now,
-  }) {
-    final key = groupInstanceStableKey(
-      worldId: worldId,
-      instanceId: instanceId,
-    );
-    return _normalizedStateForKey(key, now)?.instance;
-  }
-
   _EnrichmentState? _normalizedStateForKey(String key, DateTime now) {
     final state = _enrichmentStateByKey[key];
     if (state == null) {
@@ -536,4 +562,16 @@ class InviteCandidateResolver {
       stackTrace: stackTrace,
     );
   }
+}
+
+List<Instance> _sortDiscoveryInstances(List<Instance> instances) {
+  final sorted = instances.toList(growable: false)
+    ..sort((a, b) {
+      final byUsers = b.nUsers.compareTo(a.nUsers);
+      if (byUsers != 0) {
+        return byUsers;
+      }
+      return a.instanceId.compareTo(b.instanceId);
+    });
+  return sorted;
 }

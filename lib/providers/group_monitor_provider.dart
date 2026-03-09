@@ -59,17 +59,11 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   DateTime? _boostStartedAt;
   int _boostPollCount = 0;
   bool _boostFirstSeenLogged = false;
-  int _relayFailureStreak = 0;
-  final _relayHintDedupe = DedupeTracker();
-  final _relayPublishDedupe = DedupeTracker();
-  final Set<CancelToken> _relayInviteCancelTokens = <CancelToken>{};
-  StreamSubscription<RelayHintMessage>? _relayHintSubscription;
-  StreamSubscription<RelayConnectionStatus>? _relayStatusSubscription;
   late InviteService _inviteService;
-  late RelayHintService _relayHintService;
-  late String _relayClientId;
   late AutoInviteService _autoInviteService;
   late InviteCandidateResolver _inviteCandidateResolver;
+  late _GroupMonitorRelayController _relayController;
+  late _GroupMonitorPersistenceController _persistenceController;
 
   @visibleForTesting
   bool get hasActivePollingTimer => _baselineLoop.hasTimer;
@@ -108,15 +102,20 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
                 );
           },
     );
-    _relayHintService = ref.read(relayHintServiceProvider);
-    if (AppConstants.relayAssistEnabled && !_relayHintService.isConfigured) {
+    _relayController = _GroupMonitorRelayController(
+      notifier: this,
+      service: ref.read(relayHintServiceProvider),
+    );
+    _persistenceController = _GroupMonitorPersistenceController(this);
+    if (AppConstants.relayAssistEnabled && !_relayController.isConfigured) {
       AppLogger.warning(
         'Relay assist is enabled but not configured (missing app secret or bootstrap URL). '
         'Relay will be inactive for this session.',
         subCategory: 'relay',
       );
     }
-    _relayClientId = _createRelayClientId(userId: arg);
+    // Bind relay streams first because startup load/reconcile work can emit
+    // non-replayed status updates.
     _bindRelayStreams();
 
     _listenForAuthChanges();
@@ -125,12 +124,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       _boostLoop.reset();
       _selectionRefreshDebounceTimer?.cancel();
       _selectionRefreshDebounceTimer = null;
-      _cancelAllRelayInviteTokens();
-      _relayHintSubscription?.cancel();
-      _relayHintSubscription = null;
-      _relayStatusSubscription?.cancel();
-      _relayStatusSubscription = null;
-      unawaited(_relayHintService.disconnect());
+      unawaited(_relayController.dispose());
     });
     _loadSelectedGroups();
     _loadAutoInviteSetting();
@@ -333,28 +327,6 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
   }
 
   Future<void> clearSelectedGroups() => _clearSelectedGroupsInternal();
-
-  void _registerRelayInviteCancelToken(CancelToken token) {
-    _relayInviteCancelTokens.add(token);
-  }
-
-  void _unregisterRelayInviteCancelToken(CancelToken token) {
-    _relayInviteCancelTokens.remove(token);
-  }
-
-  void _cancelAllRelayInviteTokens() {
-    if (_relayInviteCancelTokens.isEmpty) {
-      return;
-    }
-
-    final tokens = _relayInviteCancelTokens.toList(growable: false);
-    _relayInviteCancelTokens.clear();
-    for (final token in tokens) {
-      if (!token.isCancelled) {
-        token.cancel('group_monitor_disposed');
-      }
-    }
-  }
 }
 
 final inviteServiceProvider = Provider<InviteService>((ref) {
