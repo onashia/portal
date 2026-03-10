@@ -198,6 +198,7 @@ class _InviteTargetSelector {
         laneLabel: laneLabel,
         enrichmentCache: enrichmentCache,
       );
+      verifiedCount += 1;
       switch (verification.outcome) {
         case _InviteCandidateVerificationOutcome.verifiedEligible:
           return GroupInstanceWithGroup(
@@ -205,7 +206,6 @@ class _InviteTargetSelector {
             groupId: groupId,
           );
         case _InviteCandidateVerificationOutcome.fullOrQueued:
-          verifiedCount += 1;
           continue;
         case _InviteCandidateVerificationOutcome.invalid:
           continue;

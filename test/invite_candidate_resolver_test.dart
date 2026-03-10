@@ -353,6 +353,82 @@ void main() {
       ),
       (
         description:
+            'counts invalid verification attempts toward the verification cap',
+        discoveryInstances: [
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+          ),
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+          ),
+        ],
+        enrichedInstancesByKey: {
+          _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+            hasCapacityForYou: true,
+          ),
+        },
+        instanceErrorsByKey: const {},
+        nullInstanceResponseKeys: const {},
+        maxCandidatesToVerify: 1,
+        expectedInstanceId: 'inst_b',
+        expectedCallCounts: {
+          _key('wrld_alpha', 'inst_a'): 1,
+          _key('wrld_alpha', 'inst_b'): null,
+        },
+      ),
+      (
+        description:
+            'counts invalid and unavailable verifications before applying the cap',
+        discoveryInstances: [
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_a',
+            userCount: 10,
+          ),
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+          ),
+          _buildDiscoveryInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_c',
+            userCount: 8,
+          ),
+        ],
+        enrichedInstancesByKey: {
+          _key('wrld_alpha', 'inst_b'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_b',
+            userCount: 9,
+            hasCapacityForYou: false,
+          ),
+          _key('wrld_alpha', 'inst_c'): _buildEnrichedInstance(
+            worldId: 'wrld_alpha',
+            instanceId: 'inst_c',
+            userCount: 8,
+            hasCapacityForYou: true,
+          ),
+        },
+        instanceErrorsByKey: const {},
+        nullInstanceResponseKeys: const {},
+        maxCandidatesToVerify: 2,
+        expectedInstanceId: 'inst_c',
+        expectedCallCounts: {
+          _key('wrld_alpha', 'inst_a'): 1,
+          _key('wrld_alpha', 'inst_b'): 1,
+          _key('wrld_alpha', 'inst_c'): null,
+        },
+      ),
+      (
+        description:
             'falls back to current unresolved candidate when verification cap is reached',
         discoveryInstances: [
           _buildDiscoveryInstance(
