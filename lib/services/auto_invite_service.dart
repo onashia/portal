@@ -33,15 +33,29 @@ class AutoInviteService {
     );
 
     final start = DateTime.now();
-    await inviteService.inviteSelfToInstance(target.instance);
+    final outcome = await inviteService.inviteSelfToInstance(target.instance);
     final latencyMs = DateTime.now().difference(start).inMilliseconds;
 
-    AppLogger.info(
-      'Auto-invite completed for group ${target.groupId} '
-      '(${target.instance.worldId}:${target.instance.instanceId}, '
-      'latency=${latencyMs}ms)',
-      subCategory: 'group_monitor',
-    );
+    switch (outcome) {
+      case InviteSendOutcome.sent:
+        AppLogger.info(
+          'Auto-invite completed for group ${target.groupId} '
+          '(${target.instance.worldId}:${target.instance.instanceId}, '
+          'latency=${latencyMs}ms)',
+          subCategory: 'group_monitor',
+        );
+        return;
+      case InviteSendOutcome.forbidden:
+      case InviteSendOutcome.transientFailure:
+      case InviteSendOutcome.nonRetryableFailure:
+        AppLogger.info(
+          'Auto-invite did not send for group ${target.groupId} '
+          '(${target.instance.worldId}:${target.instance.instanceId}, '
+          'latency=${latencyMs}ms, outcome=${outcome.name})',
+          subCategory: 'group_monitor',
+        );
+        return;
+    }
   }
 
   /// Attempts to auto-invite from a relay hint even when local instance polling

@@ -218,8 +218,7 @@ class _GroupMonitorRelayController {
   }
 
   void publishHintForNewBoostedInstances({
-    required String groupId,
-    required List<GroupInstanceWithGroup> newInstances,
+    required GroupInstanceWithGroup target,
     required DateTime detectedAt,
   }) {
     if (!notifier._mounted) {
@@ -229,28 +228,17 @@ class _GroupMonitorRelayController {
         !notifier._currentState.relayAssistEnabled) {
       return;
     }
-    if (notifier._currentState.boostedGroupId != groupId) {
+    if (notifier._currentState.boostedGroupId != target.groupId) {
       return;
     }
-
-    GroupInstanceWithGroup? best;
-    for (final candidate in newInstances) {
-      if (!shouldAttemptSelfInviteForInstance(candidate.instance)) {
-        continue;
-      }
-      if (best == null || candidate.instance.nUsers > best.instance.nUsers) {
-        best = candidate;
-      }
-    }
-
-    if (best == null) {
+    if (!shouldAttemptSelfInviteForInstance(target.instance)) {
       return;
     }
 
     final now = DateTime.now();
     _pruneDedupeState(now);
     final publishKey =
-        '${best.groupId}|${best.instance.worldId}|${best.instance.instanceId}';
+        '${target.groupId}|${target.instance.worldId}|${target.instance.instanceId}';
     if (_publishDedupe.isBlocked(publishKey, now)) {
       return;
     }
@@ -262,10 +250,10 @@ class _GroupMonitorRelayController {
     );
 
     final hint = RelayHintMessage.create(
-      groupId: groupId,
-      worldId: best.instance.worldId,
-      instanceId: best.instance.instanceId,
-      nUsers: best.instance.nUsers,
+      groupId: target.groupId,
+      worldId: target.instance.worldId,
+      instanceId: target.instance.instanceId,
+      nUsers: target.instance.nUsers,
       sourceClientId: clientId,
       now: detectedAt,
     );
@@ -343,13 +331,11 @@ extension GroupMonitorRelayExtension on GroupMonitorNotifier {
   void _reconcileRelayConnection() => _relayController.reconcileConnection();
 
   void _publishRelayHintForNewBoostedInstances({
-    required String groupId,
-    required List<GroupInstanceWithGroup> newInstances,
+    required GroupInstanceWithGroup target,
     required DateTime detectedAt,
   }) {
     _relayController.publishHintForNewBoostedInstances(
-      groupId: groupId,
-      newInstances: newInstances,
+      target: target,
       detectedAt: detectedAt,
     );
   }

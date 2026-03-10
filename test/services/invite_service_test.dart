@@ -72,6 +72,40 @@ void main() {
     });
   });
 
+  group('classifyInviteSendError', () {
+    test('maps 403 errors to forbidden', () {
+      final request = RequestOptions(path: '/invite/myself/to');
+      final error = DioException(
+        requestOptions: request,
+        response: Response(requestOptions: request, statusCode: 403),
+        type: DioExceptionType.badResponse,
+      );
+
+      expect(classifyInviteSendError(error), InviteSendOutcome.forbidden);
+    });
+
+    test('maps transient errors to transientFailure', () {
+      final request = RequestOptions(path: '/invite/myself/to');
+      final error = DioException(
+        requestOptions: request,
+        response: Response(requestOptions: request, statusCode: 429),
+        type: DioExceptionType.badResponse,
+      );
+
+      expect(
+        classifyInviteSendError(error),
+        InviteSendOutcome.transientFailure,
+      );
+    });
+
+    test('maps unexpected errors to nonRetryableFailure', () {
+      expect(
+        classifyInviteSendError(StateError('unexpected')),
+        InviteSendOutcome.nonRetryableFailure,
+      );
+    });
+  });
+
   group('shouldLogSelfInvite403AsWarning', () {
     test('logs warning when no previous entry exists', () {
       final now = DateTime.utc(2026, 2, 23, 12, 0, 0);

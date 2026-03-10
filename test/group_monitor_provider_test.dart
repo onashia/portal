@@ -32,6 +32,7 @@ class _RelayHintServiceFake extends RelayHintService {
   final StreamController<RelayConnectionStatus> _statuses =
       StreamController<RelayConnectionStatus>.broadcast();
   bool _isDisposed = false;
+  final List<RelayHintMessage> publishedHints = <RelayHintMessage>[];
 
   /// Counts how many times [connect] has been called.
   int connectCallCount = 0;
@@ -72,7 +73,9 @@ class _RelayHintServiceFake extends RelayHintService {
   }
 
   @override
-  Future<void> publishHint(RelayHintMessage hint) async {}
+  Future<void> publishHint(RelayHintMessage hint) async {
+    publishedHints.add(hint);
+  }
 
   Future<void> emitHint(RelayHintMessage hint) async {
     if (!_hints.isClosed) {
@@ -102,13 +105,17 @@ class _CancelableInviteServiceFake implements InviteService {
   CancelToken? lastCancelToken;
 
   @override
-  Future<void> inviteSelfToInstance(Instance instance) async {}
+  Future<InviteSendOutcome> inviteSelfToInstance(Instance instance) async {
+    return InviteSendOutcome.sent;
+  }
 
   @override
-  Future<void> inviteSelfToLocation({
+  Future<InviteSendOutcome> inviteSelfToLocation({
     required String worldId,
     required String instanceId,
-  }) async {}
+  }) async {
+    return InviteSendOutcome.sent;
+  }
 
   @override
   Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
@@ -134,13 +141,17 @@ class _CancelableInviteServiceFake implements InviteService {
 
 class _ThrowingInviteServiceFake implements InviteService {
   @override
-  Future<void> inviteSelfToInstance(Instance instance) async {}
+  Future<InviteSendOutcome> inviteSelfToInstance(Instance instance) async {
+    return InviteSendOutcome.sent;
+  }
 
   @override
-  Future<void> inviteSelfToLocation({
+  Future<InviteSendOutcome> inviteSelfToLocation({
     required String worldId,
     required String instanceId,
-  }) async {}
+  }) async {
+    return InviteSendOutcome.sent;
+  }
 
   @override
   Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
@@ -156,20 +167,24 @@ class _ThrowingInviteServiceFake implements InviteService {
 class _RecordingInviteServiceFake implements InviteService {
   final List<Instance> invitedInstances = <Instance>[];
   final Completer<void> started = Completer<void>();
+  InviteSendOutcome inviteOutcome = InviteSendOutcome.sent;
 
   @override
-  Future<void> inviteSelfToInstance(Instance instance) async {
+  Future<InviteSendOutcome> inviteSelfToInstance(Instance instance) async {
     invitedInstances.add(instance);
     if (!started.isCompleted) {
       started.complete();
     }
+    return inviteOutcome;
   }
 
   @override
-  Future<void> inviteSelfToLocation({
+  Future<InviteSendOutcome> inviteSelfToLocation({
     required String worldId,
     required String instanceId,
-  }) async {}
+  }) async {
+    return inviteOutcome;
+  }
 
   @override
   Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
@@ -1762,6 +1777,77 @@ void main() {
       expect(container.read(provider).groupErrors, isEmpty);
     });
 
+    test('expired boost is cleared before cooldown defers the poll', () async {
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      final notifier = harness.notifier;
+      addTearDown(container.dispose);
+
+      container
+          .read(apiRateLimitCoordinatorProvider)
+          .recordRateLimited(
+            ApiRequestLane.groupBoost,
+            retryAfter: const Duration(seconds: 60),
+          );
+
+      notifier.state = GroupMonitorState(
+        selectedGroupIds: const {'grp_alpha'},
+        autoInviteEnabled: false,
+        isMonitoring: true,
+        isBoostActive: true,
+        boostedGroupId: 'grp_alpha',
+        boostExpiresAt: DateTime.now().subtract(const Duration(seconds: 1)),
+      );
+
+      await notifier.fetchBoostedGroupInstances();
+
+      final nextState = container.read(provider);
+      expect(nextState.isBoostActive, isFalse);
+      expect(nextState.boostedGroupId, isNull);
+      expect(nextState.boostExpiresAt, isNull);
+      expect(container.read(apiCallCounterProvider).totalCalls, 0);
+    });
+
+    test(
+      'deselected boost is cleared before cooldown defers the poll',
+      () async {
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        container
+            .read(apiRateLimitCoordinatorProvider)
+            .recordRateLimited(
+              ApiRequestLane.groupBoost,
+              retryAfter: const Duration(seconds: 60),
+            );
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_beta'},
+          autoInviteEnabled: false,
+          isMonitoring: true,
+          isBoostActive: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+        await notifier.fetchBoostedGroupInstances();
+
+        final nextState = container.read(provider);
+        expect(nextState.isBoostActive, isFalse);
+        expect(nextState.boostedGroupId, isNull);
+        expect(nextState.boostExpiresAt, isNull);
+        expect(container.read(apiCallCounterProvider).totalCalls, 0);
+      },
+    );
+
     test('manual refresh bypasses baseline cooldown', () async {
       final harness = createGroupMonitorHarness(
         initialAuthState: authenticatedAuthState(userId: 'usr_test'),
@@ -2758,6 +2844,83 @@ void main() {
         expect(
           inviteService.invitedInstances.single.instanceId,
           groupInstanceA.instanceId,
+        );
+      },
+    );
+
+    test(
+      'publishes relay hint for the same resolved target used by auto-invite',
+      () async {
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
+        final relayService = _RelayHintServiceFake();
+        final groupInstanceA = buildTestGroupInstance(
+          instanceId: '12345~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:12345~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 3,
+        );
+        final groupInstanceB = buildTestGroupInstance(
+          instanceId: '67890~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:67890~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 2,
+        );
+        final fakeApi = FakeGroupMonitorApi(
+          groupInstancesByGroupId: {'grp_alpha': const <GroupInstance>[]},
+          enrichedInstancesByKey: {
+            '${world.id}|${groupInstanceA.instanceId}': _buildMonitorInstance(
+              instanceId: groupInstanceA.instanceId,
+              world: world,
+              userCount: 3,
+              hasCapacityForYou: false,
+            ),
+            '${world.id}|${groupInstanceB.instanceId}': _buildMonitorInstance(
+              instanceId: groupInstanceB.instanceId,
+              world: world,
+              userCount: 2,
+              hasCapacityForYou: true,
+            ),
+          },
+        );
+        final inviteService = _RecordingInviteServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: fakeApi,
+          inviteService: inviteService,
+          overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+        );
+        final container = harness.container;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_alpha'},
+          autoInviteEnabled: true,
+          isMonitoring: true,
+          isBoostActive: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+          relayAssistEnabled: true,
+          relayConnected: true,
+        );
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+        fakeApi.groupInstancesByGroupId['grp_alpha'] = [
+          groupInstanceA,
+          groupInstanceB,
+        ];
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+
+        expect(inviteService.invitedInstances, hasLength(1));
+        expect(
+          inviteService.invitedInstances.single.instanceId,
+          groupInstanceB.instanceId,
+        );
+        expect(relayService.publishedHints, hasLength(1));
+        expect(
+          relayService.publishedHints.single.instanceId,
+          groupInstanceB.instanceId,
         );
       },
     );

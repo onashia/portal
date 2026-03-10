@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/models/group_instance_with_group.dart';
 import 'package:portal/models/relay_hint_message.dart';
@@ -14,17 +15,21 @@ class FakeInviteService implements InviteService {
   String? lastRetryWorldId;
   String? lastRetryInstanceId;
   Duration? lastRetryWindow;
+  InviteSendOutcome nextInviteOutcome = InviteSendOutcome.sent;
 
   @override
-  Future<void> inviteSelfToInstance(Instance instance) async {
+  Future<InviteSendOutcome> inviteSelfToInstance(Instance instance) async {
     invitedInstances.add(instance);
+    return nextInviteOutcome;
   }
 
   @override
-  Future<void> inviteSelfToLocation({
+  Future<InviteSendOutcome> inviteSelfToLocation({
     required String worldId,
     required String instanceId,
-  }) async {}
+  }) async {
+    return nextInviteOutcome;
+  }
 
   @override
   Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
@@ -41,14 +46,14 @@ class FakeInviteService implements InviteService {
   }
 }
 
-class AlwaysFailingInviteService implements InviteService {
+class ThrowingInviteService implements InviteService {
   @override
-  Future<void> inviteSelfToInstance(Instance instance) async {
+  Future<InviteSendOutcome> inviteSelfToInstance(Instance instance) async {
     throw Exception('Invite failed');
   }
 
   @override
-  Future<void> inviteSelfToLocation({
+  Future<InviteSendOutcome> inviteSelfToLocation({
     required String worldId,
     required String instanceId,
   }) async {
@@ -88,6 +93,8 @@ void main() {
     late FakeInviteService fakeInviteService;
     late AutoInviteService autoInviteService;
     late GroupInstanceWithGroup target;
+    late List<String> loggedMessages;
+    late DebugPrintCallback originalDebugPrint;
 
     setUp(() {
       fakeInviteService = FakeInviteService();
@@ -98,6 +105,17 @@ void main() {
         instanceId: 'inst_a',
         userCount: 5,
       );
+      loggedMessages = <String>[];
+      originalDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) {
+          loggedMessages.add(message);
+        }
+      };
+    });
+
+    tearDown(() {
+      debugPrint = originalDebugPrint;
     });
 
     test('returns early when disabled', () async {
@@ -128,10 +146,92 @@ void main() {
       );
 
       expect(fakeInviteService.invitedInstances.single.instanceId, 'inst_a');
+      expect(
+        loggedMessages.any(
+          (message) => message.contains('Auto-invite completed'),
+        ),
+        isTrue,
+      );
     });
 
-    test('propagates invite service errors', () async {
-      autoInviteService = AutoInviteService(AlwaysFailingInviteService());
+    test('does not log completion when invite is forbidden', () async {
+      fakeInviteService.nextInviteOutcome = InviteSendOutcome.forbidden;
+
+      await autoInviteService.attemptAutoInviteTarget(
+        target: target,
+        enabled: true,
+        hasBaseline: true,
+      );
+
+      expect(
+        loggedMessages.any(
+          (message) => message.contains('Auto-invite completed'),
+        ),
+        isFalse,
+      );
+      expect(
+        loggedMessages.any(
+          (message) =>
+              message.contains('Auto-invite did not send') &&
+              message.contains('outcome=forbidden'),
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+      'does not log completion when invite is transiently rejected',
+      () async {
+        fakeInviteService.nextInviteOutcome =
+            InviteSendOutcome.transientFailure;
+
+        await autoInviteService.attemptAutoInviteTarget(
+          target: target,
+          enabled: true,
+          hasBaseline: true,
+        );
+
+        expect(
+          loggedMessages.any(
+            (message) => message.contains('Auto-invite completed'),
+          ),
+          isFalse,
+        );
+        expect(
+          loggedMessages.any(
+            (message) => message.contains('outcome=transientFailure'),
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    test('does not log completion when invite is non-retryable', () async {
+      fakeInviteService.nextInviteOutcome =
+          InviteSendOutcome.nonRetryableFailure;
+
+      await autoInviteService.attemptAutoInviteTarget(
+        target: target,
+        enabled: true,
+        hasBaseline: true,
+      );
+
+      expect(
+        loggedMessages.any(
+          (message) => message.contains('Auto-invite completed'),
+        ),
+        isFalse,
+      );
+      expect(
+        loggedMessages.any(
+          (message) => message.contains('outcome=nonRetryableFailure'),
+        ),
+        isTrue,
+      );
+    });
+
+    test('propagates unexpected invite service errors', () async {
+      autoInviteService = AutoInviteService(ThrowingInviteService());
 
       expect(
         () => autoInviteService.attemptAutoInviteTarget(

@@ -46,6 +46,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     required RefreshCyclePrepare<T> prepare,
     required Future<void> Function(T context) execute,
     Future<void> Function(Object e, StackTrace s, DateTime attemptAt)? onError,
+    FutureOr<bool> Function()? beforeCooldown,
     void Function()? onQueuePending,
     void Function(Duration delay)? onCooldownDefer,
     void Function()? onFinallyMounted,
@@ -65,30 +66,37 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     }
 
     loop.cancelTimer();
-
-    final handleCooldownDefer =
-        onCooldownDefer ?? (delay) => scheduleNextTick(overrideDelay: delay);
-    if (RefreshCooldownHandler.shouldDeferForCooldown(
-      ref: ref,
-      bypassRateLimit: bypassRateLimit,
-      lane: lane,
-      logContext: 'group_monitor',
-      fallbackDelay: fallbackDelay,
-      onDefer: handleCooldownDefer,
-    )) {
-      return;
-    }
-
-    final context = await prepare(
-      attemptAt: attemptAt,
-      bypassRateLimit: bypassRateLimit,
-    );
-    if (context == null || !ref.mounted) {
-      return;
-    }
-
     setFetchInFlight(true);
+
     try {
+      if (beforeCooldown != null) {
+        final shouldContinue = await beforeCooldown();
+        if (!shouldContinue || !ref.mounted) {
+          return;
+        }
+      }
+
+      final handleCooldownDefer =
+          onCooldownDefer ?? (delay) => scheduleNextTick(overrideDelay: delay);
+      if (RefreshCooldownHandler.shouldDeferForCooldown(
+        ref: ref,
+        bypassRateLimit: bypassRateLimit,
+        lane: lane,
+        logContext: 'group_monitor',
+        fallbackDelay: fallbackDelay,
+        onDefer: handleCooldownDefer,
+      )) {
+        return;
+      }
+
+      final context = await prepare(
+        attemptAt: attemptAt,
+        bypassRateLimit: bypassRateLimit,
+      );
+      if (context == null || !ref.mounted) {
+        return;
+      }
+
       await execute(context);
     } catch (e, s) {
       if (!ref.mounted) {
@@ -497,14 +505,42 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
   }
 
   Future<bool> _ensureBoostActive() async {
-    if (state.isBoostActive) {
+    final expiresAt = state.boostExpiresAt;
+    final boostIsCurrent =
+        state.isBoostActive &&
+        state.boostedGroupId != null &&
+        expiresAt != null &&
+        expiresAt.isAfter(DateTime.now());
+    if (boostIsCurrent) {
       return true;
     }
 
-    if (state.boostedGroupId != null || state.boostExpiresAt != null) {
-      await _clearBoost(persist: true, logExpired: true);
+    if (state.boostedGroupId != null || expiresAt != null) {
+      final logExpired =
+          expiresAt != null && !expiresAt.isAfter(DateTime.now());
+      await _clearBoost(persist: true, logExpired: logExpired);
     }
     return false;
+  }
+
+  Future<String?> _prepareBoostRefreshGroupId() async {
+    final isActive = await _ensureBoostActive();
+    if (!isActive) {
+      _reconcileBoostLoop();
+      return null;
+    }
+
+    final groupId = state.boostedGroupId;
+    if (groupId == null) {
+      return null;
+    }
+
+    if (!state.selectedGroupIds.contains(groupId)) {
+      await _clearBoost(persist: true, logExpired: false);
+      return null;
+    }
+
+    return groupId;
   }
 
   Future<void> _fetchGroupInstancesInternal({
@@ -573,25 +609,10 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       fallbackDelay: _nextBoostPollDelay(),
       scheduleNextTick: _scheduleNextBoostTick,
       setFetchInFlight: (value) => _isBoostFetching = value,
+      beforeCooldown: () async => await _prepareBoostRefreshGroupId() != null,
       prepare:
           ({required DateTime attemptAt, required bool bypassRateLimit}) async {
-            final isActive = await _ensureBoostActive();
-            if (!isActive) {
-              _reconcileBoostLoop();
-              return null;
-            }
-
-            final groupId = state.boostedGroupId;
-            if (groupId == null) {
-              return null;
-            }
-
-            if (!state.selectedGroupIds.contains(groupId)) {
-              await _clearBoost(persist: true, logExpired: false);
-              return null;
-            }
-
-            return groupId;
+            return _prepareBoostRefreshGroupId();
           },
       execute: (groupId) async {
         _boostPollCount += 1;
@@ -661,7 +682,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
           didBoostFirstSeenChange = state.boostFirstSeenAfter != delta;
         }
 
-        await _attemptAutoInviteIfNewInstances(
+        final resolvedAutoInviteTarget = await _attemptAutoInviteIfNewInstances(
           previousInstances: previousInstances,
           instances: instances,
           groupId: groupId,
@@ -678,10 +699,9 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         final newInstances = merged.newInstances;
         final mergedInstances = merged.effectiveInstances;
 
-        if (newInstances.isNotEmpty) {
+        if (newInstances.isNotEmpty && resolvedAutoInviteTarget != null) {
           _publishRelayHintForNewBoostedInstances(
-            groupId: groupId,
-            newInstances: newInstances,
+            target: resolvedAutoInviteTarget,
             detectedAt: pollStart,
           );
         }
@@ -779,7 +799,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     );
   }
 
-  Future<void> _attemptAutoInviteIfNewInstances({
+  Future<GroupInstanceWithGroup?> _attemptAutoInviteIfNewInstances({
     required List<GroupInstanceWithGroup> previousInstances,
     required List<Instance> instances,
     required String groupId,
@@ -787,15 +807,15 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     required String laneLabel,
   }) async {
     if (previousInstances.isNotEmpty || instances.isEmpty) {
-      return;
+      return null;
     }
     if (!(state.autoInviteEnabled && state.isMonitoring) || !_hasBaseline) {
-      return;
+      return null;
     }
     if (!state.isBoostActive ||
         state.boostedGroupId == null ||
         state.boostedGroupId != groupId) {
-      return;
+      return null;
     }
     try {
       final resolved = await _inviteCandidateResolver
@@ -806,14 +826,14 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
             laneLabel: laneLabel,
           );
       if (!ref.mounted) {
-        return;
+        return null;
       }
       if (resolved == null) {
         AppLogger.debug(
           'Auto-invite skipped for $laneLabel $groupId: no eligible target',
           subCategory: 'group_monitor',
         );
-        return;
+        return null;
       }
 
       final enabled =
@@ -827,7 +847,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
           'state changed before invite dispatch',
           subCategory: 'group_monitor',
         );
-        return;
+        return null;
       }
 
       await _autoInviteService.attemptAutoInviteTarget(
@@ -835,6 +855,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         enabled: enabled,
         hasBaseline: _hasBaseline,
       );
+      return resolved;
     } catch (e, s) {
       AppLogger.error(
         'Failed to auto-invite for $laneLabel $groupId',
@@ -842,6 +863,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         error: e,
         stackTrace: s,
       );
+      return null;
     }
   }
 
