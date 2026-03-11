@@ -1,3 +1,7 @@
+// ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+// This part-file's controller coordinates GroupMonitorNotifier internals within
+// the same library and intentionally reads/writes Riverpod's protected members.
+
 part of 'group_monitor_provider.dart';
 
 class _GroupMonitorRelayController {
@@ -20,30 +24,25 @@ class _GroupMonitorRelayController {
   void bindStreams() {
     _hintSubscription = service.hints.listen(handleHint);
     _statusSubscription = service.statuses.listen((status) {
-      if (!notifier._mounted) {
+      if (!notifier.ref.mounted) {
         return;
       }
       final didConnectionChange =
-          notifier._currentState.relayConnected != status.connected;
-      final didErrorChange =
-          notifier._currentState.lastRelayError != status.error;
+          notifier.state.relayConnected != status.connected;
+      final didErrorChange = notifier.state.lastRelayError != status.error;
       if (didConnectionChange || didErrorChange) {
-        notifier._replaceState(
-          notifier._currentState.copyWith(
-            relayConnected: status.connected,
-            lastRelayError: status.error,
-            relayTemporarilyDisabledUntil: service.runtimeDisabledUntil,
-          ),
+        notifier.state = notifier.state.copyWith(
+          relayConnected: status.connected,
+          lastRelayError: status.error,
+          relayTemporarilyDisabledUntil: service.runtimeDisabledUntil,
         );
       }
 
       if (status.connected) {
         _failureStreak = 0;
-        if (notifier._currentState.relayTemporarilyDisabledUntil != null) {
-          notifier._replaceState(
-            notifier._currentState.copyWith(
-              relayTemporarilyDisabledUntil: null,
-            ),
+        if (notifier.state.relayTemporarilyDisabledUntil != null) {
+          notifier.state = notifier.state.copyWith(
+            relayTemporarilyDisabledUntil: null,
           );
         }
       } else if (status.error != null) {
@@ -62,54 +61,50 @@ class _GroupMonitorRelayController {
   }
 
   bool shouldConnect() {
-    if (!notifier._mounted) {
+    if (!notifier.ref.mounted) {
       return false;
     }
 
     if (!AppConstants.relayAssistEnabled ||
-        !notifier._currentState.relayAssistEnabled) {
+        !notifier.state.relayAssistEnabled) {
       return false;
     }
     if (!service.isConfigured) {
       return false;
     }
-    if (notifier._currentState.relayTemporarilyDisabledUntil != null &&
-        notifier._currentState.relayTemporarilyDisabledUntil!.isAfter(
-          DateTime.now(),
-        )) {
+    if (notifier.state.relayTemporarilyDisabledUntil != null &&
+        notifier.state.relayTemporarilyDisabledUntil!.isAfter(DateTime.now())) {
       return false;
     }
     if (!notifier._canPollForCurrentSession()) {
       return false;
     }
-    return notifier._currentState.isMonitoring &&
-        notifier._currentState.autoInviteEnabled &&
-        notifier._currentState.isBoostActive &&
-        notifier._currentState.boostedGroupId != null;
+    return notifier.state.isMonitoring &&
+        notifier.state.autoInviteEnabled &&
+        notifier.state.isBoostActive &&
+        notifier.state.boostedGroupId != null;
   }
 
   void reconcileConnection() {
-    if (!notifier._mounted) {
+    if (!notifier.ref.mounted) {
       unawaited(service.disconnect());
       return;
     }
 
     if (!shouldConnect()) {
-      if (notifier._currentState.relayConnected ||
-          notifier._currentState.lastRelayError != null) {
-        notifier._replaceState(
-          notifier._currentState.copyWith(
-            relayConnected: false,
-            lastRelayError: null,
-            relayTemporarilyDisabledUntil: service.runtimeDisabledUntil,
-          ),
+      if (notifier.state.relayConnected ||
+          notifier.state.lastRelayError != null) {
+        notifier.state = notifier.state.copyWith(
+          relayConnected: false,
+          lastRelayError: null,
+          relayTemporarilyDisabledUntil: service.runtimeDisabledUntil,
         );
       }
       unawaited(service.disconnect());
       return;
     }
 
-    final groupId = notifier._currentState.boostedGroupId;
+    final groupId = notifier.state.boostedGroupId;
     if (groupId == null) {
       return;
     }
@@ -118,7 +113,7 @@ class _GroupMonitorRelayController {
   }
 
   void handleHint(RelayHintMessage hint) {
-    if (!notifier._mounted) {
+    if (!notifier.ref.mounted) {
       return;
     }
     final now = DateTime.now();
@@ -129,9 +124,9 @@ class _GroupMonitorRelayController {
       return;
     }
 
-    final boostedGroupId = notifier._currentState.boostedGroupId;
-    if (!notifier._currentState.isMonitoring ||
-        !notifier._currentState.autoInviteEnabled ||
+    final boostedGroupId = notifier.state.boostedGroupId;
+    if (!notifier.state.isMonitoring ||
+        !notifier.state.autoInviteEnabled ||
         boostedGroupId == null ||
         boostedGroupId != hint.groupId) {
       return;
@@ -151,12 +146,10 @@ class _GroupMonitorRelayController {
     _hintDedupe.record(hintDedupeKey, now: now, ttl: hintTtl);
     _hintDedupe.record(instanceDedupeKey, now: now, ttl: hintTtl);
 
-    notifier._replaceState(
-      notifier._currentState.copyWith(
-        relayHintsReceived: notifier._currentState.relayHintsReceived + 1,
-        lastRelayHintAt: now,
-        lastRelayError: null,
-      ),
+    notifier.state = notifier.state.copyWith(
+      relayHintsReceived: notifier.state.relayHintsReceived + 1,
+      lastRelayHintAt: now,
+      lastRelayError: null,
     );
 
     final cancelToken = CancelToken();
@@ -174,8 +167,7 @@ class _GroupMonitorRelayController {
         outcome = await notifier._autoInviteService.attemptAutoInviteFromHint(
           hint: hint,
           enabled:
-              notifier._currentState.autoInviteEnabled &&
-              notifier._currentState.isMonitoring,
+              notifier.state.autoInviteEnabled && notifier.state.isMonitoring,
           maxRetryWindow: const Duration(
             seconds: AppConstants.relayInviteRetryWindowSeconds,
           ),
@@ -195,7 +187,7 @@ class _GroupMonitorRelayController {
       _inviteCancelTokens.remove(cancelToken);
     }
 
-    if (outcome == null || !notifier._mounted) {
+    if (outcome == null || !notifier.ref.mounted) {
       return;
     }
 
@@ -221,14 +213,13 @@ class _GroupMonitorRelayController {
     required GroupInstanceWithGroup target,
     required DateTime detectedAt,
   }) {
-    if (!notifier._mounted) {
+    if (!notifier.ref.mounted) {
       return;
     }
-    if (!notifier._currentState.relayConnected ||
-        !notifier._currentState.relayAssistEnabled) {
+    if (!notifier.state.relayConnected || !notifier.state.relayAssistEnabled) {
       return;
     }
-    if (notifier._currentState.boostedGroupId != target.groupId) {
+    if (notifier.state.boostedGroupId != target.groupId) {
       return;
     }
     if (!shouldAttemptSelfInviteForInstance(target.instance)) {
@@ -259,22 +250,18 @@ class _GroupMonitorRelayController {
     );
 
     unawaited(service.publishHint(hint));
-    notifier._replaceState(
-      notifier._currentState.copyWith(
-        relayHintsPublished: notifier._currentState.relayHintsPublished + 1,
-        lastRelayError: null,
-      ),
+    notifier.state = notifier.state.copyWith(
+      relayHintsPublished: notifier.state.relayHintsPublished + 1,
+      lastRelayError: null,
     );
   }
 
   void recordFailure({required String reason}) {
-    if (!notifier._mounted) {
+    if (!notifier.ref.mounted) {
       return;
     }
     _failureStreak += 1;
-    notifier._replaceState(
-      notifier._currentState.copyWith(lastRelayError: reason),
-    );
+    notifier.state = notifier.state.copyWith(lastRelayError: reason);
 
     if (_failureStreak < AppConstants.relayCircuitBreakerThreshold) {
       return;
@@ -283,12 +270,10 @@ class _GroupMonitorRelayController {
     final disabledUntil = DateTime.now().add(
       const Duration(seconds: AppConstants.relayCircuitBreakerCooldownSeconds),
     );
-    notifier._replaceState(
-      notifier._currentState.copyWith(
-        relayConnected: false,
-        relayTemporarilyDisabledUntil: disabledUntil,
-        lastRelayError: 'relay_circuit_breaker',
-      ),
+    notifier.state = notifier.state.copyWith(
+      relayConnected: false,
+      relayTemporarilyDisabledUntil: disabledUntil,
+      lastRelayError: 'relay_circuit_breaker',
     );
     _failureStreak = 0;
     unawaited(service.disconnect());
@@ -322,21 +307,5 @@ class _GroupMonitorRelayController {
     final bytes = List<int>.generate(8, (_) => rng.nextInt(256));
     final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     return '$userId-$hex';
-  }
-}
-
-extension GroupMonitorRelayExtension on GroupMonitorNotifier {
-  void _bindRelayStreams() => _relayController.bindStreams();
-
-  void _reconcileRelayConnection() => _relayController.reconcileConnection();
-
-  void _publishRelayHintForNewBoostedInstances({
-    required GroupInstanceWithGroup target,
-    required DateTime detectedAt,
-  }) {
-    _relayController.publishHintForNewBoostedInstances(
-      target: target,
-      detectedAt: detectedAt,
-    );
   }
 }

@@ -1,3 +1,7 @@
+// ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+// This part-file's controller coordinates GroupMonitorNotifier internals within
+// the same library and intentionally reads/writes Riverpod's protected members.
+
 part of 'group_monitor_provider.dart';
 
 class _GroupMonitorLoopController {
@@ -6,7 +10,7 @@ class _GroupMonitorLoopController {
   final GroupMonitorNotifier notifier;
 
   bool baselineActive() {
-    final state = notifier._currentState;
+    final state = notifier.state;
     return isLoopActive(
       isEnabled: state.isMonitoring,
       sessionEligible: notifier._canPollForCurrentSession(),
@@ -15,7 +19,7 @@ class _GroupMonitorLoopController {
   }
 
   bool boostActive() {
-    final state = notifier._currentState;
+    final state = notifier.state;
     return state.isMonitoring &&
         state.isBoostActive &&
         state.boostedGroupId != null &&
@@ -23,20 +27,16 @@ class _GroupMonitorLoopController {
   }
 
   void recordBaselineAttempt([DateTime? at]) {
-    notifier._replaceState(
-      notifier._currentState.copyWith(
-        lastBaselineAttemptAt: at ?? DateTime.now(),
-        lastBaselineSkipReason: null,
-      ),
+    notifier.state = notifier.state.copyWith(
+      lastBaselineAttemptAt: at ?? DateTime.now(),
+      lastBaselineSkipReason: null,
     );
   }
 
   void recordBaselineSkip(String reason, [DateTime? at]) {
-    notifier._replaceState(
-      notifier._currentState.copyWith(
-        lastBaselineAttemptAt: at ?? DateTime.now(),
-        lastBaselineSkipReason: reason,
-      ),
+    notifier.state = notifier.state.copyWith(
+      lastBaselineAttemptAt: at ?? DateTime.now(),
+      lastBaselineSkipReason: reason,
     );
   }
 
@@ -46,13 +46,11 @@ class _GroupMonitorLoopController {
     DateTime? at,
   }) {
     final timestamp = at ?? DateTime.now();
-    notifier._replaceState(
-      notifier._currentState.copyWith(
-        lastBaselineSuccessAt: timestamp,
-        lastBaselinePolledGroupCount: polledGroupCount,
-        lastBaselineTotalInstances: totalInstances,
-        lastBaselineSkipReason: null,
-      ),
+    notifier.state = notifier.state.copyWith(
+      lastBaselineSuccessAt: timestamp,
+      lastBaselinePolledGroupCount: polledGroupCount,
+      lastBaselineTotalInstances: totalInstances,
+      lastBaselineSkipReason: null,
     );
   }
 
@@ -65,7 +63,7 @@ class _GroupMonitorLoopController {
     notifier._baselineLoop.queuePending(bypassRateLimit: false);
     notifier._selectionRefreshDebouncer.schedule(
       delay: AppConstants.selectionRefreshDebounceDuration,
-      isMounted: () => notifier._mounted,
+      isMounted: () => notifier.ref.mounted,
       onFire: () {
         notifier._baselineLoop.clearPending();
         requestBaselineRefresh(immediate: true);
@@ -74,14 +72,14 @@ class _GroupMonitorLoopController {
   }
 
   void reconcileMonitoringForSelectionState() {
-    final state = notifier._currentState;
+    final state = notifier.state;
     if (state.selectedGroupIds.isEmpty) {
       if (state.isMonitoring) {
         stopMonitoring();
       }
       reconcileBaselineLoop();
       reconcileBoostLoop();
-      notifier._reconcileRelayConnection();
+      notifier._relayController.reconcileConnection();
       return;
     }
 
@@ -96,11 +94,11 @@ class _GroupMonitorLoopController {
 
     reconcileBaselineLoop();
     reconcileBoostLoop();
-    notifier._reconcileRelayConnection();
+    notifier._relayController.reconcileConnection();
   }
 
   void reconcileBaselineLoop() {
-    final state = notifier._currentState;
+    final state = notifier.state;
     if (!state.isMonitoring) {
       notifier._baselineLoop.reset();
       return;
@@ -133,11 +131,16 @@ class _GroupMonitorLoopController {
   }
 
   void reconcileBoostLoop() {
-    final state = notifier._currentState;
+    final state = notifier.state;
     if (state.isBoostActive &&
         state.boostExpiresAt != null &&
         !state.boostExpiresAt!.isAfter(DateTime.now())) {
-      unawaited(notifier._clearBoost(persist: true, logExpired: true));
+      unawaited(
+        notifier._persistenceController.clearBoost(
+          persist: true,
+          logExpired: true,
+        ),
+      );
       return;
     }
 
@@ -185,7 +188,7 @@ class _GroupMonitorLoopController {
       reconcile: reconcile,
       resolveDelay: resolveDelay,
       requestRefresh: requestRefresh,
-      isMounted: () => notifier._mounted,
+      isMounted: () => notifier.ref.mounted,
       overrideDelay: overrideDelay,
     );
   }
@@ -268,13 +271,13 @@ class _GroupMonitorLoopController {
   }
 
   void drainPendingRefreshesOrScheduleTicks() {
-    if (!notifier._mounted || notifier._isAnyFetchInFlight) {
+    if (!notifier.ref.mounted || notifier._isAnyFetchInFlight) {
       return;
     }
 
     final baselineActiveNow = baselineActive();
     if (notifier._baselineLoop.drainPendingRefresh(
-      isMounted: notifier._mounted,
+      isMounted: notifier.ref.mounted,
       isInFlight: notifier._isAnyFetchInFlight,
       isActive: baselineActiveNow,
       runNow: ({required bypassRateLimit}) {
@@ -288,7 +291,7 @@ class _GroupMonitorLoopController {
 
     final boostActiveNow = boostActive();
     if (notifier._boostLoop.drainPendingRefresh(
-      isMounted: notifier._mounted,
+      isMounted: notifier.ref.mounted,
       isInFlight: notifier._isAnyFetchInFlight,
       isActive: boostActiveNow,
       runNow: ({required bypassRateLimit}) {
@@ -336,7 +339,7 @@ class _GroupMonitorLoopController {
       return;
     }
 
-    if (notifier._currentState.selectedGroupIds.isEmpty) {
+    if (notifier.state.selectedGroupIds.isEmpty) {
       AppLogger.warning(
         'Cannot start monitoring with no selected groups',
         subCategory: 'group_monitor',
@@ -344,7 +347,7 @@ class _GroupMonitorLoopController {
       return;
     }
 
-    if (notifier._currentState.isMonitoring) {
+    if (notifier.state.isMonitoring) {
       AppLogger.warning(
         'Already monitoring, skipping start',
         subCategory: 'group_monitor',
@@ -353,20 +356,20 @@ class _GroupMonitorLoopController {
     }
 
     notifier._hasBaseline = false;
-    notifier._replaceState(notifier._currentState.copyWith(isMonitoring: true));
+    notifier.state = notifier.state.copyWith(isMonitoring: true);
     AppLogger.info(
-      'Started monitoring ${notifier._currentState.selectedGroupIds.length} groups',
+      'Started monitoring ${notifier.state.selectedGroupIds.length} groups',
       subCategory: 'group_monitor',
     );
 
     requestBaselineRefresh(immediate: true);
     reconcileBoostLoop();
     reconcileBaselineLoop();
-    notifier._reconcileRelayConnection();
+    notifier._relayController.reconcileConnection();
   }
 
   void stopMonitoring() {
-    if (!notifier._currentState.isMonitoring) {
+    if (!notifier.state.isMonitoring) {
       return;
     }
 
@@ -374,94 +377,16 @@ class _GroupMonitorLoopController {
     notifier._boostLoop.reset();
     notifier._selectionRefreshDebouncer.cancel();
     unawaited(
-      notifier._clearBoost(
+      notifier._persistenceController.clearBoost(
         persist: true,
         logExpired: false,
         requestBaselineRecovery: false,
       ),
     );
-    notifier._replaceState(
-      notifier._currentState.copyWith(isMonitoring: false),
-    );
+    notifier.state = notifier.state.copyWith(isMonitoring: false);
     notifier._backoffDelay = 1;
-    notifier._reconcileRelayConnection();
+    notifier._relayController.reconcileConnection();
 
     AppLogger.info('Stopped monitoring', subCategory: 'group_monitor');
   }
-}
-
-extension GroupMonitorLoopsExtension on GroupMonitorNotifier {
-  bool _baselineActive() => _loopController.baselineActive();
-
-  bool _boostActive() => _loopController.boostActive();
-
-  void _recordBaselineAttempt([DateTime? at]) =>
-      _loopController.recordBaselineAttempt(at);
-
-  void _recordBaselineSkip(String reason, [DateTime? at]) =>
-      _loopController.recordBaselineSkip(reason, at);
-
-  void _recordBaselineSuccess({
-    required int polledGroupCount,
-    required int totalInstances,
-    DateTime? at,
-  }) {
-    _loopController.recordBaselineSuccess(
-      polledGroupCount: polledGroupCount,
-      totalInstances: totalInstances,
-      at: at,
-    );
-  }
-
-  void _scheduleSelectionTriggeredBaselineRefresh() =>
-      _loopController.scheduleSelectionTriggeredBaselineRefresh();
-
-  void _reconcileMonitoringForSelectionState() =>
-      _loopController.reconcileMonitoringForSelectionState();
-
-  void _reconcileBaselineLoop() => _loopController.reconcileBaselineLoop();
-
-  void _reconcileBoostLoop() => _loopController.reconcileBoostLoop();
-
-  Duration _nextPollDelay() => _loopController.nextPollDelay();
-
-  Duration _nextBoostPollDelay() => _loopController.nextBoostPollDelay();
-
-  void _scheduleNextBaselineTick({Duration? overrideDelay}) {
-    _loopController.scheduleNextBaselineTick(overrideDelay: overrideDelay);
-  }
-
-  void _scheduleNextBoostTick({Duration? overrideDelay}) {
-    _loopController.scheduleNextBoostTick(overrideDelay: overrideDelay);
-  }
-
-  void _requestBaselineRefresh({
-    bool immediate = true,
-    bool bypassRateLimit = false,
-  }) {
-    _loopController.requestBaselineRefresh(
-      immediate: immediate,
-      bypassRateLimit: bypassRateLimit,
-    );
-  }
-
-  void _requestBoostRefresh({
-    bool immediate = true,
-    bool bypassRateLimit = false,
-  }) {
-    _loopController.requestBoostRefresh(
-      immediate: immediate,
-      bypassRateLimit: bypassRateLimit,
-    );
-  }
-
-  void _drainPendingRefreshesOrScheduleTicks() =>
-      _loopController.drainPendingRefreshesOrScheduleTicks();
-
-  void _requestRefreshInternal({bool immediate = true}) =>
-      _loopController.requestRefresh(immediate: immediate);
-
-  void _startMonitoringInternal() => _loopController.startMonitoring();
-
-  void _stopMonitoringInternal() => _loopController.stopMonitoring();
 }
