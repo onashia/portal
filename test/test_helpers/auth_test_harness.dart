@@ -14,14 +14,28 @@ class TestAuthNotifier extends AuthNotifier {
   void setData(AuthState next) {
     state = AsyncData(next);
   }
+
+  void setLoading() {
+    state = const AsyncLoading<AuthState>();
+  }
+
+  void setError(Object error, StackTrace stackTrace) {
+    state = AsyncError<AuthState>(error, stackTrace);
+  }
 }
 
 class _MockCurrentUser extends Mock implements CurrentUser {}
+
+class _MockStreamedCurrentUser extends Mock implements StreamedCurrentUser {}
 
 CurrentUser mockCurrentUser(String id) {
   final user = _MockCurrentUser();
   when(() => user.id).thenReturn(id);
   return user;
+}
+
+StreamedCurrentUser mockStreamedCurrentUser() {
+  return _MockStreamedCurrentUser();
 }
 
 AuthState authenticatedAuthState({required String userId}) {

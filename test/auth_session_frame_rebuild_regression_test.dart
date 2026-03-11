@@ -8,30 +8,9 @@ import 'package:portal/providers/group_calendar_provider.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/providers/vrchat_status_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:vrchat_dart/vrchat_dart.dart' show CurrentUser;
-
-class _TestAuthNotifier extends AuthNotifier {
-  _TestAuthNotifier(this._initialState);
-
-  final AuthState _initialState;
-
-  @override
-  AuthState build() => _initialState;
-
-  void setData(AuthState next) {
-    state = AsyncData(next);
-  }
-}
+import 'test_helpers/auth_test_harness.dart';
 
 class _MockDio extends Mock implements dio.Dio {}
-
-class _MockCurrentUser extends Mock implements CurrentUser {}
-
-CurrentUser _mockCurrentUser(String id) {
-  final user = _MockCurrentUser();
-  when(() => user.id).thenReturn(id);
-  return user;
-}
 
 dio.Response<Map<String, dynamic>> _statusResponse() {
   return dio.Response<Map<String, dynamic>>(
@@ -59,10 +38,10 @@ void main() {
       when(
         () => mockDio.get(any(), options: any(named: 'options')),
       ).thenAnswer((_) async => _statusResponse());
-      final authNotifier = _TestAuthNotifier(
+      final authNotifier = TestAuthNotifier(
         AuthState(
           status: AuthStatus.authenticated,
-          currentUser: _mockCurrentUser('usr_test'),
+          currentUser: mockCurrentUser('usr_test'),
         ),
       );
 

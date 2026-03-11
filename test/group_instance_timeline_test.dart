@@ -8,15 +8,7 @@ import 'package:portal/theme/app_theme.dart';
 import 'package:portal/widgets/group_instance_timeline.dart';
 
 import 'test_helpers/fake_vrchat_models.dart';
-
-class _TestGroupMonitorNotifier extends GroupMonitorNotifier {
-  _TestGroupMonitorNotifier(this._initialState) : super('usr_test');
-
-  final GroupMonitorState _initialState;
-
-  @override
-  GroupMonitorState build() => _initialState;
-}
+import 'test_helpers/provider_test_notifiers.dart';
 
 void main() {
   testWidgets('renders group names and newest marker', (tester) async {
@@ -56,7 +48,7 @@ void main() {
         overrides: [
           groupMonitorProvider(
             'usr_test',
-          ).overrideWith(() => _TestGroupMonitorNotifier(monitorState)),
+          ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
         ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,
@@ -96,7 +88,7 @@ void main() {
         overrides: [
           groupMonitorProvider(
             'usr_test',
-          ).overrideWith(() => _TestGroupMonitorNotifier(monitorState)),
+          ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
         ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,
@@ -129,7 +121,7 @@ void main() {
         overrides: [
           groupMonitorProvider(
             'usr_test',
-          ).overrideWith(() => _TestGroupMonitorNotifier(monitorState)),
+          ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
         ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,
@@ -162,7 +154,7 @@ void main() {
         overrides: [
           groupMonitorProvider(
             'usr_test',
-          ).overrideWith(() => _TestGroupMonitorNotifier(monitorState)),
+          ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
         ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,

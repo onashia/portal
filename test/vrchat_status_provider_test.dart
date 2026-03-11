@@ -8,24 +8,9 @@ import 'package:portal/providers/api_rate_limit_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
 import 'package:portal/providers/vrchat_status_provider.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
-import 'package:vrchat_dart/vrchat_dart.dart' show CurrentUser;
-
-class _TestAuthNotifier extends AuthNotifier {
-  _TestAuthNotifier(this._initialState);
-
-  final AuthState _initialState;
-
-  @override
-  AuthState build() => _initialState;
-
-  void setData(AuthState next) {
-    state = AsyncData(next);
-  }
-}
+import 'test_helpers/auth_test_harness.dart';
 
 class _MockDio extends Mock implements dio.Dio {}
-
-class _MockCurrentUser extends Mock implements CurrentUser {}
 
 class _NoopErrorInterceptorHandler extends dio.ErrorInterceptorHandler {
   @override
@@ -36,12 +21,6 @@ class _NoopErrorInterceptorHandler extends dio.ErrorInterceptorHandler {
 
   @override
   void resolve(dio.Response<dynamic> response) {}
-}
-
-CurrentUser _mockCurrentUser(String id) {
-  final user = _MockCurrentUser();
-  when(() => user.id).thenReturn(id);
-  return user;
 }
 
 dio.Response<Map<String, dynamic>> _statusResponse() {
@@ -62,7 +41,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(
-          () => _TestAuthNotifier(
+          () => TestAuthNotifier(
             const AuthState(status: AuthStatus.unauthenticated),
           ),
         ),
@@ -87,10 +66,10 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           authProvider.overrideWith(
-            () => _TestAuthNotifier(
+            () => TestAuthNotifier(
               AuthState(
                 status: AuthStatus.authenticated,
-                currentUser: _mockCurrentUser('usr_test'),
+                currentUser: mockCurrentUser('usr_test'),
               ),
             ),
           ),
@@ -121,10 +100,10 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(
-          () => _TestAuthNotifier(
+          () => TestAuthNotifier(
             AuthState(
               status: AuthStatus.authenticated,
-              currentUser: _mockCurrentUser('usr_test'),
+              currentUser: mockCurrentUser('usr_test'),
             ),
           ),
         ),
@@ -154,10 +133,10 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(
-          () => _TestAuthNotifier(
+          () => TestAuthNotifier(
             AuthState(
               status: AuthStatus.authenticated,
-              currentUser: _mockCurrentUser('usr_test'),
+              currentUser: mockCurrentUser('usr_test'),
             ),
           ),
         ),
@@ -187,10 +166,10 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(
-          () => _TestAuthNotifier(
+          () => TestAuthNotifier(
             AuthState(
               status: AuthStatus.authenticated,
-              currentUser: _mockCurrentUser('usr_test'),
+              currentUser: mockCurrentUser('usr_test'),
             ),
           ),
         ),
@@ -244,7 +223,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(
-          () => _TestAuthNotifier(
+          () => TestAuthNotifier(
             const AuthState(status: AuthStatus.unauthenticated),
           ),
         ),
@@ -260,12 +239,12 @@ void main() {
     addTearDown(subscription.close);
 
     final authNotifier =
-        container.read(authProvider.notifier) as _TestAuthNotifier;
+        container.read(authProvider.notifier) as TestAuthNotifier;
     container.read(vrchatStatusProvider.notifier);
     authNotifier.setData(
       AuthState(
         status: AuthStatus.authenticated,
-        currentUser: _mockCurrentUser('usr_test'),
+        currentUser: mockCurrentUser('usr_test'),
       ),
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -284,10 +263,10 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           authProvider.overrideWith(
-            () => _TestAuthNotifier(
+            () => TestAuthNotifier(
               AuthState(
                 status: AuthStatus.authenticated,
-                currentUser: _mockCurrentUser('usr_test'),
+                currentUser: mockCurrentUser('usr_test'),
               ),
             ),
           ),
@@ -310,7 +289,7 @@ void main() {
       ).called(1);
 
       final authNotifier =
-          container.read(authProvider.notifier) as _TestAuthNotifier;
+          container.read(authProvider.notifier) as TestAuthNotifier;
       authNotifier.setData(const AuthState(status: AuthStatus.unauthenticated));
       await Future<void>.delayed(Duration.zero);
 
@@ -335,10 +314,10 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           authProvider.overrideWith(
-            () => _TestAuthNotifier(
+            () => TestAuthNotifier(
               AuthState(
                 status: AuthStatus.authenticated,
-                currentUser: _mockCurrentUser('usr_test'),
+                currentUser: mockCurrentUser('usr_test'),
               ),
             ),
           ),
@@ -361,7 +340,7 @@ void main() {
       ).called(1);
 
       final authNotifier =
-          container.read(authProvider.notifier) as _TestAuthNotifier;
+          container.read(authProvider.notifier) as TestAuthNotifier;
       authNotifier.setData(const AuthState(status: AuthStatus.unauthenticated));
       await Future<void>.delayed(Duration.zero);
 
@@ -388,10 +367,10 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           authProvider.overrideWith(
-            () => _TestAuthNotifier(
+            () => TestAuthNotifier(
               AuthState(
                 status: AuthStatus.authenticated,
-                currentUser: _mockCurrentUser('usr_test'),
+                currentUser: mockCurrentUser('usr_test'),
               ),
             ),
           ),
@@ -408,7 +387,7 @@ void main() {
 
       final notifier = container.read(vrchatStatusProvider.notifier);
       final authNotifier =
-          container.read(authProvider.notifier) as _TestAuthNotifier;
+          container.read(authProvider.notifier) as TestAuthNotifier;
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
       expect(notifier.hasActiveRefreshTimer, isTrue);
@@ -427,10 +406,10 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(
-          () => _TestAuthNotifier(
+          () => TestAuthNotifier(
             AuthState(
               status: AuthStatus.authenticated,
-              currentUser: _mockCurrentUser('usr_test'),
+              currentUser: mockCurrentUser('usr_test'),
             ),
           ),
         ),
@@ -446,7 +425,7 @@ void main() {
     addTearDown(subscription.close);
 
     final authNotifier =
-        container.read(authProvider.notifier) as _TestAuthNotifier;
+        container.read(authProvider.notifier) as TestAuthNotifier;
     container.read(vrchatStatusProvider.notifier);
     await Future<void>.delayed(Duration.zero);
     await Future<void>.delayed(Duration.zero);

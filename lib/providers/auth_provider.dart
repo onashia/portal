@@ -238,14 +238,6 @@ final authSessionSnapshotProvider = Provider<AuthSessionSnapshot>((ref) {
   );
 });
 
-final isAuthenticatedProvider = Provider<bool>((ref) {
-  return ref.watch(authSessionSnapshotProvider).isAuthenticated;
-});
-
-final authenticatedUserIdProvider = Provider<String?>((ref) {
-  return ref.watch(authSessionSnapshotProvider).userId;
-});
-
 final authStreamedUserProvider = Provider<StreamedCurrentUser?>((ref) {
   return ref.watch(
     authProvider.select((value) => value.asData?.value.streamedUser),
