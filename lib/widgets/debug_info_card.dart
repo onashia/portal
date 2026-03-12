@@ -11,6 +11,8 @@ import '../utils/group_utils.dart';
 class DebugInfoCard extends ConsumerWidget {
   const DebugInfoCard({super.key, required this.userId, this.useCard = true});
 
+  static const double _stackedLayoutBreakpoint = 360.0;
+
   final String userId;
   final bool useCard;
 
@@ -22,7 +24,11 @@ class DebugInfoCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
     final scheme = theme.colorScheme;
-    final coreRows = _buildCoreMetricRows(monitorState, apiCallState);
+    final monitoringRows = _buildMonitoringMetricRows(
+      monitorState,
+      apiCallState,
+    );
+    final apiLanesRows = _buildApiLanesMetricRows(apiCallState);
     final boostRows = _buildBoostMetricRows(monitorState);
     final relayRows = _buildRelayMetricRows(monitorState);
     final labelStyle = textTheme.labelMedium?.copyWith(
@@ -33,44 +39,115 @@ class DebugInfoCard extends ConsumerWidget {
 
     final content = Padding(
       padding: EdgeInsets.all(m3e.spacing.lg),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeader(context),
-            SizedBox(height: m3e.spacing.sm),
-            for (final row in coreRows)
-              _buildMetricRow(
-                context,
-                row,
-                labelStyle: labelStyle,
-                valueStyle: valueStyle,
-              ),
-            SizedBox(height: m3e.spacing.sm),
-            for (final row in boostRows)
-              _buildMetricRow(
-                context,
-                row,
-                labelStyle: labelStyle,
-                valueStyle: valueStyle,
-              ),
-            SizedBox(height: m3e.spacing.sm),
-            for (final row in relayRows)
-              _buildMetricRow(
-                context,
-                row,
-                labelStyle: labelStyle,
-                valueStyle: valueStyle,
-              ),
-            _buildErrorSection(context, monitorState, errorStyle: errorStyle),
-            _buildAllGroupsEmptyNotice(
-              context,
-              monitorState,
-              errorStyle: errorStyle,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final useStackedLayout =
+              constraints.maxWidth < _stackedLayoutBreakpoint;
+
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(context),
+                SizedBox(height: m3e.spacing.md),
+                if (useStackedLayout) ...[
+                  _buildSection(
+                    context,
+                    'Monitoring',
+                    monitoringRows,
+                    labelStyle: labelStyle,
+                    valueStyle: valueStyle,
+                  ),
+                  SizedBox(height: m3e.spacing.lg),
+                  _buildSection(
+                    context,
+                    'Boost',
+                    boostRows,
+                    labelStyle: labelStyle,
+                    valueStyle: valueStyle,
+                  ),
+                  SizedBox(height: m3e.spacing.lg),
+                  _buildSection(
+                    context,
+                    'API Lanes',
+                    apiLanesRows,
+                    labelStyle: labelStyle,
+                    valueStyle: valueStyle,
+                  ),
+                  SizedBox(height: m3e.spacing.lg),
+                  _buildSection(
+                    context,
+                    'Relay',
+                    relayRows,
+                    labelStyle: labelStyle,
+                    valueStyle: valueStyle,
+                  ),
+                ] else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildSection(
+                              context,
+                              'Monitoring',
+                              monitoringRows,
+                              labelStyle: labelStyle,
+                              valueStyle: valueStyle,
+                            ),
+                            SizedBox(height: m3e.spacing.lg),
+                            _buildSection(
+                              context,
+                              'Boost',
+                              boostRows,
+                              labelStyle: labelStyle,
+                              valueStyle: valueStyle,
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(width: m3e.spacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildSection(
+                              context,
+                              'API Lanes',
+                              apiLanesRows,
+                              labelStyle: labelStyle,
+                              valueStyle: valueStyle,
+                            ),
+                            SizedBox(height: m3e.spacing.lg),
+                            _buildSection(
+                              context,
+                              'Relay',
+                              relayRows,
+                              labelStyle: labelStyle,
+                              valueStyle: valueStyle,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                _buildErrorSection(
+                  context,
+                  monitorState,
+                  errorStyle: errorStyle,
+                ),
+                _buildAllGroupsEmptyNotice(
+                  context,
+                  monitorState,
+                  errorStyle: errorStyle,
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
 
@@ -104,7 +181,45 @@ class DebugInfoCard extends ConsumerWidget {
     );
   }
 
-  List<_MetricRowData> _buildCoreMetricRows(
+  Widget _buildSection(
+    BuildContext context,
+    String title,
+    List<_MetricRowData> rows, {
+    required TextStyle? labelStyle,
+    required TextStyle? valueStyle,
+  }) {
+    final m3e = context.m3e;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: scheme.primary,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.8,
+          ),
+        ),
+        Divider(
+          height: m3e.spacing.md,
+          thickness: 1,
+          color: scheme.outlineVariant,
+        ),
+        for (final row in rows)
+          _buildMetricRow(
+            context,
+            row,
+            labelStyle: labelStyle,
+            valueStyle: valueStyle,
+          ),
+      ],
+    );
+  }
+
+  List<_MetricRowData> _buildMonitoringMetricRows(
     GroupMonitorState monitorState,
     ApiCallCounterState apiCallState,
   ) {
@@ -122,38 +237,51 @@ class DebugInfoCard extends ConsumerWidget {
       ),
       _MetricRowData('API Calls', apiCallState.totalCalls.toString()),
       _MetricRowData('Throttled Skips', apiCallState.throttledSkips.toString()),
-      ..._buildApiLaneMetrics(apiCallState),
+      _MetricRowData('Auto Invite', monitorState.autoInviteEnabled.toString()),
     ];
+  }
+
+  List<_MetricRowData> _buildApiLanesMetricRows(
+    ApiCallCounterState apiCallState,
+  ) {
+    return ApiRequestLane.values
+        .map(
+          (lane) => _MetricRowData(
+            lane.name,
+            (apiCallState.callsByLane[lane.name] ?? 0).toString(),
+          ),
+        )
+        .toList(growable: false);
   }
 
   List<_MetricRowData> _buildBoostMetricRows(GroupMonitorState monitorState) {
     return [
-      _MetricRowData('Boost Active', monitorState.isBoostActive.toString()),
+      _MetricRowData('Active', monitorState.isBoostActive.toString()),
       _MetricRowData(
-        'Boost Group',
+        'Group',
         monitorState.boostedGroupId == null
             ? '—'
             : _getGroupName(monitorState, monitorState.boostedGroupId!),
       ),
       _MetricRowData(
-        'Boost Expires In',
+        'Expires In',
         _formatDuration(
           monitorState.boostExpiresAt?.difference(DateTime.now()),
         ),
       ),
-      _MetricRowData('Boost Polls', monitorState.boostPollCount.toString()),
+      _MetricRowData('Polls', monitorState.boostPollCount.toString()),
       _MetricRowData(
-        'Boost Last Latency',
+        'Last Latency',
         monitorState.lastBoostLatencyMs == null
             ? '—'
             : '${monitorState.lastBoostLatencyMs} ms',
       ),
       _MetricRowData(
-        'Boost Last FetchedAt',
+        'Last FetchedAt',
         _formatDateTime(monitorState.lastBoostFetchedAt),
       ),
       _MetricRowData(
-        'Boost First Seen After',
+        'First Seen After',
         _formatDuration(monitorState.boostFirstSeenAfter),
       ),
     ];
@@ -161,40 +289,23 @@ class DebugInfoCard extends ConsumerWidget {
 
   List<_MetricRowData> _buildRelayMetricRows(GroupMonitorState monitorState) {
     return [
+      _MetricRowData('Enabled', monitorState.relayAssistEnabled.toString()),
+      _MetricRowData('Connected', monitorState.relayConnected.toString()),
+      _MetricRowData('Hints Sent', monitorState.relayHintsPublished.toString()),
       _MetricRowData(
-        'Relay Enabled',
-        monitorState.relayAssistEnabled.toString(),
-      ),
-      _MetricRowData('Relay Connected', monitorState.relayConnected.toString()),
-      _MetricRowData(
-        'Relay Hints Sent',
-        monitorState.relayHintsPublished.toString(),
-      ),
-      _MetricRowData(
-        'Relay Hints Received',
+        'Hints Received',
         monitorState.relayHintsReceived.toString(),
       ),
       _MetricRowData(
-        'Relay Last Hint',
+        'Last Hint',
         _formatDateTime(monitorState.lastRelayHintAt),
       ),
       _MetricRowData(
-        'Relay Disabled Until',
+        'Disabled Until',
         _formatDateTime(monitorState.relayTemporarilyDisabledUntil),
       ),
-      _MetricRowData('Relay Last Error', monitorState.lastRelayError ?? '—'),
+      _MetricRowData('Last Error', monitorState.lastRelayError ?? '—'),
     ];
-  }
-
-  List<_MetricRowData> _buildApiLaneMetrics(ApiCallCounterState apiCallState) {
-    return ApiRequestLane.values
-        .map(
-          (lane) => _MetricRowData(
-            'API Lane ${lane.name}',
-            (apiCallState.callsByLane[lane.name] ?? 0).toString(),
-          ),
-        )
-        .toList(growable: false);
   }
 
   Widget _buildErrorSection(
@@ -257,60 +368,30 @@ class DebugInfoCard extends ConsumerWidget {
 
     return Padding(
       padding: EdgeInsets.only(top: m3e.spacing.xs),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final useStackedLayout = constraints.maxWidth < 240;
-          if (useStackedLayout) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  row.label,
-                  style: labelStyle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                SizedBox(height: m3e.spacing.xs),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    row.value,
-                    style: valueStyle,
-                    textAlign: TextAlign.right,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            );
-          }
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 3,
-                child: Text(
-                  row.label,
-                  style: labelStyle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              SizedBox(width: m3e.spacing.sm),
-              Flexible(
-                flex: 4,
-                child: Text(
-                  row.value,
-                  style: valueStyle,
-                  textAlign: TextAlign.right,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          );
-        },
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Text(
+              row.label,
+              style: labelStyle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          SizedBox(width: m3e.spacing.sm),
+          Flexible(
+            flex: 2,
+            child: Text(
+              row.value,
+              style: valueStyle,
+              textAlign: TextAlign.right,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
