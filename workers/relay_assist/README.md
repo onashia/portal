@@ -39,3 +39,9 @@ flutter run -d macos \
   --dart-define=PORTAL_RELAY_BOOTSTRAP_URL=https://<your-worker-domain>/relay/bootstrap \
   --dart-define=PORTAL_RELAY_APP_SECRET=<your-secret>
 ```
+
+Portal now rejects plaintext relay transports by default. If you need to point the desktop app at a non-TLS local worker during development, add:
+
+```bash
+--dart-define=PORTAL_ALLOW_INSECURE_RELAY_TRANSPORT=true
+```

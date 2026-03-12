@@ -6,15 +6,7 @@ import 'package:portal/models/vrchat_status.dart';
 import 'package:portal/providers/vrchat_status_provider.dart';
 import 'package:portal/theme/app_theme.dart';
 import 'package:portal/widgets/vrchat/vrchat_status_indicator.dart';
-
-class _TestVrchatStatusNotifier extends VrchatStatusNotifier {
-  _TestVrchatStatusNotifier(this._initialState);
-
-  final VrchatStatusState _initialState;
-
-  @override
-  VrchatStatusState build() => _initialState;
-}
+import 'test_helpers/provider_test_notifiers.dart';
 
 void main() {
   testWidgets('incident cards use zero margin and consistent section spacing', (
@@ -85,7 +77,7 @@ void main() {
       ProviderScope(
         overrides: [
           vrchatStatusProvider.overrideWith(
-            () => _TestVrchatStatusNotifier(
+            () => TestVrchatStatusNotifier(
               VrchatStatusState(status: status, isLoading: false),
             ),
           ),
@@ -171,7 +163,7 @@ void main() {
       ProviderScope(
         overrides: [
           vrchatStatusProvider.overrideWith(
-            () => _TestVrchatStatusNotifier(
+            () => TestVrchatStatusNotifier(
               VrchatStatusState(status: status, isLoading: false),
             ),
           ),

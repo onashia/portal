@@ -19,6 +19,13 @@ class AppConstants {
     'PORTAL_RELAY_APP_SECRET',
     defaultValue: '',
   );
+  // Development-only escape hatch for local relay testing without TLS.
+  // Keep disabled in normal environments so the client refuses plaintext
+  // bootstrap and websocket transports.
+  static const bool allowInsecureRelayTransport = bool.fromEnvironment(
+    'PORTAL_ALLOW_INSECURE_RELAY_TRANSPORT',
+    defaultValue: false,
+  );
   static const int relayBootstrapTimeoutSeconds = 8;
   static const int relayHintTtlSeconds = 45;
   static const int relayHintDedupeSeconds = 60;
@@ -45,6 +52,10 @@ class AppConstants {
   static const int vrchatApiReceiveTimeoutSeconds = 20;
   static const int groupInstancesRequestTimeoutSeconds = 20;
   static const int groupInstancesMaxConcurrentRequests = 4;
+  static const int groupInstanceEnrichmentTtlSeconds = 30;
+  static const int groupInstanceEnrichmentFailureCooldownSeconds = 10;
+  static const int groupInstanceEnrichmentLogDedupeSeconds = 30;
+  static const int groupInstanceInviteVerificationMaxCandidates = 3;
   static const int boostPollingIntervalSeconds = 10;
   static const int boostPollingJitterSeconds = 2;
   static const int boostDurationMinutes = 15;

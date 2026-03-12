@@ -7,28 +7,8 @@ import 'package:portal/providers/vrchat_status_provider.dart';
 import 'package:portal/theme/app_theme.dart';
 import 'package:portal/widgets/dashboard/dashboard_user_card.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
-
-class _TestAuthNotifier extends AuthNotifier {
-  _TestAuthNotifier(this._initialState);
-
-  final AuthState _initialState;
-
-  @override
-  AuthState build() => _initialState;
-
-  void setData(AuthState next) {
-    state = AsyncData(next);
-  }
-}
-
-class _TestVrchatStatusNotifier extends VrchatStatusNotifier {
-  _TestVrchatStatusNotifier(this._initialState);
-
-  final VrchatStatusState _initialState;
-
-  @override
-  VrchatStatusState build() => _initialState;
-}
+import 'test_helpers/auth_test_harness.dart';
+import 'test_helpers/provider_test_notifiers.dart';
 
 class _MockCurrentUser extends Mock implements CurrentUser {}
 
@@ -52,7 +32,7 @@ void main() {
         status: UserStatus.joinMe,
       );
 
-      final authNotifier = _TestAuthNotifier(
+      final authNotifier = TestAuthNotifier(
         AuthState(status: AuthStatus.authenticated, currentUser: currentUser),
       );
 
@@ -61,7 +41,7 @@ void main() {
           overrides: [
             authProvider.overrideWith(() => authNotifier),
             vrchatStatusProvider.overrideWith(
-              () => _TestVrchatStatusNotifier(
+              () => TestVrchatStatusNotifier(
                 const VrchatStatusState(
                   isLoading: false,
                   errorMessage: 'offline',

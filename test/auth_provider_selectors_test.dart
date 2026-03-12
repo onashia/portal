@@ -1,43 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:portal/providers/auth_provider.dart';
-import 'package:vrchat_dart/vrchat_dart.dart';
-
-class _TestAuthNotifier extends AuthNotifier {
-  _TestAuthNotifier(this._initialState);
-
-  final AuthState _initialState;
-
-  @override
-  AuthState build() => _initialState;
-
-  void setData(AuthState next) {
-    state = AsyncData(next);
-  }
-
-  void setLoading() {
-    state = const AsyncLoading<AuthState>();
-  }
-
-  void setError(Object error, StackTrace stackTrace) {
-    state = AsyncError<AuthState>(error, stackTrace);
-  }
-}
-
-class _MockCurrentUser extends Mock implements CurrentUser {}
-
-class _MockStreamedCurrentUser extends Mock implements StreamedCurrentUser {}
+import 'test_helpers/auth_test_harness.dart';
 
 void main() {
   test('selectors map auth slices and async metadata', () {
-    final currentUser = _MockCurrentUser();
-    when(() => currentUser.id).thenReturn('usr_test');
-    final streamedUser = _MockStreamedCurrentUser();
+    final currentUser = mockCurrentUser('usr_test');
+    final streamedUser = mockStreamedCurrentUser();
     final container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(
-          () => _TestAuthNotifier(
+          () => TestAuthNotifier(
             AuthState(
               status: AuthStatus.authenticated,
               currentUser: currentUser,
@@ -48,7 +21,7 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    final notifier = container.read(authProvider.notifier) as _TestAuthNotifier;
+    final notifier = container.read(authProvider.notifier) as TestAuthNotifier;
 
     expect(container.read(authStatusProvider), AuthStatus.authenticated);
     expect(container.read(authCurrentUserProvider), same(currentUser));
@@ -57,8 +30,6 @@ void main() {
     expect(authenticatedSession.status, AuthStatus.authenticated);
     expect(authenticatedSession.isAuthenticated, isTrue);
     expect(authenticatedSession.userId, 'usr_test');
-    expect(container.read(isAuthenticatedProvider), isTrue);
-    expect(container.read(authenticatedUserIdProvider), 'usr_test');
 
     notifier.setLoading();
     final loadingMeta = container.read(authAsyncMetaProvider);
@@ -76,28 +47,24 @@ void main() {
     expect(errorSession.status, isNull);
     expect(errorSession.isAuthenticated, isFalse);
     expect(errorSession.userId, isNull);
-    expect(container.read(isAuthenticatedProvider), isFalse);
-    expect(container.read(authenticatedUserIdProvider), isNull);
   });
 
   test(
     'authStatusProvider does not emit for non-status auth updates',
     () async {
-      final currentUser = _MockCurrentUser();
-      when(() => currentUser.id).thenReturn('usr_test');
-      final firstStreamedUser = _MockStreamedCurrentUser();
-      final secondStreamedUser = _MockStreamedCurrentUser();
+      final currentUser = mockCurrentUser('usr_test');
+      final firstStreamedUser = mockStreamedCurrentUser();
+      final secondStreamedUser = mockStreamedCurrentUser();
       final container = ProviderContainer(
         overrides: [
           authProvider.overrideWith(
-            () =>
-                _TestAuthNotifier(const AuthState(status: AuthStatus.initial)),
+            () => TestAuthNotifier(const AuthState(status: AuthStatus.initial)),
           ),
         ],
       );
       addTearDown(container.dispose);
       final notifier =
-          container.read(authProvider.notifier) as _TestAuthNotifier;
+          container.read(authProvider.notifier) as TestAuthNotifier;
 
       final observedStatuses = <AuthStatus?>[];
       final subscription = container.listen<AuthStatus?>(authStatusProvider, (

@@ -19,6 +19,13 @@ enum InviteRetryOutcome {
   nonRetryableFailure,
 }
 
+enum InviteSendOutcome {
+  sent,
+  forbidden,
+  transientFailure,
+  nonRetryableFailure,
+}
+
 @visibleForTesting
 bool isSelfInviteForbiddenDioError(Object error) {
   if (error is! DioException) {
@@ -56,6 +63,17 @@ bool isTransientSelfInviteError(Object error) {
   }
 
   return false;
+}
+
+@visibleForTesting
+InviteSendOutcome classifyInviteSendError(Object error) {
+  if (isSelfInviteForbiddenDioError(error)) {
+    return InviteSendOutcome.forbidden;
+  }
+  if (isTransientSelfInviteError(error)) {
+    return InviteSendOutcome.transientFailure;
+  }
+  return InviteSendOutcome.nonRetryableFailure;
 }
 
 @visibleForTesting
@@ -109,14 +127,14 @@ class InviteService {
     );
   }
 
-  Future<void> inviteSelfToInstance(Instance instance) async {
-    await inviteSelfToLocation(
+  Future<InviteSendOutcome> inviteSelfToInstance(Instance instance) async {
+    return inviteSelfToLocation(
       worldId: instance.worldId,
       instanceId: instance.instanceId,
     );
   }
 
-  Future<void> inviteSelfToLocation({
+  Future<InviteSendOutcome> inviteSelfToLocation({
     required String worldId,
     required String instanceId,
   }) async {
@@ -126,10 +144,11 @@ class InviteService {
         'Sent self-invite to $worldId:$instanceId',
         subCategory: 'invite',
       );
+      return InviteSendOutcome.sent;
     } catch (e, s) {
       if (isSelfInviteForbiddenDioError(e)) {
         _log403Denial(worldId: worldId, instanceId: instanceId);
-        return;
+        return InviteSendOutcome.forbidden;
       }
 
       final logged = logDioException(
@@ -147,6 +166,8 @@ class InviteService {
           stackTrace: s,
         );
       }
+
+      return classifyInviteSendError(e);
     }
   }
 

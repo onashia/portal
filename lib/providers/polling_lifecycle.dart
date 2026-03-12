@@ -11,6 +11,7 @@ typedef RefreshDispatchDecision = ({
   bool shouldRunNow,
   bool shouldScheduleTick,
 });
+typedef LoopRefreshRunner = void Function({required bool bypassRateLimit});
 
 bool isSessionEligible({
   required bool isAuthenticated,
@@ -103,6 +104,153 @@ class RefreshLoopState {
     final bypassRateLimit = pendingBypassRateLimit;
     clearPending();
     return (hadPending: hadPending, bypassRateLimit: bypassRateLimit);
+  }
+}
+
+class RefreshLoopController {
+  RefreshLoopController({RefreshLoopState? state})
+    : state = state ?? RefreshLoopState();
+
+  final RefreshLoopState state;
+
+  bool get hasTimer => state.hasTimer;
+  bool get hasPendingRefresh => state.pendingRefresh;
+
+  void cancelTimer() {
+    state.cancelTimer();
+  }
+
+  void clearPending() {
+    state.clearPending();
+  }
+
+  void reset() {
+    state.reset();
+  }
+
+  void queuePending({required bool bypassRateLimit}) {
+    state.queuePending(bypassRateLimit: bypassRateLimit);
+  }
+
+  ({bool hadPending, bool bypassRateLimit}) consumePending() {
+    return state.consumePending();
+  }
+
+  void requestRefresh({
+    required bool isActive,
+    required bool isInFlight,
+    required bool immediate,
+    required bool bypassRateLimit,
+    required void Function() reconcile,
+    required LoopRefreshRunner runNow,
+    required void Function() scheduleNextTick,
+    void Function()? onQueuePending,
+  }) {
+    final dispatch = shouldRequestImmediateRefresh(
+      isActive: isActive,
+      isInFlight: isInFlight,
+      immediate: immediate,
+    );
+    if (dispatch.shouldReconcile) {
+      reconcile();
+      return;
+    }
+
+    cancelTimer();
+
+    if (dispatch.shouldQueuePending) {
+      queuePending(bypassRateLimit: bypassRateLimit);
+      onQueuePending?.call();
+      return;
+    }
+
+    if (dispatch.shouldRunNow) {
+      runNow(bypassRateLimit: bypassRateLimit);
+      return;
+    }
+
+    if (dispatch.shouldScheduleTick) {
+      scheduleNextTick();
+    }
+  }
+
+  bool drainPendingRefresh({
+    required bool isMounted,
+    required bool isInFlight,
+    required bool isActive,
+    required LoopRefreshRunner runNow,
+  }) {
+    if (!shouldDrainPendingRefresh(
+      isMounted: isMounted,
+      isInFlight: isInFlight,
+      hasPendingRefresh: hasPendingRefresh,
+      isActive: isActive,
+    )) {
+      return false;
+    }
+
+    final pending = consumePending();
+    runNow(bypassRateLimit: pending.bypassRateLimit);
+    return true;
+  }
+
+  bool shouldScheduleNext({required bool isActive, required bool isInFlight}) {
+    return shouldScheduleNextTick(
+      isActive: isActive,
+      hasTimer: hasTimer,
+      isInFlight: isInFlight,
+      hasPendingRefresh: hasPendingRefresh,
+    );
+  }
+
+  void scheduleNextTick({
+    required bool Function() isActive,
+    required void Function() reconcile,
+    required Duration Function() resolveDelay,
+    required void Function() requestRefresh,
+    required bool Function() isMounted,
+    Duration? overrideDelay,
+  }) {
+    cancelTimer();
+
+    if (!isActive()) {
+      reconcile();
+      return;
+    }
+
+    final delay = overrideDelay ?? resolveDelay();
+    state.timer = Timer(delay, () {
+      if (!isMounted()) {
+        return;
+      }
+      requestRefresh();
+    });
+  }
+}
+
+class RefreshDebouncer {
+  Timer? _timer;
+
+  bool get isScheduled => _timer != null;
+
+  void cancel() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  void schedule({
+    required Duration delay,
+    required bool Function() isMounted,
+    required void Function() onFire,
+  }) {
+    cancel();
+    _timer = Timer(delay, () {
+      _timer = null;
+      if (!isMounted()) {
+        return;
+      }
+      onFire();
+    });
   }
 }
 

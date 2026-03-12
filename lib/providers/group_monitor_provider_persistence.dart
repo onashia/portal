@@ -1,45 +1,51 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+// This part-file's controller coordinates GroupMonitorNotifier internals within
+// the same library and intentionally reads/writes Riverpod's protected members.
 
 part of 'group_monitor_provider.dart';
 
-extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
-  void _listenForAuthChanges() {
-    ref.listen<AuthSessionSnapshot>(authSessionSnapshotProvider, (
+class _GroupMonitorPersistenceController {
+  _GroupMonitorPersistenceController(this.notifier);
+
+  final GroupMonitorNotifier notifier;
+
+  void listenForAuthChanges() {
+    notifier.ref.listen<AuthSessionSnapshot>(authSessionSnapshotProvider, (
       previous,
       next,
     ) {
       final wasEligible =
-          previous?.isAuthenticated == true && previous?.userId == arg;
-      final isEligible = next.isAuthenticated && next.userId == arg;
+          previous?.isAuthenticated == true && previous?.userId == notifier.arg;
+      final isEligible = next.isAuthenticated && next.userId == notifier.arg;
 
       if (!isEligible) {
-        if (state.isMonitoring) {
-          stopMonitoring();
+        if (notifier.state.isMonitoring) {
+          notifier.stopMonitoring();
         } else {
-          _reconcileBaselineLoop();
-          _reconcileBoostLoop();
-          _reconcileRelayConnection();
+          notifier._loopController.reconcileBaselineLoop();
+          notifier._loopController.reconcileBoostLoop();
+          notifier._relayController.reconcileConnection();
         }
         return;
       }
 
       if (!wasEligible) {
         Future.microtask(() {
-          if (!ref.mounted) {
+          if (!notifier.ref.mounted) {
             return;
           }
-          _reconcileMonitoringForSelectionState();
+          notifier._loopController.reconcileMonitoringForSelectionState();
         });
         return;
       }
 
-      _reconcileBaselineLoop();
-      _reconcileBoostLoop();
-      _reconcileRelayConnection();
+      notifier._loopController.reconcileBaselineLoop();
+      notifier._loopController.reconcileBoostLoop();
+      notifier._relayController.reconcileConnection();
     });
   }
 
-  Future<void> _loadBoostSettings() async {
+  Future<void> loadBoostSettings() async {
     try {
       final settings = await GroupMonitorStorage.loadBoostSettings();
       final resolved = resolveLoadedBoostSettings(
@@ -48,12 +54,12 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
       );
 
       if (resolved.shouldClear) {
-        await _clearBoost(persist: true, logExpired: resolved.logExpired);
+        await clearBoost(persist: true, logExpired: resolved.logExpired);
         return;
       }
 
       if (resolved.boostedGroupId != null && resolved.boostExpiresAt != null) {
-        state = state.copyWith(
+        notifier.state = notifier.state.copyWith(
           isBoostActive: resolved.boostExpiresAt!.isAfter(DateTime.now()),
           boostedGroupId: resolved.boostedGroupId,
           boostExpiresAt: resolved.boostExpiresAt,
@@ -63,11 +69,11 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
           subCategory: 'group_monitor',
         );
 
-        if (state.isMonitoring) {
-          _requestBoostRefresh(immediate: true);
+        if (notifier.state.isMonitoring) {
+          notifier._loopController.requestBoostRefresh(immediate: true);
         }
       }
-      _reconcileRelayConnection();
+      notifier._relayController.reconcileConnection();
     } catch (e) {
       AppLogger.error(
         'Failed to load boost settings',
@@ -77,10 +83,10 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
     }
   }
 
-  Future<void> _loadAutoInviteSetting() async {
+  Future<void> loadAutoInviteSetting() async {
     try {
       final enabled = await GroupMonitorStorage.loadAutoInviteEnabled();
-      state = state.copyWith(autoInviteEnabled: enabled);
+      notifier.state = notifier.state.copyWith(autoInviteEnabled: enabled);
       AppLogger.debug(
         'Loaded auto-invite setting: $enabled',
         subCategory: 'group_monitor',
@@ -92,16 +98,16 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
         error: e,
       );
     } finally {
-      _reconcileRelayConnection();
+      notifier._relayController.reconcileConnection();
     }
   }
 
-  Future<void> _loadRelayAssistSetting() async {
+  Future<void> loadRelayAssistSetting() async {
     try {
       final enabled = await GroupMonitorStorage.loadRelayAssistEnabled(
         defaultValue: AppConstants.relayAssistEnabled,
       );
-      state = state.copyWith(relayAssistEnabled: enabled);
+      notifier.state = notifier.state.copyWith(relayAssistEnabled: enabled);
       AppLogger.debug(
         'Loaded relay assist setting: $enabled',
         subCategory: 'group_monitor',
@@ -113,17 +119,20 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
         error: e,
       );
     } finally {
-      _reconcileRelayConnection();
+      notifier._relayController.reconcileConnection();
     }
   }
 
-  Future<void> _loadSelectedGroups() async {
+  Future<void> loadSelectedGroups() async {
     try {
       final selectedIds = await GroupMonitorStorage.loadSelectedGroupIds();
       final loadedSelection = selectedIds.toSet();
-      final shouldApplyLoadedSelection = state.selectedGroupIds.isEmpty;
+      final shouldApplyLoadedSelection =
+          notifier.state.selectedGroupIds.isEmpty;
       if (shouldApplyLoadedSelection) {
-        state = state.copyWith(selectedGroupIds: loadedSelection);
+        notifier.state = notifier.state.copyWith(
+          selectedGroupIds: loadedSelection,
+        );
       } else {
         AppLogger.debug(
           'Skipping loaded selected groups because selection already changed in memory',
@@ -134,7 +143,7 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
         'Loaded ${selectedIds.length} selected groups from storage',
         subCategory: 'group_monitor',
       );
-      _reconcileMonitoringForSelectionState();
+      notifier._loopController.reconcileMonitoringForSelectionState();
     } catch (e) {
       AppLogger.error(
         'Failed to load selected groups',
@@ -144,20 +153,21 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
     }
   }
 
-  Future<void> _clearBoost({
+  Future<void> clearBoost({
     required bool persist,
     required bool logExpired,
     bool requestBaselineRecovery = true,
   }) async {
     final hadBoost =
-        state.boostedGroupId != null || state.boostExpiresAt != null;
-    _boostLoop.cancelTimer();
-    _boostLoop.pendingRefresh = false;
-    _resetBoostRuntimeTracking();
-    _applyBoostState(groupId: null, expiresAt: null);
+        notifier.state.boostedGroupId != null ||
+        notifier.state.boostExpiresAt != null;
+    notifier._boostLoop.cancelTimer();
+    notifier._boostLoop.clearPending();
+    notifier._resetBoostRuntimeTracking();
+    notifier._applyBoostState(groupId: null, expiresAt: null);
 
     if (persist) {
-      await _persistBoostSettings(groupId: null, boostExpiresAt: null);
+      await persistBoostSettings(groupId: null, boostExpiresAt: null);
     }
 
     if (logExpired) {
@@ -169,19 +179,19 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
 
     if (requestBaselineRecovery &&
         hadBoost &&
-        state.isMonitoring &&
-        state.selectedGroupIds.isNotEmpty) {
-      _requestBaselineRefresh(immediate: true);
+        notifier.state.isMonitoring &&
+        notifier.state.selectedGroupIds.isNotEmpty) {
+      notifier._loopController.requestBaselineRefresh(immediate: true);
     }
 
-    _reconcileRelayConnection();
+    notifier._relayController.reconcileConnection();
   }
 
-  Future<void> _persistBoostSettings({
+  Future<void> persistBoostSettings({
     required String? groupId,
     required DateTime? boostExpiresAt,
   }) async {
-    await _persistStorageWrite(
+    await persistStorageWrite(
       actionDescription: 'persist boost settings',
       action: () => GroupMonitorStorage.saveBoostSettings(
         groupId: groupId,
@@ -190,15 +200,16 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
     );
   }
 
-  Future<void> _saveSelectedGroups() async {
-    await _persistStorageWrite(
+  Future<void> saveSelectedGroups() async {
+    await persistStorageWrite(
       actionDescription: 'save selected groups',
-      action: () =>
-          GroupMonitorStorage.saveSelectedGroupIds(state.selectedGroupIds),
+      action: () => GroupMonitorStorage.saveSelectedGroupIds(
+        notifier.state.selectedGroupIds,
+      ),
     );
   }
 
-  Future<bool> _persistStorageWrite({
+  Future<bool> persistStorageWrite({
     required String actionDescription,
     required Future<void> Function() action,
   }) async {
@@ -215,16 +226,16 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
     }
   }
 
-  Future<void> _clearSelectedGroupsInternal() async {
+  Future<void> clearSelectedGroupsInternal() async {
     try {
       await GroupMonitorStorage.clearSelectedGroups();
-      await _clearBoost(
+      await clearBoost(
         persist: true,
         logExpired: false,
         requestBaselineRecovery: false,
       );
 
-      state = state.copyWith(
+      notifier.state = notifier.state.copyWith(
         selectedGroupIds: {},
         groupInstances: {},
         newestInstanceId: null,
@@ -235,8 +246,8 @@ extension GroupMonitorPersistenceExtension on GroupMonitorNotifier {
         relayConnected: false,
         lastRelayError: null,
       );
-      _reconcileMonitoringForSelectionState();
-      _reconcileRelayConnection();
+      notifier._loopController.reconcileMonitoringForSelectionState();
+      notifier._relayController.reconcileConnection();
 
       AppLogger.debug(
         'Cleared all selected groups from storage',

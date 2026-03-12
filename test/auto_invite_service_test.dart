@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:portal/models/group_instance_with_group.dart';
 import 'package:portal/models/relay_hint_message.dart';
 import 'package:portal/services/auto_invite_service.dart';
 import 'package:portal/services/invite_service.dart';
@@ -13,17 +15,21 @@ class FakeInviteService implements InviteService {
   String? lastRetryWorldId;
   String? lastRetryInstanceId;
   Duration? lastRetryWindow;
+  InviteSendOutcome nextInviteOutcome = InviteSendOutcome.sent;
 
   @override
-  Future<void> inviteSelfToInstance(Instance instance) async {
+  Future<InviteSendOutcome> inviteSelfToInstance(Instance instance) async {
     invitedInstances.add(instance);
+    return nextInviteOutcome;
   }
 
   @override
-  Future<void> inviteSelfToLocation({
+  Future<InviteSendOutcome> inviteSelfToLocation({
     required String worldId,
     required String instanceId,
-  }) async {}
+  }) async {
+    return nextInviteOutcome;
+  }
 
   @override
   Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
@@ -40,14 +46,14 @@ class FakeInviteService implements InviteService {
   }
 }
 
-class AlwaysFailingInviteService implements InviteService {
+class ThrowingInviteService implements InviteService {
   @override
-  Future<void> inviteSelfToInstance(Instance instance) async {
+  Future<InviteSendOutcome> inviteSelfToInstance(Instance instance) async {
     throw Exception('Invite failed');
   }
 
   @override
-  Future<void> inviteSelfToLocation({
+  Future<InviteSendOutcome> inviteSelfToLocation({
     required String worldId,
     required String instanceId,
   }) async {
@@ -65,113 +71,175 @@ class AlwaysFailingInviteService implements InviteService {
   }
 }
 
+GroupInstanceWithGroup _buildInviteTarget({
+  required String groupId,
+  required String worldId,
+  required String instanceId,
+  required int userCount,
+}) {
+  final world = buildTestWorld(id: worldId, name: 'World');
+  return GroupInstanceWithGroup(
+    groupId: groupId,
+    instance: buildTestInstance(
+      instanceId: instanceId,
+      world: world,
+      userCount: userCount,
+    ),
+  );
+}
+
 void main() {
-  group('AutoInviteService.attemptAutoInvite', () {
+  group('AutoInviteService.attemptAutoInviteTarget', () {
     late FakeInviteService fakeInviteService;
     late AutoInviteService autoInviteService;
+    late GroupInstanceWithGroup target;
+    late List<String> loggedMessages;
+    late DebugPrintCallback originalDebugPrint;
 
     setUp(() {
       fakeInviteService = FakeInviteService();
       autoInviteService = AutoInviteService(fakeInviteService);
+      target = _buildInviteTarget(
+        groupId: 'grp_alpha',
+        worldId: 'wrld_alpha',
+        instanceId: 'inst_a',
+        userCount: 5,
+      );
+      loggedMessages = <String>[];
+      originalDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) {
+          loggedMessages.add(message);
+        }
+      };
     });
 
-    test('returns null when disabled', () async {
-      final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
-      final instances = [
-        buildTestInstance(instanceId: 'inst_a', world: world, userCount: 5),
-      ];
+    tearDown(() {
+      debugPrint = originalDebugPrint;
+    });
 
-      final result = await autoInviteService.attemptAutoInvite(
-        instances: instances,
-        groupId: 'grp_alpha',
+    test('returns early when disabled', () async {
+      await autoInviteService.attemptAutoInviteTarget(
+        target: target,
         enabled: false,
         hasBaseline: true,
       );
 
-      expect(result, isNull);
       expect(fakeInviteService.invitedInstances, isEmpty);
     });
 
-    test('returns null when instances empty', () async {
-      final result = await autoInviteService.attemptAutoInvite(
-        instances: [],
-        groupId: 'grp_alpha',
-        enabled: true,
-        hasBaseline: true,
-      );
-
-      expect(result, isNull);
-      expect(fakeInviteService.invitedInstances, isEmpty);
-    });
-
-    test('returns null when no baseline', () async {
-      final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
-      final instances = [
-        buildTestInstance(instanceId: 'inst_a', world: world, userCount: 5),
-      ];
-
-      final result = await autoInviteService.attemptAutoInvite(
-        instances: instances,
-        groupId: 'grp_alpha',
+    test('returns early when no baseline', () async {
+      await autoInviteService.attemptAutoInviteTarget(
+        target: target,
         enabled: true,
         hasBaseline: false,
       );
 
-      expect(result, isNull);
       expect(fakeInviteService.invitedInstances, isEmpty);
     });
 
-    test('selects instance with most users', () async {
-      final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
-      final instances = [
-        buildTestInstance(instanceId: 'inst_a', world: world, userCount: 3),
-        buildTestInstance(instanceId: 'inst_b', world: world, userCount: 8),
-        buildTestInstance(instanceId: 'inst_c', world: world, userCount: 5),
-      ];
-
-      final result = await autoInviteService.attemptAutoInvite(
-        instances: instances,
-        groupId: 'grp_alpha',
+    test('sends invite to resolved target', () async {
+      await autoInviteService.attemptAutoInviteTarget(
+        target: target,
         enabled: true,
         hasBaseline: true,
       );
 
-      expect(result, isNotNull);
-      expect(result!.target.instance.instanceId, 'inst_b');
-      expect(result.target.instance.nUsers, 8);
-      expect(fakeInviteService.invitedInstances.length, 1);
-      expect(fakeInviteService.invitedInstances[0].instanceId, 'inst_b');
+      expect(fakeInviteService.invitedInstances.single.instanceId, 'inst_a');
+      expect(
+        loggedMessages.any(
+          (message) => message.contains('Auto-invite completed'),
+        ),
+        isTrue,
+      );
     });
 
-    test('tracks latency correctly', () async {
-      final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
-      final instances = [
-        buildTestInstance(instanceId: 'inst_a', world: world, userCount: 5),
-      ];
+    test('does not log completion when invite is forbidden', () async {
+      fakeInviteService.nextInviteOutcome = InviteSendOutcome.forbidden;
 
-      final result = await autoInviteService.attemptAutoInvite(
-        instances: instances,
-        groupId: 'grp_alpha',
+      await autoInviteService.attemptAutoInviteTarget(
+        target: target,
         enabled: true,
         hasBaseline: true,
       );
-
-      expect(result, isNotNull);
-      expect(result!.latencyMs, greaterThanOrEqualTo(0));
-      expect(result.latencyMs, lessThan(1000));
-    });
-
-    test('propagates invite service errors', () async {
-      autoInviteService = AutoInviteService(AlwaysFailingInviteService());
-      final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
-      final instances = [
-        buildTestInstance(instanceId: 'inst_a', world: world, userCount: 5),
-      ];
 
       expect(
-        () => autoInviteService.attemptAutoInvite(
-          instances: instances,
-          groupId: 'grp_alpha',
+        loggedMessages.any(
+          (message) => message.contains('Auto-invite completed'),
+        ),
+        isFalse,
+      );
+      expect(
+        loggedMessages.any(
+          (message) =>
+              message.contains('Auto-invite forbidden') &&
+              message.contains('outcome=forbidden'),
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+      'does not log completion when invite is transiently rejected',
+      () async {
+        fakeInviteService.nextInviteOutcome =
+            InviteSendOutcome.transientFailure;
+
+        await autoInviteService.attemptAutoInviteTarget(
+          target: target,
+          enabled: true,
+          hasBaseline: true,
+        );
+
+        expect(
+          loggedMessages.any(
+            (message) => message.contains('Auto-invite completed'),
+          ),
+          isFalse,
+        );
+        expect(
+          loggedMessages.any(
+            (message) =>
+                message.contains('Auto-invite transient failure') &&
+                message.contains('outcome=transientFailure'),
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    test('does not log completion when invite is non-retryable', () async {
+      fakeInviteService.nextInviteOutcome =
+          InviteSendOutcome.nonRetryableFailure;
+
+      await autoInviteService.attemptAutoInviteTarget(
+        target: target,
+        enabled: true,
+        hasBaseline: true,
+      );
+
+      expect(
+        loggedMessages.any(
+          (message) => message.contains('Auto-invite completed'),
+        ),
+        isFalse,
+      );
+      expect(
+        loggedMessages.any(
+          (message) =>
+              message.contains('Auto-invite non-retryable failure') &&
+              message.contains('outcome=nonRetryableFailure'),
+        ),
+        isTrue,
+      );
+    });
+
+    test('propagates unexpected invite service errors', () async {
+      autoInviteService = AutoInviteService(ThrowingInviteService());
+
+      expect(
+        () => autoInviteService.attemptAutoInviteTarget(
+          target: target,
           enabled: true,
           hasBaseline: true,
         ),

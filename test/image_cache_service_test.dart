@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/constants/app_constants.dart';
 import 'package:portal/services/image_cache_service.dart';
@@ -186,6 +187,54 @@ void main() {
 
       await service.clearCache();
       expect(await service.getCachedImage(url), isNull);
+    });
+
+    test('clears disk cache entries and recreates the directory', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'portal_cache_clear_disk_',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      await service.setCacheDirectoryForTesting(tempDir);
+
+      const url = 'https://api.vrchat.cloud/api/1/file_clear_disk_test/1';
+      final bytes = Uint8List(AppConstants.maxAvatarMemoryEntryBytes + 1);
+      bytes[0] = 1;
+      await service.cacheImage(url, bytes);
+
+      final cacheFile = File(
+        '${tempDir.path}/${service.getCacheKeyForTesting(url)}',
+      );
+      expect(await cacheFile.exists(), isTrue);
+
+      await service.clearCache();
+
+      expect(await tempDir.exists(), isTrue);
+      expect(await cacheFile.exists(), isFalse);
+      expect(await service.getCachedImage(url), isNull);
+    });
+
+    test('recreates the directory even when delete fails', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'portal_cache_clear_delete_failure_',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      await service.setCacheDirectoryForTesting(tempDir);
+
+      service.setBeforeClearCacheDeleteHookForTesting(() async {
+        throw StateError('simulated delete failure');
+      });
+
+      await expectLater(service.clearCache(), completes);
+
+      expect(await tempDir.exists(), isTrue);
     });
   });
 

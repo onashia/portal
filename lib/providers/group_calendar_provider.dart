@@ -29,8 +29,8 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
 
   GroupCalendarNotifier(this.userId);
 
-  final _calendarLoop = RefreshLoopState();
-  Timer? _selectionRefreshDebounceTimer;
+  final _calendarLoop = RefreshLoopController();
+  final _selectionRefreshDebouncer = RefreshDebouncer();
   bool _isFetching = false;
 
   @visibleForTesting
@@ -75,8 +75,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   }
 
   void requestRefresh({bool immediate = true}) {
-    _selectionRefreshDebounceTimer?.cancel();
-    _selectionRefreshDebounceTimer = null;
+    _selectionRefreshDebouncer.cancel();
     _requestCalendarRefresh(immediate: immediate, bypassRateLimit: true);
   }
 
@@ -85,10 +84,8 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     _listenForSelectionChanges();
     _listenForAuthChanges();
     ref.onDispose(() {
-      _disposeTimer();
-      _selectionRefreshDebounceTimer?.cancel();
-      _selectionRefreshDebounceTimer = null;
-      _calendarLoop.clearPending();
+      _calendarLoop.reset();
+      _selectionRefreshDebouncer.cancel();
     });
 
     final shouldRefresh = _calendarActive();
@@ -131,10 +128,8 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   }
 
   void _handleSessionIneligible() {
-    _disposeTimer();
-    _selectionRefreshDebounceTimer?.cancel();
-    _selectionRefreshDebounceTimer = null;
-    _calendarLoop.clearPending();
+    _calendarLoop.reset();
+    _selectionRefreshDebouncer.cancel();
     if (state.isLoading) {
       state = state.copyWith(isLoading: false);
     }
@@ -176,13 +171,10 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   }
 
   void _scheduleSelectionTriggeredRefresh() {
-    _selectionRefreshDebounceTimer?.cancel();
-    _selectionRefreshDebounceTimer = Timer(
-      AppConstants.selectionRefreshDebounceDuration,
-      () {
-        if (!ref.mounted) {
-          return;
-        }
+    _selectionRefreshDebouncer.schedule(
+      delay: AppConstants.selectionRefreshDebounceDuration,
+      isMounted: () => ref.mounted,
+      onFire: () {
         _requestCalendarRefresh(immediate: true);
       },
     );
@@ -192,52 +184,28 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     bool immediate = true,
     bool bypassRateLimit = false,
   }) {
-    final dispatch = shouldRequestImmediateRefresh(
+    _calendarLoop.requestRefresh(
       isActive: _calendarActive(),
       isInFlight: _isFetching,
       immediate: immediate,
+      bypassRateLimit: bypassRateLimit,
+      reconcile: _reconcileCalendarLoop,
+      runNow: ({required bypassRateLimit}) {
+        unawaited(refresh(bypassRateLimit: bypassRateLimit));
+      },
+      scheduleNextTick: () => _scheduleNextCalendarTick(),
     );
-    if (dispatch.shouldReconcile) {
-      _reconcileCalendarLoop();
-      return;
-    }
-
-    _calendarLoop.cancelTimer();
-
-    if (dispatch.shouldQueuePending) {
-      _calendarLoop.queuePending(bypassRateLimit: bypassRateLimit);
-      return;
-    }
-
-    if (dispatch.shouldRunNow) {
-      unawaited(refresh(bypassRateLimit: bypassRateLimit));
-      return;
-    }
-
-    if (dispatch.shouldScheduleTick) {
-      _scheduleNextCalendarTick();
-    }
   }
 
   void _scheduleNextCalendarTick({Duration? overrideDelay}) {
-    _calendarLoop.cancelTimer();
-
-    if (!_calendarActive()) {
-      _reconcileCalendarLoop();
-      return;
-    }
-
-    final delay = overrideDelay ?? const Duration(minutes: _refreshMinutes);
-    _calendarLoop.timer = Timer(delay, () {
-      if (!ref.mounted) {
-        return;
-      }
-      _requestCalendarRefresh(immediate: true);
-    });
-  }
-
-  void _disposeTimer() {
-    _calendarLoop.cancelTimer();
+    _calendarLoop.scheduleNextTick(
+      isActive: _calendarActive,
+      reconcile: _reconcileCalendarLoop,
+      resolveDelay: () => const Duration(minutes: _refreshMinutes),
+      requestRefresh: () => _requestCalendarRefresh(immediate: true),
+      isMounted: () => ref.mounted,
+      overrideDelay: overrideDelay,
+    );
   }
 
   void _clearForEmptySelectionIfNeeded() {
@@ -275,19 +243,15 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       groupMonitorProvider(userId).select((state) => state.selectedGroupIds),
     );
     if (!isSelectionActive(selectedGroupIds)) {
-      _disposeTimer();
-      _selectionRefreshDebounceTimer?.cancel();
-      _selectionRefreshDebounceTimer = null;
-      _calendarLoop.clearPending();
+      _calendarLoop.reset();
+      _selectionRefreshDebouncer.cancel();
       _clearForEmptySelectionIfNeeded();
       return;
     }
 
-    if (shouldScheduleNextTick(
+    if (_calendarLoop.shouldScheduleNext(
       isActive: true,
-      hasTimer: _calendarLoop.hasTimer,
       isInFlight: _isFetching,
-      hasPendingRefresh: _calendarLoop.pendingRefresh,
     )) {
       _requestCalendarRefresh(immediate: true);
     }
@@ -300,16 +264,14 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   /// is no longer active).
   void _drainPendingRefreshesOrScheduleTick() {
     final active = ref.mounted ? _calendarActive() : false;
-    if (shouldDrainPendingRefresh(
+    if (_calendarLoop.drainPendingRefresh(
       isMounted: ref.mounted,
       isInFlight: _isFetching,
-      hasPendingRefresh: _calendarLoop.pendingRefresh,
       isActive: active,
+      runNow: ({required bypassRateLimit}) {
+        unawaited(refresh(bypassRateLimit: bypassRateLimit));
+      },
     )) {
-      final pending = _calendarLoop.consumePending();
-      if (ref.mounted) {
-        unawaited(refresh(bypassRateLimit: pending.bypassRateLimit));
-      }
       return;
     }
 
@@ -317,11 +279,9 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       return;
     }
 
-    if (shouldScheduleNextTick(
+    if (_calendarLoop.shouldScheduleNext(
       isActive: active,
-      hasTimer: _calendarLoop.hasTimer,
       isInFlight: _isFetching,
-      hasPendingRefresh: _calendarLoop.pendingRefresh,
     )) {
       _scheduleNextCalendarTick();
       return;

@@ -17,6 +17,14 @@ import 'utils/app_logger.dart';
 
 const Duration _authTransitionDuration = Duration(milliseconds: 300);
 const double _authIncomingBeginScale = 0.985;
+const WindowOptions _desktopWindowOptions = WindowOptions(
+  title: 'portal.',
+  size: Size(1200, 800),
+  minimumSize: Size(800, 600),
+  center: true,
+  titleBarStyle: TitleBarStyle.hidden,
+  windowButtonVisibility: false,
+);
 
 CustomTransitionPage<void> _buildAuthFadePage({
   required GoRouterState state,
@@ -81,12 +89,7 @@ void main() async {
   // Phase 2: Window manager initialization
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     await windowManager.ensureInitialized();
-    await windowManager.waitUntilReadyToShow().then((_) async {
-      await windowManager.setTitle('portal.');
-      await windowManager.setSize(const Size(1200, 800));
-      await windowManager.setMinimumSize(const Size(800, 600));
-      await windowManager.center();
-      await windowManager.setAsFrameless();
+    await windowManager.waitUntilReadyToShow(_desktopWindowOptions, () async {
       await windowManager.setResizable(true);
       await windowManager.show();
     });

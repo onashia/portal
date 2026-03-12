@@ -1,135 +1,153 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
-// Both suppressions are necessary because this part-file defines an extension
-// on GroupMonitorNotifier and must access Riverpod's @protected `state` setter
-// and `ref` property, which are legitimately available within the same library.
+// This part-file's controller coordinates GroupMonitorNotifier internals within
+// the same library and intentionally reads/writes Riverpod's protected members.
 
 part of 'group_monitor_provider.dart';
 
-extension GroupMonitorRelayExtension on GroupMonitorNotifier {
-  void _bindRelayStreams() {
-    _relayHintSubscription = _relayHintService.hints.listen(_handleRelayHint);
-    _relayStatusSubscription = _relayHintService.statuses.listen((status) {
-      if (!ref.mounted) {
+class _GroupMonitorRelayController {
+  _GroupMonitorRelayController({required this.notifier, required this.service})
+    : clientId = _createRelayClientId(userId: notifier.arg);
+
+  final GroupMonitorNotifier notifier;
+  final RelayHintService service;
+  final String clientId;
+
+  int _failureStreak = 0;
+  final DedupeTracker _hintDedupe = DedupeTracker();
+  final DedupeTracker _publishDedupe = DedupeTracker();
+  final Set<CancelToken> _inviteCancelTokens = <CancelToken>{};
+  StreamSubscription<RelayHintMessage>? _hintSubscription;
+  StreamSubscription<RelayConnectionStatus>? _statusSubscription;
+
+  bool get isConfigured => service.isConfigured;
+
+  void bindStreams() {
+    _hintSubscription = service.hints.listen(handleHint);
+    _statusSubscription = service.statuses.listen((status) {
+      if (!notifier.ref.mounted) {
         return;
       }
-      final didConnectionChange = state.relayConnected != status.connected;
-      final didErrorChange = state.lastRelayError != status.error;
+      final didConnectionChange =
+          notifier.state.relayConnected != status.connected;
+      final didErrorChange = notifier.state.lastRelayError != status.error;
       if (didConnectionChange || didErrorChange) {
-        state = state.copyWith(
+        notifier.state = notifier.state.copyWith(
           relayConnected: status.connected,
           lastRelayError: status.error,
-          relayTemporarilyDisabledUntil: _relayHintService.runtimeDisabledUntil,
+          relayTemporarilyDisabledUntil: service.runtimeDisabledUntil,
         );
       }
 
       if (status.connected) {
-        _relayFailureStreak = 0;
-        if (state.relayTemporarilyDisabledUntil != null) {
-          state = state.copyWith(relayTemporarilyDisabledUntil: null);
+        _failureStreak = 0;
+        if (notifier.state.relayTemporarilyDisabledUntil != null) {
+          notifier.state = notifier.state.copyWith(
+            relayTemporarilyDisabledUntil: null,
+          );
         }
       } else if (status.error != null) {
-        _recordRelayFailure(reason: status.error!);
+        recordFailure(reason: status.error!);
       }
     });
   }
 
-  String _createRelayClientId({required String userId}) {
-    // Use 8 cryptographically-random bytes to ensure uniqueness even when
-    // multiple clients connect at the same microsecond.
-    final rng = math.Random.secure();
-    final bytes = List<int>.generate(8, (_) => rng.nextInt(256));
-    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-    return '$userId-$hex';
+  Future<void> dispose() async {
+    _cancelAllInviteTokens();
+    await _hintSubscription?.cancel();
+    _hintSubscription = null;
+    await _statusSubscription?.cancel();
+    _statusSubscription = null;
+    await service.disconnect();
   }
 
-  bool _shouldConnectRelay() {
-    if (!ref.mounted) {
+  bool shouldConnect() {
+    if (!notifier.ref.mounted) {
       return false;
     }
 
-    if (!AppConstants.relayAssistEnabled || !state.relayAssistEnabled) {
+    if (!AppConstants.relayAssistEnabled ||
+        !notifier.state.relayAssistEnabled) {
       return false;
     }
-    if (!_relayHintService.isConfigured) {
+    if (!service.isConfigured) {
       return false;
     }
-    if (state.relayTemporarilyDisabledUntil != null &&
-        state.relayTemporarilyDisabledUntil!.isAfter(DateTime.now())) {
+    if (notifier.state.relayTemporarilyDisabledUntil != null &&
+        notifier.state.relayTemporarilyDisabledUntil!.isAfter(DateTime.now())) {
       return false;
     }
-    if (!_canPollForCurrentSession()) {
+    if (!notifier._canPollForCurrentSession()) {
       return false;
     }
-    return state.isMonitoring &&
-        state.autoInviteEnabled &&
-        state.isBoostActive &&
-        state.boostedGroupId != null;
+    return notifier.state.isMonitoring &&
+        notifier.state.autoInviteEnabled &&
+        notifier.state.isBoostActive &&
+        notifier.state.boostedGroupId != null;
   }
 
-  void _reconcileRelayConnection() {
-    if (!ref.mounted) {
-      unawaited(_relayHintService.disconnect());
+  void reconcileConnection() {
+    if (!notifier.ref.mounted) {
+      unawaited(service.disconnect());
       return;
     }
 
-    if (!_shouldConnectRelay()) {
-      if (state.relayConnected || state.lastRelayError != null) {
-        state = state.copyWith(
+    if (!shouldConnect()) {
+      if (notifier.state.relayConnected ||
+          notifier.state.lastRelayError != null) {
+        notifier.state = notifier.state.copyWith(
           relayConnected: false,
           lastRelayError: null,
-          relayTemporarilyDisabledUntil: _relayHintService.runtimeDisabledUntil,
+          relayTemporarilyDisabledUntil: service.runtimeDisabledUntil,
         );
       }
-      unawaited(_relayHintService.disconnect());
+      unawaited(service.disconnect());
       return;
     }
 
-    final groupId = state.boostedGroupId;
+    final groupId = notifier.state.boostedGroupId;
     if (groupId == null) {
       return;
     }
 
-    unawaited(
-      _relayHintService.connect(groupId: groupId, clientId: _relayClientId),
-    );
+    unawaited(service.connect(groupId: groupId, clientId: clientId));
   }
 
-  void _handleRelayHint(RelayHintMessage hint) {
-    if (!ref.mounted) {
+  void handleHint(RelayHintMessage hint) {
+    if (!notifier.ref.mounted) {
       return;
     }
     final now = DateTime.now();
-    _pruneRelayDedupeState(now);
+    _pruneDedupeState(now);
 
     if (!hint.isStructurallyValid || hint.isExpired(now: now)) {
-      _recordRelayFailure(reason: 'invalid_or_expired_hint');
+      recordFailure(reason: 'invalid_or_expired_hint');
       return;
     }
 
-    final boostedGroupId = state.boostedGroupId;
-    if (!state.isMonitoring ||
-        !state.autoInviteEnabled ||
+    final boostedGroupId = notifier.state.boostedGroupId;
+    if (!notifier.state.isMonitoring ||
+        !notifier.state.autoInviteEnabled ||
         boostedGroupId == null ||
         boostedGroupId != hint.groupId) {
       return;
     }
 
     final hintDedupeKey = 'hint:${hint.hintId}';
-    if (_relayHintDedupe.isBlocked(hintDedupeKey, now)) {
+    if (_hintDedupe.isBlocked(hintDedupeKey, now)) {
       return;
     }
 
     final instanceDedupeKey = 'instance:${hint.instanceKey}';
-    if (_relayHintDedupe.isBlocked(instanceDedupeKey, now)) {
+    if (_hintDedupe.isBlocked(instanceDedupeKey, now)) {
       return;
     }
 
     const hintTtl = Duration(seconds: AppConstants.relayHintDedupeSeconds);
-    _relayHintDedupe.record(hintDedupeKey, now: now, ttl: hintTtl);
-    _relayHintDedupe.record(instanceDedupeKey, now: now, ttl: hintTtl);
+    _hintDedupe.record(hintDedupeKey, now: now, ttl: hintTtl);
+    _hintDedupe.record(instanceDedupeKey, now: now, ttl: hintTtl);
 
-    state = state.copyWith(
-      relayHintsReceived: state.relayHintsReceived + 1,
+    notifier.state = notifier.state.copyWith(
+      relayHintsReceived: notifier.state.relayHintsReceived + 1,
       lastRelayHintAt: now,
       lastRelayError: null,
     );
@@ -143,12 +161,13 @@ extension GroupMonitorRelayExtension on GroupMonitorNotifier {
     required CancelToken cancelToken,
   }) async {
     InviteRetryOutcome? outcome;
-    _registerRelayInviteCancelToken(cancelToken);
+    _inviteCancelTokens.add(cancelToken);
     try {
       try {
-        outcome = await _autoInviteService.attemptAutoInviteFromHint(
+        outcome = await notifier._autoInviteService.attemptAutoInviteFromHint(
           hint: hint,
-          enabled: state.autoInviteEnabled && state.isMonitoring,
+          enabled:
+              notifier.state.autoInviteEnabled && notifier.state.isMonitoring,
           maxRetryWindow: const Duration(
             seconds: AppConstants.relayInviteRetryWindowSeconds,
           ),
@@ -161,123 +180,132 @@ extension GroupMonitorRelayExtension on GroupMonitorNotifier {
           error: e,
           stackTrace: s,
         );
-        _recordRelayFailure(reason: 'unexpected_invite_error');
+        recordFailure(reason: 'unexpected_invite_error');
         return;
       }
     } finally {
-      _unregisterRelayInviteCancelToken(cancelToken);
+      _inviteCancelTokens.remove(cancelToken);
     }
 
-    if (outcome == null || !ref.mounted) {
+    if (outcome == null || !notifier.ref.mounted) {
       return;
     }
 
     switch (outcome) {
       case InviteRetryOutcome.sent:
-        _relayFailureStreak = 0;
+        _failureStreak = 0;
         return;
       case InviteRetryOutcome.cancelled:
         return;
       case InviteRetryOutcome.hardFailure:
-        _recordRelayFailure(reason: 'hard_failure');
+        recordFailure(reason: 'hard_failure');
         return;
       case InviteRetryOutcome.transientFailureExhausted:
-        _recordRelayFailure(reason: 'transient_exhausted');
+        recordFailure(reason: 'transient_exhausted');
         return;
       case InviteRetryOutcome.nonRetryableFailure:
-        _recordRelayFailure(reason: 'non_retryable_failure');
+        recordFailure(reason: 'non_retryable_failure');
         return;
     }
   }
 
-  void _publishRelayHintForNewBoostedInstances({
-    required String groupId,
-    required List<GroupInstanceWithGroup> newInstances,
+  void publishHintForNewBoostedInstances({
+    required GroupInstanceWithGroup target,
     required DateTime detectedAt,
   }) {
-    if (!ref.mounted) {
+    if (!notifier.ref.mounted) {
       return;
     }
-    if (!state.relayConnected || !state.relayAssistEnabled) {
+    if (!notifier.state.relayConnected || !notifier.state.relayAssistEnabled) {
       return;
     }
-    if (state.boostedGroupId != groupId) {
+    if (notifier.state.boostedGroupId != target.groupId) {
       return;
     }
-
-    GroupInstanceWithGroup? best;
-    for (final candidate in newInstances) {
-      if (!shouldAttemptSelfInviteForInstance(candidate.instance)) {
-        continue;
-      }
-      if (best == null || candidate.instance.nUsers > best.instance.nUsers) {
-        best = candidate;
-      }
-    }
-
-    if (best == null) {
+    if (!shouldAttemptSelfInviteForInstance(target.instance)) {
       return;
     }
 
     final now = DateTime.now();
-    _pruneRelayDedupeState(now);
+    _pruneDedupeState(now);
     final publishKey =
-        '${best.groupId}|${best.instance.worldId}|${best.instance.instanceId}';
-    if (_relayPublishDedupe.isBlocked(publishKey, now)) {
+        '${target.groupId}|${target.instance.worldId}|${target.instance.instanceId}';
+    if (_publishDedupe.isBlocked(publishKey, now)) {
       return;
     }
 
-    _relayPublishDedupe.record(
+    _publishDedupe.record(
       publishKey,
       now: now,
       ttl: const Duration(seconds: AppConstants.relayPublishDedupeSeconds),
     );
 
     final hint = RelayHintMessage.create(
-      groupId: groupId,
-      worldId: best.instance.worldId,
-      instanceId: best.instance.instanceId,
-      nUsers: best.instance.nUsers,
-      sourceClientId: _relayClientId,
+      groupId: target.groupId,
+      worldId: target.instance.worldId,
+      instanceId: target.instance.instanceId,
+      nUsers: target.instance.nUsers,
+      sourceClientId: clientId,
       now: detectedAt,
     );
 
-    unawaited(_relayHintService.publishHint(hint));
-    state = state.copyWith(
-      relayHintsPublished: state.relayHintsPublished + 1,
+    unawaited(service.publishHint(hint));
+    notifier.state = notifier.state.copyWith(
+      relayHintsPublished: notifier.state.relayHintsPublished + 1,
       lastRelayError: null,
     );
   }
 
-  void _recordRelayFailure({required String reason}) {
-    if (!ref.mounted) {
+  void recordFailure({required String reason}) {
+    if (!notifier.ref.mounted) {
       return;
     }
-    _relayFailureStreak += 1;
-    state = state.copyWith(lastRelayError: reason);
+    _failureStreak += 1;
+    notifier.state = notifier.state.copyWith(lastRelayError: reason);
 
-    if (_relayFailureStreak < AppConstants.relayCircuitBreakerThreshold) {
+    if (_failureStreak < AppConstants.relayCircuitBreakerThreshold) {
       return;
     }
 
     final disabledUntil = DateTime.now().add(
       const Duration(seconds: AppConstants.relayCircuitBreakerCooldownSeconds),
     );
-    state = state.copyWith(
+    notifier.state = notifier.state.copyWith(
       relayConnected: false,
       relayTemporarilyDisabledUntil: disabledUntil,
       lastRelayError: 'relay_circuit_breaker',
     );
-    _relayFailureStreak = 0;
-    unawaited(_relayHintService.disconnect());
+    _failureStreak = 0;
+    unawaited(service.disconnect());
     AppLogger.warning(
       'Relay circuit breaker opened until ${disabledUntil.toIso8601String()}',
       subCategory: 'relay',
     );
   }
 
-  void _pruneRelayDedupeState(DateTime now) {
-    _relayHintDedupe.prune(now);
-    _relayPublishDedupe.prune(now);
+  void _pruneDedupeState(DateTime now) {
+    _hintDedupe.prune(now);
+    _publishDedupe.prune(now);
+  }
+
+  void _cancelAllInviteTokens() {
+    if (_inviteCancelTokens.isEmpty) {
+      return;
+    }
+
+    final tokens = _inviteCancelTokens.toList(growable: false);
+    _inviteCancelTokens.clear();
+    for (final token in tokens) {
+      if (!token.isCancelled) {
+        token.cancel('group_monitor_disposed');
+      }
+    }
+  }
+
+  static String _createRelayClientId({required String userId}) {
+    final rng = math.Random.secure();
+    final bytes = List<int>.generate(8, (_) => rng.nextInt(256));
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '$userId-$hex';
   }
 }

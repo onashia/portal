@@ -1,6 +1,17 @@
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../models/group_instance_with_group.dart';
 
+bool areGroupInstanceStateRelevantFieldsEquivalent(
+  Instance previous,
+  Instance next,
+) {
+  return previous.hasCapacityForYou == next.hasCapacityForYou &&
+      previous.capacity == next.capacity &&
+      previous.queueEnabled == next.queueEnabled &&
+      previous.queueSize == next.queueSize &&
+      previous.groupAccessType == next.groupAccessType;
+}
+
 bool areGroupInstanceEntriesEquivalent(
   GroupInstanceWithGroup previous,
   GroupInstanceWithGroup next,
@@ -9,6 +20,10 @@ bool areGroupInstanceEntriesEquivalent(
       previous.instance.worldId == next.instance.worldId &&
       previous.instance.world.name == next.instance.world.name &&
       previous.instance.nUsers == next.instance.nUsers &&
+      areGroupInstanceStateRelevantFieldsEquivalent(
+        previous.instance,
+        next.instance,
+      ) &&
       previous.firstDetectedAt == next.firstDetectedAt;
 }
 

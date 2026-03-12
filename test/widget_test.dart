@@ -3,15 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:portal/main.dart';
 import 'package:portal/providers/auth_provider.dart';
-
-class _TestAuthNotifier extends AuthNotifier {
-  _TestAuthNotifier(this._initialState);
-
-  final AuthState _initialState;
-
-  @override
-  AuthState build() => _initialState;
-}
+import 'test_helpers/auth_test_harness.dart';
 
 void main() {
   testWidgets('Portal app loads', (WidgetTester tester) async {
@@ -19,8 +11,7 @@ void main() {
       ProviderScope(
         overrides: [
           authProvider.overrideWith(
-            () =>
-                _TestAuthNotifier(const AuthState(status: AuthStatus.initial)),
+            () => TestAuthNotifier(const AuthState(status: AuthStatus.initial)),
           ),
         ],
         child: const PortalApp(),

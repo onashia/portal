@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -12,12 +13,11 @@ import '../constants/ui_constants.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import '../providers/group_monitor_storage.dart';
+import '../services/image_cache_service.dart';
 import '../utils/animation_constants.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_utils.dart';
-import '../widgets/common/empty_state.dart';
-import '../widgets/common/theme_mode_toggle_button.dart';
-import '../widgets/custom_title_bar.dart';
+import '../widgets/auth/auth_page_shell.dart';
 import '../widgets/dashboard/dashboard_action_area.dart';
 import '../widgets/dashboard/dashboard_cards.dart';
 import '../widgets/dashboard/dashboard_side_sheet_layout.dart';
@@ -102,8 +102,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     return _buildReadyScaffold(context, currentUser!);
   }
 
-  Scaffold _buildLoadingScaffold() {
-    return Scaffold(
+  Widget _buildLoadingScaffold() {
+    return AuthLoadingScaffold(
       body: Center(
         child: Transform.scale(
           scale: UiConstants.dashboardLoadingScale,
@@ -116,33 +116,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  Scaffold _buildErrorScaffold(BuildContext context, AuthAsyncMeta authMeta) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Scaffold(
-      appBar: CustomTitleBar(
-        title: 'portal.',
-        icon: Icons.tonality,
-        actions: const [ThemeModeToggleButton()],
-      ),
-      body: EmptyState(
-        icon: Icons.error_outline,
-        title: 'An error occurred',
-        message: formatUiErrorMessage(authMeta.error),
-        iconColor: scheme.error,
-      ),
-    );
+  Widget _buildErrorScaffold(BuildContext context, AuthAsyncMeta authMeta) {
+    return AuthErrorScaffold(message: formatUiErrorMessage(authMeta.error));
   }
 
-  Scaffold _buildReadyScaffold(BuildContext context, CurrentUser currentUser) {
+  Widget _buildReadyScaffold(BuildContext context, CurrentUser currentUser) {
     final userId = currentUser.id;
 
-    return Scaffold(
-      appBar: CustomTitleBar(
-        title: 'portal.',
-        icon: Icons.tonality,
-        actions: [const ThemeModeToggleButton(), _buildLogoutAction(userId)],
-      ),
+    return AuthPageScaffold(
+      actions: [_buildLogoutAction(userId)],
       body: _buildDashboardBody(context, currentUser, userId),
     );
   }
@@ -302,6 +284,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         stackTrace: s,
       );
     }
+    unawaited(ImageCacheService().clearCache());
     await ref.read(authProvider.notifier).logout();
     ref.invalidate(groupMonitorProvider(userId));
   }

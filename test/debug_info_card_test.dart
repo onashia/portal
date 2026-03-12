@@ -5,15 +5,7 @@ import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/theme/app_theme.dart';
 import 'package:portal/widgets/debug_info_card.dart';
-
-class _TestGroupMonitorNotifier extends GroupMonitorNotifier {
-  _TestGroupMonitorNotifier(this._initialState) : super('usr_test');
-
-  final GroupMonitorState _initialState;
-
-  @override
-  GroupMonitorState build() => _initialState;
-}
+import 'test_helpers/provider_test_notifiers.dart';
 
 class _TestApiCallCounterNotifier extends ApiCallCounterNotifier {
   _TestApiCallCounterNotifier(this._initialState);
@@ -48,7 +40,7 @@ void main() {
         overrides: [
           groupMonitorProvider(
             'usr_test',
-          ).overrideWith(() => _TestGroupMonitorNotifier(monitorState)),
+          ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
           apiCallCounterProvider.overrideWith(
             () => _TestApiCallCounterNotifier(counterState),
           ),

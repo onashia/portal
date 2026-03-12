@@ -28,6 +28,7 @@ class ImageCacheService {
   bool _isInitialized = false;
   DateTime? _lastPrunedAt;
   DateTime Function() _nowProvider = DateTime.now;
+  Future<void> Function()? _beforeClearCacheDeleteHook;
 
   Future<void> _initialize() async {
     if (_isInitialized) {
@@ -382,20 +383,34 @@ class ImageCacheService {
     _memoryCache.clear();
     _inFlightRequests.clear();
     _negativeCacheUntilByKey.clear();
+    _lastPrunedAt = null;
 
-    if (_cacheDirectory != null) {
-      try {
-        if (await _cacheDirectory!.exists()) {
-          await _cacheDirectory!.delete(recursive: true);
-          await _cacheDirectory!.create(recursive: true);
-        }
-      } catch (e) {
-        AppLogger.error(
-          'Failed to clear disk cache: $e',
-          subCategory: 'image_cache',
-          error: e,
-        );
+    final directory = _cacheDirectory;
+    if (directory == null) {
+      return;
+    }
+
+    try {
+      await _beforeClearCacheDeleteHook?.call();
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
       }
+    } catch (e) {
+      AppLogger.error(
+        'Failed to delete disk cache directory: $e',
+        subCategory: 'image_cache',
+        error: e,
+      );
+    }
+
+    try {
+      await directory.create(recursive: true);
+    } catch (e) {
+      AppLogger.error(
+        'Failed to recreate disk cache directory: $e',
+        subCategory: 'image_cache',
+        error: e,
+      );
     }
   }
 
@@ -418,6 +433,11 @@ class ImageCacheService {
   @visibleForTesting
   void setNowProviderForTesting(DateTime Function() nowProvider) {
     _nowProvider = nowProvider;
+  }
+
+  @visibleForTesting
+  void setBeforeClearCacheDeleteHookForTesting(Future<void> Function()? hook) {
+    _beforeClearCacheDeleteHook = hook;
   }
 
   bool _canStoreInMemory(Uint8List bytes) {
@@ -448,5 +468,6 @@ class ImageCacheService {
     _instance._isInitialized = false;
     _instance._lastPrunedAt = null;
     _instance._nowProvider = DateTime.now;
+    _instance._beforeClearCacheDeleteHook = null;
   }
 }
