@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:portal/constants/app_constants.dart';
@@ -8,10 +9,23 @@ class _MockDio extends Mock implements Dio {}
 
 void main() {
   late _MockDio mockDio;
+  late List<String> loggedMessages;
+  late DebugPrintCallback originalDebugPrint;
 
   setUp(() {
     mockDio = _MockDio();
     registerFallbackValue(Options());
+    loggedMessages = <String>[];
+    originalDebugPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) {
+        loggedMessages.add(message);
+      }
+    };
+  });
+
+  tearDown(() {
+    debugPrint = originalDebugPrint;
   });
 
   RelayBootstrapClient makeClient({
@@ -213,6 +227,22 @@ void main() {
         );
 
         expect(uri, Uri.parse('ws://relay.test/ws'));
+        expect(
+          loggedMessages.any(
+            (message) => message.contains(
+              'Relay bootstrap is using insecure HTTP transport',
+            ),
+          ),
+          isTrue,
+        );
+        expect(
+          loggedMessages.any(
+            (message) => message.contains(
+              'Relay bootstrap returned an insecure WebSocket transport',
+            ),
+          ),
+          isTrue,
+        );
       },
     );
 

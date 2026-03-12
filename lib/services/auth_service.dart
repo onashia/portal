@@ -50,7 +50,11 @@ class AuthService {
         final (success, failure) = loginResponse;
 
         if (success == null) {
-          AppLogger.warning('Login rejected by API', subCategory: 'auth');
+          final failureSummary = summarizeErrorForLog(failure);
+          AppLogger.warning(
+            'Login rejected by API: $failureSummary',
+            subCategory: 'auth',
+          );
           final failureMessage = failure.toString().split('\n').first.trim();
           final errorMessage = formatApiError('Login failed', failure);
 

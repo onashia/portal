@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -283,7 +284,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         stackTrace: s,
       );
     }
-    await ImageCacheService().clearCache();
+    unawaited(ImageCacheService().clearCache());
     await ref.read(authProvider.notifier).logout();
     ref.invalidate(groupMonitorProvider(userId));
   }

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../constants/app_constants.dart';
+import '../utils/app_logger.dart';
 
 /// Handles the HTTP bootstrap exchange that issues a short-lived WebSocket URI.
 ///
@@ -69,9 +70,16 @@ class RelayBootstrapClient {
         'Relay bootstrap requires HTTPS unless insecure relay transport is enabled',
       );
     }
+    final bootstrapUri = Uri.parse(_bootstrapUrl.trim());
+    if (_allowInsecureTransport && bootstrapUri.scheme == 'http') {
+      AppLogger.warning(
+        'Relay bootstrap is using insecure HTTP transport; only enable this for local development',
+        subCategory: 'relay',
+      );
+    }
 
     final response = await _dio.post<dynamic>(
-      _bootstrapUrl,
+      bootstrapUri.toString(),
       data: {'groupId': groupId, 'clientId': clientId, 'version': '1'},
       options: Options(
         headers: {
@@ -106,6 +114,12 @@ class RelayBootstrapClient {
     if (!_isAllowedWebSocketScheme(uri.scheme)) {
       throw StateError(
         'Relay bootstrap returned an insecure WebSocket URI scheme: ${uri.scheme}',
+      );
+    }
+    if (_allowInsecureTransport && uri.scheme == 'ws') {
+      AppLogger.warning(
+        'Relay bootstrap returned an insecure WebSocket transport; only enable this for local development',
+        subCategory: 'relay',
       );
     }
     return uri;

@@ -55,6 +55,33 @@ String formatApiError(String prefix, dynamic error) {
   return '$prefix: $message';
 }
 
+/// Formats an error for logs without including multiline payloads.
+String summarizeErrorForLog(
+  Object? error, {
+  String fallbackMessage = 'Request rejected',
+  int maxLength = 160,
+}) {
+  final firstLine = error?.toString().split('\n').first.trim() ?? '';
+  if (firstLine.isEmpty) {
+    return fallbackMessage;
+  }
+
+  final collapsed = firstLine.replaceAll(RegExp(r'\s+'), ' ');
+  final lower = collapsed.toLowerCase();
+  if (lower.startsWith('instance of') ||
+      lower.startsWith('exception:') ||
+      lower == 'exception' ||
+      lower == 'error') {
+    return fallbackMessage;
+  }
+
+  if (collapsed.length > maxLength) {
+    return '${collapsed.substring(0, maxLength - 3)}...';
+  }
+
+  return collapsed;
+}
+
 /// Formats an unknown error object into a user-facing message.
 ///
 /// Returns [fallbackMessage] when the error is null, empty, or an

@@ -172,7 +172,7 @@ void main() {
       expect(
         loggedMessages.any(
           (message) =>
-              message.contains('Auto-invite did not send') &&
+              message.contains('Auto-invite forbidden') &&
               message.contains('outcome=forbidden'),
         ),
         isTrue,
@@ -199,7 +199,9 @@ void main() {
         );
         expect(
           loggedMessages.any(
-            (message) => message.contains('outcome=transientFailure'),
+            (message) =>
+                message.contains('Auto-invite transient failure') &&
+                message.contains('outcome=transientFailure'),
           ),
           isTrue,
         );
@@ -224,7 +226,9 @@ void main() {
       );
       expect(
         loggedMessages.any(
-          (message) => message.contains('outcome=nonRetryableFailure'),
+          (message) =>
+              message.contains('Auto-invite non-retryable failure') &&
+              message.contains('outcome=nonRetryableFailure'),
         ),
         isTrue,
       );

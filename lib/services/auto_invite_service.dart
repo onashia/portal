@@ -46,10 +46,24 @@ class AutoInviteService {
         );
         return;
       case InviteSendOutcome.forbidden:
+        AppLogger.info(
+          'Auto-invite forbidden for group ${target.groupId} '
+          '(${target.instance.worldId}:${target.instance.instanceId}, '
+          'latency=${latencyMs}ms, outcome=${outcome.name})',
+          subCategory: 'group_monitor',
+        );
+        return;
       case InviteSendOutcome.transientFailure:
+        AppLogger.info(
+          'Auto-invite transient failure for group ${target.groupId} '
+          '(${target.instance.worldId}:${target.instance.instanceId}, '
+          'latency=${latencyMs}ms, outcome=${outcome.name})',
+          subCategory: 'group_monitor',
+        );
+        return;
       case InviteSendOutcome.nonRetryableFailure:
         AppLogger.info(
-          'Auto-invite did not send for group ${target.groupId} '
+          'Auto-invite non-retryable failure for group ${target.groupId} '
           '(${target.instance.worldId}:${target.instance.instanceId}, '
           'latency=${latencyMs}ms, outcome=${outcome.name})',
           subCategory: 'group_monitor',

@@ -63,5 +63,6 @@ void logAuthException(String operation, Object e, StackTrace s) {
     '$operation failed',
     subCategory: 'auth',
     error: sanitizedAuthErrorDetails(e),
+    stackTrace: s,
   );
 }

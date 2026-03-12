@@ -33,8 +33,9 @@ class TwoFactorAuthService {
       final (success, failure) = verify2faResponse;
 
       if (failure != null) {
+        final failureSummary = summarizeErrorForLog(failure);
         AppLogger.warning(
-          '2FA verification rejected by API',
+          '2FA verification rejected by API: $failureSummary',
           subCategory: 'auth',
         );
         return TwoFactorAuthResult(

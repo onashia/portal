@@ -195,4 +195,37 @@ More details''';
       expect(result, 'Temporary issue');
     });
   });
+
+  group('summarizeErrorForLog', () {
+    test('uses only the first line of a multiline error', () {
+      final result = summarizeErrorForLog('Primary failure\nInternal detail');
+      expect(result, 'Primary failure');
+    });
+
+    test('returns fallback for implementation-detail strings', () {
+      final result = summarizeErrorForLog(
+        Exception(),
+        fallbackMessage: 'Rejected',
+      );
+      expect(result, 'Rejected');
+    });
+
+    test('returns fallback for Exception-prefixed messages', () {
+      final result = summarizeErrorForLog(
+        Exception('boom'),
+        fallbackMessage: 'Rejected',
+      );
+      expect(result, 'Rejected');
+    });
+
+    test('truncates long log summaries', () {
+      final result = summarizeErrorForLog(
+        'This is a very long error message that should be shortened for log readability '
+        'without including the entire payload',
+        maxLength: 60,
+      );
+      expect(result.length, 60);
+      expect(result, endsWith('...'));
+    });
+  });
 }
