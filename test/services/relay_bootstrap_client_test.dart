@@ -17,10 +17,12 @@ void main() {
   RelayBootstrapClient makeClient({
     String bootstrapUrl = 'https://relay.test/bootstrap',
     String appSecret = 'test-secret',
+    bool allowInsecureTransport = false,
   }) => RelayBootstrapClient(
     dio: mockDio,
     bootstrapUrl: bootstrapUrl,
     appSecret: appSecret,
+    allowInsecureTransport: allowInsecureTransport,
   );
 
   void stubPost(Map<String, dynamic> data) {
@@ -55,6 +57,26 @@ void main() {
     test('returns false when bootstrapUrl is whitespace only', () {
       expect(makeClient(bootstrapUrl: '   ').isConfigured, isFalse);
     });
+
+    test('returns false when bootstrapUrl uses http by default', () {
+      expect(
+        makeClient(bootstrapUrl: 'http://relay.test/bootstrap').isConfigured,
+        isFalse,
+      );
+    });
+
+    test(
+      'returns true for http bootstrapUrl when insecure transport is enabled',
+      () {
+        expect(
+          makeClient(
+            bootstrapUrl: 'http://relay.test/bootstrap',
+            allowInsecureTransport: true,
+          ).isConfigured,
+          isTrue,
+        );
+      },
+    );
   });
 
   group('bootstrap', () {
@@ -79,6 +101,24 @@ void main() {
 
       expect(uri, Uri.parse('wss://relay.test/ws'));
     });
+
+    test(
+      'throws before request when bootstrapUrl uses http by default',
+      () async {
+        await expectLater(
+          call(makeClient(bootstrapUrl: 'http://relay.test/bootstrap')),
+          throwsA(isA<StateError>()),
+        );
+
+        verifyNever(
+          () => mockDio.post<dynamic>(
+            any(),
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        );
+      },
+    );
 
     test('sends correct payload and x-app-secret header', () async {
       stubPost({'relayEnabled': true, 'wsUrl': 'wss://relay.test/ws'});
@@ -153,6 +193,28 @@ void main() {
 
       await expectLater(call(makeClient()), throwsA(isA<StateError>()));
     });
+
+    test('throws StateError when wsUrl uses ws by default', () async {
+      stubPost({'relayEnabled': true, 'wsUrl': 'ws://relay.test/ws'});
+
+      await expectLater(call(makeClient()), throwsA(isA<StateError>()));
+    });
+
+    test(
+      'accepts insecure relay transport only when explicitly enabled',
+      () async {
+        stubPost({'relayEnabled': true, 'wsUrl': 'ws://relay.test/ws'});
+
+        final uri = await call(
+          makeClient(
+            bootstrapUrl: 'http://relay.test/bootstrap',
+            allowInsecureTransport: true,
+          ),
+        );
+
+        expect(uri, Uri.parse('ws://relay.test/ws'));
+      },
+    );
 
     test('propagates DioException from the HTTP layer', () async {
       when(

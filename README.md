@@ -62,6 +62,14 @@ flutter run -d macos \
   --dart-define=PORTAL_RELAY_BOOTSTRAP_URL=https://<your-worker>/relay/bootstrap
 ```
 
+To allow a non-TLS local relay during development only:
+
+```bash
+flutter run -d macos \
+  --dart-define=PORTAL_RELAY_BOOTSTRAP_URL=http://127.0.0.1:8787/relay/bootstrap \
+  --dart-define=PORTAL_ALLOW_INSECURE_RELAY_TRANSPORT=true
+```
+
 ### Test
 
 ```bash
@@ -120,6 +128,7 @@ See [`workers/relay_assist/README.md`](workers/relay_assist/README.md) for envir
 | `PORTAL_RELAY_ASSIST_ENABLED`   | `true`           | Enable/disable relay entirely      |
 | `PORTAL_RELAY_BOOTSTRAP_URL`    | production URL   | Override relay bootstrap endpoint  |
 | `PORTAL_RELAY_APP_SECRET`       | `''`             | Shared secret for relay auth       |
+| `PORTAL_ALLOW_INSECURE_RELAY_TRANSPORT` | `false` | Dev-only escape hatch for non-TLS local relay testing |
 
 Pass any of these via `--dart-define=KEY=VALUE` at build or run time.
 

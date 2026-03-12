@@ -15,21 +15,40 @@ class RelayBootstrapClient {
     required Dio dio,
     required String bootstrapUrl,
     required String appSecret,
+    bool allowInsecureTransport = AppConstants.allowInsecureRelayTransport,
   }) : _dio = dio,
        _bootstrapUrl = bootstrapUrl,
-       _appSecret = appSecret;
+       _appSecret = appSecret,
+       _allowInsecureTransport = allowInsecureTransport;
 
   final Dio _dio;
   final String _bootstrapUrl;
   final String _appSecret;
+  final bool _allowInsecureTransport;
 
   /// True when this client has the configuration required to make bootstrap
   /// requests. Returns false when [appSecret] or [bootstrapUrl] is empty, or
   /// when the relay feature flag is disabled at compile time.
   bool get isConfigured =>
       AppConstants.relayAssistEnabled &&
-      _bootstrapUrl.trim().isNotEmpty &&
-      _appSecret.isNotEmpty;
+      _appSecret.isNotEmpty &&
+      _hasAllowedBootstrapUrl;
+
+  bool get _hasAllowedBootstrapUrl {
+    final uri = Uri.tryParse(_bootstrapUrl.trim());
+    return uri != null &&
+        uri.hasScheme &&
+        uri.host.isNotEmpty &&
+        _isAllowedBootstrapScheme(uri.scheme);
+  }
+
+  bool _isAllowedBootstrapScheme(String scheme) {
+    return scheme == 'https' || (_allowInsecureTransport && scheme == 'http');
+  }
+
+  bool _isAllowedWebSocketScheme(String scheme) {
+    return scheme == 'wss' || (_allowInsecureTransport && scheme == 'ws');
+  }
 
   /// Requests a WebSocket URI from the relay bootstrap endpoint.
   ///
@@ -45,6 +64,12 @@ class RelayBootstrapClient {
     required DateTime Function() now,
     required void Function(DateTime disabledUntil) onRuntimeDisabled,
   }) async {
+    if (!_hasAllowedBootstrapUrl) {
+      throw StateError(
+        'Relay bootstrap requires HTTPS unless insecure relay transport is enabled',
+      );
+    }
+
     final response = await _dio.post<dynamic>(
       _bootstrapUrl,
       data: {'groupId': groupId, 'clientId': clientId, 'version': '1'},
@@ -78,9 +103,9 @@ class RelayBootstrapClient {
       throw StateError('Missing wsUrl from relay bootstrap');
     }
     final uri = Uri.parse(wsUrlString);
-    if (uri.scheme != 'ws' && uri.scheme != 'wss') {
+    if (!_isAllowedWebSocketScheme(uri.scheme)) {
       throw StateError(
-        'Relay bootstrap returned non-WebSocket URI scheme: ${uri.scheme}',
+        'Relay bootstrap returned an insecure WebSocket URI scheme: ${uri.scheme}',
       );
     }
     return uri;

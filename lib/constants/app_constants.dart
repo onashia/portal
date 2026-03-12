@@ -19,6 +19,13 @@ class AppConstants {
     'PORTAL_RELAY_APP_SECRET',
     defaultValue: '',
   );
+  // Development-only escape hatch for local relay testing without TLS.
+  // Keep disabled in normal environments so the client refuses plaintext
+  // bootstrap and websocket transports.
+  static const bool allowInsecureRelayTransport = bool.fromEnvironment(
+    'PORTAL_ALLOW_INSECURE_RELAY_TRANSPORT',
+    defaultValue: false,
+  );
   static const int relayBootstrapTimeoutSeconds = 8;
   static const int relayHintTtlSeconds = 45;
   static const int relayHintDedupeSeconds = 60;

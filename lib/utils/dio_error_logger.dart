@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import 'app_logger.dart';
 
@@ -40,14 +41,27 @@ bool logDioException(
   return true;
 }
 
+/// Builds a minimal error payload for auth failures without including raw
+/// response bodies, request URIs, or stack traces.
+@visibleForTesting
+Map<String, Object?> sanitizedAuthErrorDetails(Object error) {
+  if (error is DioException) {
+    return <String, Object?>{
+      'type': error.type.toString(),
+      if (error.response?.statusCode != null)
+        'statusCode': error.response?.statusCode,
+    };
+  }
+
+  return <String, Object?>{'type': error.runtimeType.toString()};
+}
+
 /// Logs an auth operation exception using both Dio-specific and general error
 /// logging in a consistent format.
 void logAuthException(String operation, Object e, StackTrace s) {
-  logDioException(operation, e, subCategory: 'auth');
   AppLogger.error(
     '$operation failed',
     subCategory: 'auth',
-    error: e,
-    stackTrace: s,
+    error: sanitizedAuthErrorDetails(e),
   );
 }
