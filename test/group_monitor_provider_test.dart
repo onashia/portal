@@ -200,11 +200,23 @@ class _RecordingInviteServiceFake implements InviteService {
 class _DelayedGroupMonitorApi extends FakeGroupMonitorApi {
   _DelayedGroupMonitorApi({
     super.groupInstancesByGroupId,
+    super.groupInstancesErrorsByGroupId,
     super.enrichedInstancesByKey,
     required this.getInstanceDelay,
+    this.getGroupInstancesDelay = Duration.zero,
   });
 
   final Duration getInstanceDelay;
+  final Duration getGroupInstancesDelay;
+
+  @override
+  Future<Response<List<GroupInstance>>> getGroupInstances({
+    required String groupId,
+    required ApiRequestLane lane,
+  }) async {
+    await Future<void>.delayed(getGroupInstancesDelay);
+    return super.getGroupInstances(groupId: groupId, lane: lane);
+  }
 
   @override
   Future<Response<Instance>> getInstance({
@@ -1845,6 +1857,52 @@ void main() {
         expect(nextState.boostedGroupId, isNull);
         expect(nextState.boostExpiresAt, isNull);
         expect(container.read(apiCallCounterProvider).totalCalls, 0);
+      },
+    );
+
+    test(
+      'boosted fetch failure stays attributed to the prepared group when boost clears in flight',
+      () async {
+        final fakeApi = _DelayedGroupMonitorApi(
+          getInstanceDelay: Duration.zero,
+          getGroupInstancesDelay: const Duration(milliseconds: 50),
+          groupInstancesErrorsByGroupId: {
+            'grp_alpha': StateError('boost fetch failed'),
+          },
+        );
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: fakeApi,
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_alpha'},
+          autoInviteEnabled: false,
+          isMonitoring: true,
+          isBoostActive: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+        final pendingFetch = notifier.fetchBoostedGroupInstances(
+          bypassRateLimit: true,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        notifier.state = notifier.state.copyWith(
+          isBoostActive: false,
+          boostedGroupId: null,
+          boostExpiresAt: null,
+        );
+        await pendingFetch;
+
+        expect(
+          container.read(provider).groupErrors['grp_alpha'],
+          'Failed to fetch instances',
+        );
       },
     );
 

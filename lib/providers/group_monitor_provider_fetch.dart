@@ -540,8 +540,10 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     _boostLoop.cancelTimer();
     _isBoostFetching = true;
 
+    String? groupId;
+
     try {
-      final groupId = await _prepareBoostRefreshGroupId();
+      groupId = await _prepareBoostRefreshGroupId();
       if (groupId == null || !ref.mounted) {
         return;
       }
@@ -706,7 +708,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       if (!ref.mounted) {
         return;
       }
-      final groupId = state.boostedGroupId;
       AppLogger.error(
         'Failed to fetch boosted group instances',
         subCategory: 'group_monitor',
