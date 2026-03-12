@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:portal/pages/dashboard_page.dart';
 import 'package:portal/providers/auth_provider.dart';
+import 'package:portal/services/image_cache_service.dart';
 import 'package:portal/theme/app_theme.dart';
 import 'package:portal/widgets/custom_title_bar.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
@@ -11,6 +12,11 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 class _MockCurrentUser extends Mock implements CurrentUser {}
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(ImageCacheService.reset);
+  tearDown(ImageCacheService.reset);
+
   group('resolveDashboardAuthViewState', () {
     const loadingMeta = (isLoading: true, hasError: false, error: null);
     const errorMeta = (isLoading: false, hasError: true, error: 'boom');
@@ -98,27 +104,28 @@ void main() {
       expect(sizedBox.height, double.infinity);
     });
 
-    testWidgets(
-      'dashboard loading state keeps the custom title bar visible',
-      (tester) async {
-        await tester.pumpWidget(
-          ProviderScope(
-            overrides: [
-              authAsyncMetaProvider.overrideWithValue(
-                (isLoading: true, hasError: false, error: null),
-              ),
-              authStatusProvider.overrideWithValue(AuthStatus.initial),
-              authCurrentUserProvider.overrideWithValue(null),
-            ],
-            child: MaterialApp(
-              theme: AppTheme.lightTheme,
-              home: const DashboardPage(),
-            ),
+    testWidgets('dashboard loading state keeps the custom title bar visible', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authAsyncMetaProvider.overrideWithValue((
+              isLoading: true,
+              hasError: false,
+              error: null,
+            )),
+            authStatusProvider.overrideWithValue(AuthStatus.initial),
+            authCurrentUserProvider.overrideWithValue(null),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: const DashboardPage(),
           ),
-        );
+        ),
+      );
 
-        expect(find.byType(CustomTitleBar), findsOneWidget);
-      },
-    );
+      expect(find.byType(CustomTitleBar), findsOneWidget);
+    });
   });
 }

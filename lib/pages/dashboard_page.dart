@@ -12,6 +12,7 @@ import '../constants/ui_constants.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import '../providers/group_monitor_storage.dart';
+import '../services/image_cache_service.dart';
 import '../utils/animation_constants.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_utils.dart';
@@ -282,6 +283,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         stackTrace: s,
       );
     }
+    await ImageCacheService().clearCache();
     await ref.read(authProvider.notifier).logout();
     ref.invalidate(groupMonitorProvider(userId));
   }
