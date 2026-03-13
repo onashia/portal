@@ -368,7 +368,7 @@ class DebugInfoCard extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            flex: 5,
+            flex: 4,
             child: Text(
               row.label,
               style: labelStyle,
@@ -377,13 +377,13 @@ class DebugInfoCard extends ConsumerWidget {
             ),
           ),
           SizedBox(width: m3e.spacing.sm),
-          Flexible(
-            flex: 2,
+          Expanded(
+            flex: 3,
             child: Text(
               row.value,
               style: valueStyle,
               textAlign: TextAlign.right,
-              maxLines: 3,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
