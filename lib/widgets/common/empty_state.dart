@@ -47,7 +47,7 @@ class EmptyState extends StatelessWidget {
             Container(
               padding: EdgeInsets.all(context.m3e.spacing.sm),
               decoration: BoxDecoration(
-                color: effectiveIconColor.withValues(alpha: 0.15),
+                color: scheme.surfaceContainerHighest,
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, size: iconSize, color: effectiveIconColor),
