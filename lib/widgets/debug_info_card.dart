@@ -203,11 +203,7 @@ class DebugInfoCard extends ConsumerWidget {
             letterSpacing: 0.8,
           ),
         ),
-        Divider(
-          height: m3e.spacing.md,
-          thickness: 1,
-          color: scheme.outlineVariant,
-        ),
+        Divider(height: m3e.spacing.md),
         for (final row in rows)
           _buildMetricRow(
             context,

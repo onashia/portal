@@ -47,13 +47,20 @@ class AppTheme {
 
     return base.copyWith(
       extensions: <ThemeExtension<dynamic>>[
+        // Material 500-level saturated tones to match VRChat's in-app status
+        // indicator colors. These are primary, attention-worthy UI elements
+        // (user availability) so higher saturation is intentional.
         StatusColors(
-          active: const Color(0xFFA5D6A7), // pastel green
-          askMe: const Color(0xFFFFCC80), // pastel orange
-          busy: const Color(0xFFEF9A9A), // pastel red
-          joinMe: const Color(0xFF90CAF9), // pastel light blue
-          offline: const Color(0xFFBDBDBD), // pastel grey
+          active: const Color(0xFF4CAF50), // green
+          askMe: const Color(0xFFFF9800), // orange
+          busy: const Color(0xFFF44336), // red
+          joinMe: const Color(0xFF2196F3), // blue
+          offline: const Color(0xFF9E9E9E), // grey
         ),
+        // Material 300-level muted tones — intentionally softer than
+        // StatusColors above. VRChat API health is ambient/informational,
+        // not a primary action-driving signal, so lower saturation keeps
+        // these indicators visually subordinate.
         VrchatStatusColors(
           operational: const Color(0xFF81C784), // green
           degraded: const Color(0xFFFFB74D), // orange/yellow
@@ -69,6 +76,21 @@ class AppTheme {
         ),
       ],
       textTheme: textTheme,
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: scheme.inverseSurface,
+          borderRadius: shapes.round.sm,
+        ),
+        textStyle: textTheme.bodySmall?.copyWith(
+          color: scheme.onInverseSurface,
+        ),
+        waitDuration: const Duration(milliseconds: 500),
+      ),
+      dividerTheme: DividerThemeData(
+        color: scheme.outlineVariant.withValues(alpha: 0.4),
+        thickness: 1,
+        space: 1,
+      ),
       cardTheme: CardThemeData(
         color: scheme.surfaceContainer,
         elevation: 2,

@@ -47,7 +47,7 @@ class InstanceTimelineItem extends StatelessWidget {
           if (isNewest)
             Container(
               padding: EdgeInsets.symmetric(
-                horizontal: context.m3e.spacing.sm,
+                horizontal: context.m3e.spacing.md,
                 vertical: context.m3e.spacing.sm,
               ),
               decoration: BoxDecoration(

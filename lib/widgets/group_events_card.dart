@@ -5,6 +5,7 @@ import 'package:m3e_collection/m3e_collection.dart';
 import '../providers/group_calendar_provider.dart';
 import '../providers/group_monitor_provider.dart';
 import '../utils/date_time_utils.dart';
+import 'animated_fade_slide.dart';
 import 'common/empty_state.dart';
 import 'common/loading_state.dart';
 import 'dashboard/dashboard_section_card.dart';
@@ -83,10 +84,13 @@ class GroupEventsCard extends ConsumerWidget {
       itemBuilder: (context, index) {
         final event = calendarState.todayEvents[index];
         final isLast = index == calendarState.todayEvents.length - 1;
-        return EventsListItem(
-          event: event,
-          isFirst: index == 0,
-          isLast: isLast,
+        return AnimatedFadeSlide(
+          key: ValueKey(event.event.id),
+          child: EventsListItem(
+            event: event,
+            isFirst: index == 0,
+            isLast: isLast,
+          ),
         );
       },
     );
