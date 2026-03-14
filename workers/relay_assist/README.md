@@ -23,6 +23,26 @@ A Cloudflare Worker (Durable Objects) that relays new-instance hints from booste
 | `PORTAL_APP_SECRET`    | Yes      | Shared secret clients must send in `x-app-secret` on bootstrap     |
 | `RELAY_RUNTIME_ENABLED`| No       | `"true"` (default) or `"false"` — kill-switch to disable relay     |
 
+## Relay Protocol Contract
+
+The Flutter client and this Worker both enforce the same wire-level rules.
+
+- Bootstrap `groupId` must match `grp_<uuid>` using lowercase hex.
+- Relay hint payloads require non-empty `hintId`, `groupId`, `worldId`, `instanceId`, and `sourceClientId`.
+- `hintId` must be at most 256 characters.
+- `worldId` must match `wrld_<uuid>`; matching is case-insensitive.
+- `instanceId` must start with one or more digits.
+- Client-to-worker WebSocket payloads must be at most `2048` bytes.
+- Portal publishes hints with a 45 second TTL.
+- The Worker rejects hints that are already expired and rejects hints whose expiry is implausibly far in the future (more than 70 seconds ahead of worker time).
+- Portal consumers allow a 5 second grace window when checking hint expiry to tolerate minor clock skew.
+
+Relevant worker-side error codes and responses:
+
+- Bootstrap may return `unauthorized`, `bootstrap_rate_limited`, `invalid_json`, `invalid_bootstrap_payload`, `invalid_group_id_format`, or `missing_secret`.
+- Bootstrap may also return `relayEnabled: false` with `retryAfterSeconds` when relay is runtime-disabled.
+- WebSocket error frames may contain `payload_too_large`, `invalid_json`, `unsupported_message_type`, `forbidden_publish`, `publish_rate_limited`, or `invalid_hint_payload`.
+
 ## Deploy
 
 ```bash

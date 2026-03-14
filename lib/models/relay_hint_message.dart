@@ -93,8 +93,8 @@ class RelayHintMessage {
 
   /// Returns true if all ID fields pass format validation.
   ///
-  /// Does not check expiry — use [isExpired] for that. Mirrors server-side
-  /// validation in workers/relay_assist/src/index.js.
+  /// Does not check expiry — use [isExpired] for that. Matches the Relay
+  /// Protocol Contract documented in workers/relay_assist/README.md.
   bool get isStructurallyValid {
     return hintId.isNotEmpty &&
         hintId.length <= 256 &&
@@ -104,16 +104,13 @@ class RelayHintMessage {
         sourceClientId.isNotEmpty;
   }
 
-  // Case-sensitive: VRChat group IDs are always lowercase hex. Intentionally
-  // not setting caseSensitive: false — mirrors GROUP_ID_RE in the server
-  // (workers/relay_assist/src/index.js) which also enforces lowercase only.
+  // Case-sensitive: the relay contract requires lowercase VRChat group IDs.
   static final _groupIdPattern = RegExp(
     r'^grp_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
   );
 
-  // caseSensitive: false — the server accepts mixed case for world IDs and we
-  // match that permissiveness to avoid false rejections on the client.
-  // Intentionally asymmetric with _groupIdPattern, which is case-sensitive.
+  // World IDs are intentionally case-insensitive per the documented relay
+  // contract, unlike group IDs.
   static final _worldIdPattern = RegExp(
     r'^wrld_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
     caseSensitive: false,

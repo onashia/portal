@@ -1,5 +1,6 @@
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:portal/constants/app_constants.dart';
 import 'package:portal/services/relay_heartbeat_monitor.dart';
 
 void main() {
@@ -7,6 +8,37 @@ void main() {
     test('isStale is true before start() is called', () {
       final monitor = RelayHeartbeatMonitor();
       expect(monitor.isStale, isTrue);
+    });
+
+    test('default timing uses AppConstants heartbeat values', () {
+      fakeAsync((async) {
+        final start = DateTime.utc(2026, 1, 1);
+        var pingCount = 0;
+        var onStaleCalled = false;
+        final monitor = RelayHeartbeatMonitor(
+          now: () => start.add(async.elapsed),
+        );
+
+        monitor.start(
+          sendPing: (_) => pingCount++,
+          onStale: () => onStaleCalled = true,
+        );
+
+        async.elapse(
+          Duration(seconds: AppConstants.relayHeartbeatIntervalSeconds * 2),
+        );
+        expect(pingCount, 2);
+        expect(onStaleCalled, isFalse);
+
+        async.elapse(
+          Duration(
+            seconds:
+                AppConstants.relayHeartbeatStaleSeconds -
+                (AppConstants.relayHeartbeatIntervalSeconds * 2),
+          ),
+        );
+        expect(onStaleCalled, isTrue);
+      });
     });
 
     test('isStale is false immediately after start()', () {

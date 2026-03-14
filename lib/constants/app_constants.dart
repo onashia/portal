@@ -44,8 +44,8 @@ class AppConstants {
   static const int relayMaxInboundMessageBytes = 8192;
 
   /// Maximum byte length the server accepts from the client on the relay
-  /// WebSocket. Mirrors MAX_PAYLOAD_BYTES in workers/relay_assist/src/index.js.
-  /// Keep in sync if the worker value changes.
+  /// WebSocket. See the Relay Protocol Contract in
+  /// workers/relay_assist/README.md for the shared client/worker limits.
   static const int relayMaxOutboundPayloadBytes = 2048;
   static const int relayInviteRetryWindowSeconds = 25;
   static const int vrchatApiConnectTimeoutSeconds = 10;

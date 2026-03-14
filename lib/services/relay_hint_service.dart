@@ -229,8 +229,8 @@ class RelayHintService {
     if (_channel == null || !_shouldStayConnected) {
       return;
     }
-    // Encode once so we can guard against the server's inbound size limit
-    // (MAX_PAYLOAD_BYTES in workers/relay_assist/src/index.js) before sending.
+    // Encode once so we can enforce the Relay Protocol Contract documented in
+    // workers/relay_assist/README.md before writing to the websocket.
     final encoded = jsonEncode({
       'type': 'publish_hint',
       'payload': hint.toJson(),

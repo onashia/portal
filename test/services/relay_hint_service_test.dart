@@ -598,8 +598,9 @@ void main() {
         final channel = _FakeWebSocketChannel();
         final service = await connectService(channel);
 
-        // Construct a hint whose encoded JSON exceeds relayMaxOutboundPayloadBytes
-        // by padding hintId with enough characters to tip it over the limit.
+        // The Relay Protocol Contract caps client->worker websocket payloads
+        // at relayMaxOutboundPayloadBytes. Pad hintId until the encoded frame
+        // crosses that limit.
         final oversizedHint = RelayHintMessage(
           version: '1',
           hintId: 'x' * 2048,

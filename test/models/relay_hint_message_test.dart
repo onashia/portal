@@ -5,6 +5,8 @@ void main() {
   group('RelayHintMessage', () {
     test('create builds valid expiring payload', () {
       final now = DateTime.utc(2026, 3, 3, 12);
+      // This exercises the documented relay contract for required IDs and
+      // client-side hint expiry generation.
       final hint = RelayHintMessage.create(
         groupId: _validGroupId,
         worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
@@ -127,6 +129,7 @@ void main() {
       });
 
       test('accepts valid groupId, worldId, and instanceId', () {
+        // These are the exact ID shapes documented in the relay contract.
         final hint = RelayHintMessage(
           version: '1',
           hintId: 'hint_1',
