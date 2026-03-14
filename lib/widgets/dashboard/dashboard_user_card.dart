@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
+import '../../constants/ui_constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/user_status_extension.dart';
 import '../user/user_profile_image.dart';
@@ -29,7 +30,9 @@ class DashboardUserCard extends ConsumerWidget {
       padding: EdgeInsets.all(context.m3e.spacing.lg),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isNarrow = constraints.maxWidth < 800;
+          final isNarrow =
+              constraints.maxWidth <
+              UiConstants.dashboardUserCardNarrowBreakpoint;
 
           if (isNarrow) {
             return Column(

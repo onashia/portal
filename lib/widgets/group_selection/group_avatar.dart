@@ -28,6 +28,8 @@ class GroupAvatar extends StatelessWidget {
     final hasImage = group.iconUrl != null && group.iconUrl!.isNotEmpty;
     final defaultBorderRadius = context.m3e.shapes.square.md;
 
+    final scheme = Theme.of(context).colorScheme;
+
     return Container(
       width: avatarSize,
       height: avatarSize,
@@ -51,7 +53,7 @@ class GroupAvatar extends StatelessWidget {
                     style:
                         fallbackTextStyle ??
                         context.m3e.typography.base.labelSmall?.copyWith(
-                          color: Colors.white,
+                          color: scheme.onPrimary,
                           fontWeight: FontWeight.bold,
                         ),
                   ),

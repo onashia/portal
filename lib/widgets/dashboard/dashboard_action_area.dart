@@ -91,6 +91,7 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
           OverlayPortal(
             controller: _debugOverlayController,
             overlayChildBuilder: (context) {
+              final scheme = Theme.of(context).colorScheme;
               final overlayMaxHeight = math.max(
                 240.0,
                 MediaQuery.sizeOf(context).height -
@@ -114,7 +115,14 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
                           maxWidth: UiConstants.dashboardDebugPopoverMaxWidth,
                           maxHeight: overlayMaxHeight,
                         ),
-                        child: Card(
+                        child: Material(
+                          elevation: 6,
+                          color: scheme.surfaceContainerHigh,
+                          shadowColor: scheme.shadow,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: context.m3e.shapes.square.md,
+                          ),
+                          clipBehavior: Clip.antiAlias,
                           child: DebugInfoCard(
                             userId: widget.userId,
                             useCard: false,

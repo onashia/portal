@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 
+import '../constants/ui_constants.dart';
 import '../providers/api_call_counter.dart';
 import '../providers/group_monitor_provider.dart';
 import '../services/api_rate_limit_coordinator.dart';
@@ -11,8 +12,6 @@ import '../utils/group_utils.dart';
 class DebugInfoCard extends ConsumerWidget {
   const DebugInfoCard({super.key, required this.userId, this.useCard = true});
 
-  static const double _stackedLayoutBreakpoint = 360.0;
-
   final String userId;
   final bool useCard;
 
@@ -21,9 +20,6 @@ class DebugInfoCard extends ConsumerWidget {
     final monitorState = ref.watch(groupMonitorProvider(userId));
     final apiCallState = ref.watch(apiCallCounterProvider);
     final m3e = context.m3e;
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-    final scheme = theme.colorScheme;
     final monitoringRows = _buildMonitoringMetricRows(
       monitorState,
       apiCallState,
@@ -31,18 +27,14 @@ class DebugInfoCard extends ConsumerWidget {
     final apiLanesRows = _buildApiLanesMetricRows(apiCallState);
     final boostRows = _buildBoostMetricRows(monitorState);
     final relayRows = _buildRelayMetricRows(monitorState);
-    final labelStyle = textTheme.labelMedium?.copyWith(
-      color: scheme.onSurfaceVariant,
-    );
-    final valueStyle = textTheme.bodyMedium;
-    final errorStyle = textTheme.bodyMedium?.copyWith(color: scheme.error);
 
     final content = Padding(
       padding: EdgeInsets.all(m3e.spacing.lg),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final useStackedLayout =
-              constraints.maxWidth < _stackedLayoutBreakpoint;
+              constraints.maxWidth <
+              UiConstants.dashboardDebugInfoCardStackedBreakpoint;
 
           return SingleChildScrollView(
             child: Column(
@@ -52,37 +44,13 @@ class DebugInfoCard extends ConsumerWidget {
                 _buildHeader(context),
                 SizedBox(height: m3e.spacing.md),
                 if (useStackedLayout) ...[
-                  _buildSection(
-                    context,
-                    'Monitoring',
-                    monitoringRows,
-                    labelStyle: labelStyle,
-                    valueStyle: valueStyle,
-                  ),
+                  _buildSection(context, 'Monitoring', monitoringRows),
                   SizedBox(height: m3e.spacing.lg),
-                  _buildSection(
-                    context,
-                    'Boost',
-                    boostRows,
-                    labelStyle: labelStyle,
-                    valueStyle: valueStyle,
-                  ),
+                  _buildSection(context, 'Boost', boostRows),
                   SizedBox(height: m3e.spacing.lg),
-                  _buildSection(
-                    context,
-                    'API Lanes',
-                    apiLanesRows,
-                    labelStyle: labelStyle,
-                    valueStyle: valueStyle,
-                  ),
+                  _buildSection(context, 'API Lanes', apiLanesRows),
                   SizedBox(height: m3e.spacing.lg),
-                  _buildSection(
-                    context,
-                    'Relay',
-                    relayRows,
-                    labelStyle: labelStyle,
-                    valueStyle: valueStyle,
-                  ),
+                  _buildSection(context, 'Relay', relayRows),
                 ] else
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -95,17 +63,9 @@ class DebugInfoCard extends ConsumerWidget {
                               context,
                               'Monitoring',
                               monitoringRows,
-                              labelStyle: labelStyle,
-                              valueStyle: valueStyle,
                             ),
                             SizedBox(height: m3e.spacing.lg),
-                            _buildSection(
-                              context,
-                              'Boost',
-                              boostRows,
-                              labelStyle: labelStyle,
-                              valueStyle: valueStyle,
-                            ),
+                            _buildSection(context, 'Boost', boostRows),
                           ],
                         ),
                       ),
@@ -114,36 +74,16 @@ class DebugInfoCard extends ConsumerWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildSection(
-                              context,
-                              'API Lanes',
-                              apiLanesRows,
-                              labelStyle: labelStyle,
-                              valueStyle: valueStyle,
-                            ),
+                            _buildSection(context, 'API Lanes', apiLanesRows),
                             SizedBox(height: m3e.spacing.lg),
-                            _buildSection(
-                              context,
-                              'Relay',
-                              relayRows,
-                              labelStyle: labelStyle,
-                              valueStyle: valueStyle,
-                            ),
+                            _buildSection(context, 'Relay', relayRows),
                           ],
                         ),
                       ),
                     ],
                   ),
-                _buildErrorSection(
-                  context,
-                  monitorState,
-                  errorStyle: errorStyle,
-                ),
-                _buildAllGroupsEmptyNotice(
-                  context,
-                  monitorState,
-                  errorStyle: errorStyle,
-                ),
+                _buildErrorSection(context, monitorState),
+                _buildAllGroupsEmptyNotice(context, monitorState),
               ],
             ),
           );
@@ -184,25 +124,26 @@ class DebugInfoCard extends ConsumerWidget {
   Widget _buildSection(
     BuildContext context,
     String title,
-    List<_MetricRowData> rows, {
-    required TextStyle? labelStyle,
-    required TextStyle? valueStyle,
-  }) {
+    List<_MetricRowData> rows,
+  ) {
     final m3e = context.m3e;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
+    final labelStyle = textTheme.labelMedium?.copyWith(
+      color: scheme.onSurfaceVariant,
+    );
+    final valueStyle = textTheme.bodyMedium;
+    final headerStyle = textTheme.labelSmall?.copyWith(
+      color: scheme.primary,
+      fontWeight: FontWeight.bold,
+      letterSpacing: 0.8,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: scheme.primary,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.8,
-          ),
-        ),
+        Text(title, style: headerStyle),
         Divider(height: m3e.spacing.md),
         for (final row in rows)
           _buildMetricRow(
@@ -306,38 +247,42 @@ class DebugInfoCard extends ConsumerWidget {
 
   Widget _buildErrorSection(
     BuildContext context,
-    GroupMonitorState monitorState, {
-    required TextStyle? errorStyle,
-  }) {
+    GroupMonitorState monitorState,
+  ) {
     if (monitorState.groupErrors.isEmpty) {
       return const SizedBox.shrink();
     }
 
     final m3e = context.m3e;
+    final theme = Theme.of(context);
+    final textStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onErrorContainer,
+    );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(height: m3e.spacing.md),
-        Text('Errors: ${monitorState.groupErrors.length}', style: errorStyle),
-        SizedBox(height: m3e.spacing.sm),
-        for (final entry in monitorState.groupErrors.entries)
-          Padding(
-            padding: EdgeInsets.only(top: m3e.spacing.xs),
-            child: Text(
-              '• ${_getGroupName(monitorState, entry.key)}: ${entry.value}',
-              style: errorStyle,
+    return _buildErrorContainer(
+      context,
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Errors: ${monitorState.groupErrors.length}', style: textStyle),
+          SizedBox(height: m3e.spacing.xs),
+          for (final entry in monitorState.groupErrors.entries)
+            Padding(
+              padding: EdgeInsets.only(top: m3e.spacing.xs),
+              child: Text(
+                '• ${_getGroupName(monitorState, entry.key)}: ${entry.value}',
+                style: textStyle,
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildAllGroupsEmptyNotice(
     BuildContext context,
-    GroupMonitorState monitorState, {
-    required TextStyle? errorStyle,
-  }) {
+    GroupMonitorState monitorState,
+  ) {
     final allGroupsEmpty =
         monitorState.groupInstances.isNotEmpty &&
         monitorState.groupInstances.values.every((list) => list.isEmpty);
@@ -345,11 +290,31 @@ class DebugInfoCard extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
+    final theme = Theme.of(context);
+    final textStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onErrorContainer,
+    );
+
+    return _buildErrorContainer(
+      context,
+      Text('All groups returned empty instance lists', style: textStyle),
+    );
+  }
+
+  Widget _buildErrorContainer(BuildContext context, Widget child) {
+    final m3e = context.m3e;
+    final scheme = Theme.of(context).colorScheme;
+
     return Padding(
-      padding: EdgeInsets.only(top: context.m3e.spacing.md),
-      child: Text(
-        'All groups returned empty instance lists',
-        style: errorStyle,
+      padding: EdgeInsets.only(top: m3e.spacing.md),
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(m3e.spacing.sm),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer,
+          borderRadius: context.m3e.shapes.square.xs,
+        ),
+        child: child,
       ),
     );
   }
