@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/constants/app_constants.dart';
+import 'package:portal/constants/storage_keys.dart';
 import 'package:portal/models/group_instance_with_group.dart';
 import 'package:portal/models/relay_hint_message.dart';
 import 'package:portal/providers/api_call_counter.dart';
@@ -359,6 +360,122 @@ void main() {
       expect(missingGroupId.shouldClear, isTrue);
       expect(missingGroupId.logExpired, isFalse);
     });
+  });
+
+  group('startup persisted state loading', () {
+    test(
+      'restores persisted selection, settings, and valid boost in one startup load',
+      () async {
+        final expiresAt = DateTime.now().add(const Duration(minutes: 5));
+        SharedPreferences.setMockInitialValues({
+          StorageKeys.selectedGroupIds: ['grp_alpha'],
+          StorageKeys.autoInviteEnabled: false,
+          StorageKeys.relayAssistEnabled: false,
+          StorageKeys.boostedGroupId: 'grp_alpha',
+          StorageKeys.boostExpiresAt: expiresAt.toIso8601String(),
+        });
+
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        addTearDown(container.dispose);
+
+        await pumpEventQueue();
+        await pumpEventQueue();
+
+        final state = container.read(provider);
+        expect(state.selectedGroupIds, {'grp_alpha'});
+        expect(state.autoInviteEnabled, isFalse);
+        expect(state.relayAssistEnabled, isFalse);
+        expect(state.isBoostActive, isTrue);
+        expect(state.boostedGroupId, 'grp_alpha');
+        expect(state.boostExpiresAt, isNotNull);
+        expect(state.isMonitoring, isTrue);
+      },
+    );
+
+    test('clears expired persisted boost during startup', () async {
+      SharedPreferences.setMockInitialValues({
+        StorageKeys.selectedGroupIds: ['grp_alpha'],
+        StorageKeys.boostedGroupId: 'grp_alpha',
+        StorageKeys.boostExpiresAt: DateTime.now()
+            .subtract(const Duration(minutes: 1))
+            .toIso8601String(),
+      });
+
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      addTearDown(container.dispose);
+
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      final state = container.read(provider);
+      final prefs = await SharedPreferences.getInstance();
+      expect(state.isBoostActive, isFalse);
+      expect(state.boostedGroupId, isNull);
+      expect(state.boostExpiresAt, isNull);
+      expect(prefs.getString(StorageKeys.boostedGroupId), isNull);
+      expect(prefs.getString(StorageKeys.boostExpiresAt), isNull);
+    });
+
+    test('clears partial persisted boost during startup', () async {
+      SharedPreferences.setMockInitialValues({
+        StorageKeys.selectedGroupIds: ['grp_alpha'],
+        StorageKeys.boostedGroupId: 'grp_alpha',
+      });
+
+      final harness = createGroupMonitorHarness(
+        initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+      );
+      final container = harness.container;
+      final provider = harness.provider;
+      addTearDown(container.dispose);
+
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      final state = container.read(provider);
+      final prefs = await SharedPreferences.getInstance();
+      expect(state.isBoostActive, isFalse);
+      expect(state.boostedGroupId, isNull);
+      expect(state.boostExpiresAt, isNull);
+      expect(state.isMonitoring, isTrue);
+      expect(prefs.getString(StorageKeys.boostedGroupId), isNull);
+      expect(prefs.getString(StorageKeys.boostExpiresAt), isNull);
+    });
+
+    test(
+      'restores selected groups and monitoring when another persisted key is malformed',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          StorageKeys.selectedGroupIds: ['grp_alpha'],
+          StorageKeys.autoInviteEnabled: 'invalid',
+          StorageKeys.relayAssistEnabled: false,
+        });
+
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        addTearDown(container.dispose);
+
+        await pumpEventQueue();
+        await pumpEventQueue();
+
+        final state = container.read(provider);
+        expect(state.selectedGroupIds, {'grp_alpha'});
+        expect(state.autoInviteEnabled, isTrue);
+        expect(state.relayAssistEnabled, isFalse);
+        expect(state.isMonitoring, isTrue);
+      },
+    );
   });
 
   group('mergeFetchedGroupInstancesWithDiff', () {

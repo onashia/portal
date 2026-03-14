@@ -126,10 +126,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
       _selectionRefreshDebouncer.cancel();
       unawaited(_relayController.dispose());
     });
-    _persistenceController.loadSelectedGroups();
-    _persistenceController.loadAutoInviteSetting();
-    _persistenceController.loadRelayAssistSetting();
-    _persistenceController.loadBoostSettings();
+    _persistenceController.loadPersistedState();
     return const GroupMonitorState(
       isLoading: true,
       relayAssistEnabled: AppConstants.relayAssistEnabled,
