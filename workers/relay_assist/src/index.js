@@ -75,7 +75,6 @@ async function handleBootstrap(request, env) {
 
   const nowSeconds = Math.floor(Date.now() / 1000);
   const claims = {
-    v: 1,
     groupId,
     clientId,
     canPublish: true,

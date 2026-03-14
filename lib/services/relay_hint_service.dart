@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../constants/app_constants.dart';
@@ -394,21 +393,5 @@ class RelayHintService {
       return;
     }
     _statusController.add(status);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Static helpers.
-  // ---------------------------------------------------------------------------
-
-  @visibleForTesting
-  static bool isHeartbeatStale({
-    required DateTime now,
-    required DateTime? lastInboundAt,
-    required Duration staleAfter,
-  }) {
-    if (lastInboundAt == null) {
-      return true;
-    }
-    return !lastInboundAt.add(staleAfter).isAfter(now);
   }
 }

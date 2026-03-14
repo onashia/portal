@@ -150,7 +150,6 @@ void main() {
       final body = captured[0] as Map<String, dynamic>;
       expect(body['groupId'], 'grp_12345678-1234-1234-1234-123456789abc');
       expect(body['clientId'], 'client_test');
-      expect(body['version'], '1');
 
       final opts = captured[1] as Options;
       expect(opts.headers?['x-app-secret'], 'test-secret');

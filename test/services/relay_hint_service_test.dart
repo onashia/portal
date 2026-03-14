@@ -732,34 +732,4 @@ void main() {
     );
   });
 
-  group('RelayHintService.isHeartbeatStale', () {
-    test('returns false before staleness threshold', () {
-      final lastInboundAt = DateTime.utc(2026, 1, 1, 0, 0, 0);
-      final isStale = RelayHintService.isHeartbeatStale(
-        now: lastInboundAt.add(const Duration(seconds: 59)),
-        lastInboundAt: lastInboundAt,
-        staleAfter: const Duration(seconds: 60),
-      );
-
-      expect(isStale, isFalse);
-    });
-
-    test('returns true at and after staleness threshold', () {
-      final lastInboundAt = DateTime.utc(2026, 1, 1, 0, 0, 0);
-
-      final isStaleAtThreshold = RelayHintService.isHeartbeatStale(
-        now: lastInboundAt.add(const Duration(seconds: 60)),
-        lastInboundAt: lastInboundAt,
-        staleAfter: const Duration(seconds: 60),
-      );
-      final isStaleAfterThreshold = RelayHintService.isHeartbeatStale(
-        now: lastInboundAt.add(const Duration(seconds: 61)),
-        lastInboundAt: lastInboundAt,
-        staleAfter: const Duration(seconds: 60),
-      );
-
-      expect(isStaleAtThreshold, isTrue);
-      expect(isStaleAfterThreshold, isTrue);
-    });
-  });
 }
