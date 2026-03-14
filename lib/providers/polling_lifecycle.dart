@@ -254,6 +254,53 @@ class RefreshDebouncer {
   }
 }
 
+bool reconcileSingleLoopRefresh({
+  required RefreshLoopController loop,
+  required bool isActive,
+  required bool isInFlight,
+  required void Function() requestRefresh,
+  required void Function() onInactive,
+}) {
+  if (!isActive) {
+    onInactive();
+    return false;
+  }
+
+  if (loop.shouldScheduleNext(isActive: true, isInFlight: isInFlight)) {
+    requestRefresh();
+    return true;
+  }
+
+  return false;
+}
+
+bool drainSingleLoopRefreshOrScheduleNext({
+  required RefreshLoopController loop,
+  required bool isMounted,
+  required bool isInFlight,
+  required bool isActive,
+  required LoopRefreshRunner runNow,
+  required void Function() scheduleNextTick,
+  required void Function() reconcile,
+}) {
+  if (loop.drainPendingRefresh(
+    isMounted: isMounted,
+    isInFlight: isInFlight,
+    isActive: isActive,
+    runNow: runNow,
+  )) {
+    return true;
+  }
+
+  if (loop.shouldScheduleNext(isActive: isActive, isInFlight: isInFlight)) {
+    scheduleNextTick();
+    return true;
+  }
+
+  reconcile();
+  return false;
+}
+
 /// Decides how to handle an incoming refresh request.
 ///
 /// Dispatch table:

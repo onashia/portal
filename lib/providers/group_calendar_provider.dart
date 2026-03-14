@@ -234,27 +234,22 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   /// if one is needed. Does not trigger an immediate fetch — call
   /// [_requestCalendarRefresh] for that.
   void _reconcileCalendarLoop() {
-    if (!_canRefreshForCurrentSession()) {
-      _handleSessionIneligible();
-      return;
-    }
-
-    final selectedGroupIds = ref.read(
-      groupMonitorProvider(userId).select((state) => state.selectedGroupIds),
-    );
-    if (!isSelectionActive(selectedGroupIds)) {
-      _calendarLoop.reset();
-      _selectionRefreshDebouncer.cancel();
-      _clearForEmptySelectionIfNeeded();
-      return;
-    }
-
-    if (_calendarLoop.shouldScheduleNext(
-      isActive: true,
+    reconcileSingleLoopRefresh(
+      loop: _calendarLoop,
+      isActive: _calendarActive(),
       isInFlight: _isFetching,
-    )) {
-      _requestCalendarRefresh(immediate: true);
-    }
+      requestRefresh: () => _requestCalendarRefresh(immediate: true),
+      onInactive: () {
+        if (!_canRefreshForCurrentSession()) {
+          _handleSessionIneligible();
+          return;
+        }
+
+        _calendarLoop.reset();
+        _selectionRefreshDebouncer.cancel();
+        _clearForEmptySelectionIfNeeded();
+      },
+    );
   }
 
   /// Called in the `finally` block after every fetch completes.
@@ -263,31 +258,22 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   /// now. Otherwise schedule the next periodic tick (or reconcile if the loop
   /// is no longer active).
   void _drainPendingRefreshesOrScheduleTick() {
+    if (!ref.mounted || _isFetching) {
+      return;
+    }
+
     final active = ref.mounted ? _calendarActive() : false;
-    if (_calendarLoop.drainPendingRefresh(
+    drainSingleLoopRefreshOrScheduleNext(
+      loop: _calendarLoop,
       isMounted: ref.mounted,
       isInFlight: _isFetching,
       isActive: active,
       runNow: ({required bypassRateLimit}) {
         unawaited(refresh(bypassRateLimit: bypassRateLimit));
       },
-    )) {
-      return;
-    }
-
-    if (!ref.mounted || _isFetching) {
-      return;
-    }
-
-    if (_calendarLoop.shouldScheduleNext(
-      isActive: active,
-      isInFlight: _isFetching,
-    )) {
-      _scheduleNextCalendarTick();
-      return;
-    }
-
-    _reconcileCalendarLoop();
+      scheduleNextTick: () => _scheduleNextCalendarTick(),
+      reconcile: _reconcileCalendarLoop,
+    );
   }
 
   Future<void> refresh({bool bypassRateLimit = false}) async {

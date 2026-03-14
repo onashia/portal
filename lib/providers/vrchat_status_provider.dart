@@ -134,17 +134,13 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
   }
 
   void _reconcileStatusLoop() {
-    if (!_statusActive()) {
-      _statusLoop.reset();
-      return;
-    }
-
-    if (_statusLoop.shouldScheduleNext(
-      isActive: true,
+    reconcileSingleLoopRefresh(
+      loop: _statusLoop,
+      isActive: _statusActive(),
       isInFlight: _isRefreshing,
-    )) {
-      _requestStatusRefresh(immediate: true);
-    }
+      requestRefresh: () => _requestStatusRefresh(immediate: true),
+      onInactive: _statusLoop.reset,
+    );
   }
 
   /// Refreshes VRChat status.
@@ -209,27 +205,22 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
   }
 
   void _afterRefresh() {
+    if (!ref.mounted || _isRefreshing) {
+      return;
+    }
+
     final active = _statusActive();
-    if (_statusLoop.drainPendingRefresh(
+    drainSingleLoopRefreshOrScheduleNext(
+      loop: _statusLoop,
       isMounted: ref.mounted,
       isInFlight: _isRefreshing,
       isActive: active,
       runNow: ({required bypassRateLimit}) {
         unawaited(refresh(bypassRateLimit: bypassRateLimit));
       },
-    )) {
-      return;
-    }
-
-    if (_statusLoop.shouldScheduleNext(
-      isActive: active,
-      isInFlight: _isRefreshing,
-    )) {
-      _scheduleNextRefresh();
-      return;
-    }
-
-    _reconcileStatusLoop();
+      scheduleNextTick: () => _scheduleNextRefresh(),
+      reconcile: _reconcileStatusLoop,
+    );
   }
 }
 
