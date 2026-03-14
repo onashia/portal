@@ -15,7 +15,12 @@ Future<void> showVrchatStatusDialog(BuildContext context, VrchatStatus status) {
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('VRChat Status'),
-      contentPadding: EdgeInsets.all(context.m3e.spacing.lg),
+      contentPadding: EdgeInsets.fromLTRB(
+        context.m3e.spacing.xl,
+        context.m3e.spacing.lg,
+        context.m3e.spacing.xl,
+        context.m3e.spacing.lg,
+      ),
       content: ConstrainedBox(
         constraints: const BoxConstraints(
           maxWidth: UiConstants.vrchatStatusDialogMaxWidth,

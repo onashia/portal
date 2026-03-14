@@ -45,108 +45,89 @@ class _GroupMonitorPersistenceController {
     });
   }
 
-  Future<void> loadBoostSettings() async {
+  Future<void> loadPersistedState() async {
     try {
-      final settings = await GroupMonitorStorage.loadBoostSettings();
-      final resolved = resolveLoadedBoostSettings(
-        settings: settings,
-        now: DateTime.now(),
+      final snapshot = await GroupMonitorStorage.loadPersistedState(
+        relayAssistDefaultValue: AppConstants.relayAssistEnabled,
       );
-
-      if (resolved.shouldClear) {
-        await clearBoost(persist: true, logExpired: resolved.logExpired);
-        return;
-      }
-
-      if (resolved.boostedGroupId != null && resolved.boostExpiresAt != null) {
-        notifier.state = notifier.state.copyWith(
-          isBoostActive: resolved.boostExpiresAt!.isAfter(DateTime.now()),
-          boostedGroupId: resolved.boostedGroupId,
-          boostExpiresAt: resolved.boostExpiresAt,
-        );
-        AppLogger.debug(
-          'Loaded active boost settings for ${resolved.boostedGroupId}',
-          subCategory: 'group_monitor',
-        );
-
-        if (notifier.state.isMonitoring) {
-          notifier._loopController.requestBoostRefresh(immediate: true);
-        }
-      }
-      notifier._relayController.reconcileConnection();
-    } catch (e) {
-      AppLogger.error(
-        'Failed to load boost settings',
-        subCategory: 'group_monitor',
-        error: e,
-      );
-    }
-  }
-
-  Future<void> loadAutoInviteSetting() async {
-    try {
-      final enabled = await GroupMonitorStorage.loadAutoInviteEnabled();
-      notifier.state = notifier.state.copyWith(autoInviteEnabled: enabled);
-      AppLogger.debug(
-        'Loaded auto-invite setting: $enabled',
-        subCategory: 'group_monitor',
-      );
-    } catch (e) {
-      AppLogger.error(
-        'Failed to load auto-invite setting',
-        subCategory: 'group_monitor',
-        error: e,
-      );
-    } finally {
-      notifier._relayController.reconcileConnection();
-    }
-  }
-
-  Future<void> loadRelayAssistSetting() async {
-    try {
-      final enabled = await GroupMonitorStorage.loadRelayAssistEnabled(
-        defaultValue: AppConstants.relayAssistEnabled,
-      );
-      notifier.state = notifier.state.copyWith(relayAssistEnabled: enabled);
-      AppLogger.debug(
-        'Loaded relay assist setting: $enabled',
-        subCategory: 'group_monitor',
-      );
-    } catch (e) {
-      AppLogger.error(
-        'Failed to load relay assist setting',
-        subCategory: 'group_monitor',
-        error: e,
-      );
-    } finally {
-      notifier._relayController.reconcileConnection();
-    }
-  }
-
-  Future<void> loadSelectedGroups() async {
-    try {
-      final selectedIds = await GroupMonitorStorage.loadSelectedGroupIds();
-      final loadedSelection = selectedIds.toSet();
       final shouldApplyLoadedSelection =
           notifier.state.selectedGroupIds.isEmpty;
-      if (shouldApplyLoadedSelection) {
-        notifier.state = notifier.state.copyWith(
-          selectedGroupIds: loadedSelection,
-        );
-      } else {
+      final now = DateTime.now();
+      final resolved = resolveLoadedBoostSettings(
+        settings: snapshot.boostSettings,
+        now: now,
+      );
+      // Use || so partial/corrupt boost data (only one field present) also
+      // triggers the resolve-and-clear path in resolveLoadedBoostSettings.
+      final hasPersistedBoostFields =
+          snapshot.boostSettings.groupId != null ||
+          snapshot.boostSettings.expiresAt != null;
+
+      final nextSelectedGroupIds = shouldApplyLoadedSelection
+          ? snapshot.selectedGroupIds
+          : notifier.state.selectedGroupIds;
+      if (!shouldApplyLoadedSelection) {
         AppLogger.debug(
           'Skipping loaded selected groups because selection already changed in memory',
           subCategory: 'group_monitor',
         );
       }
+
+      notifier.state = notifier.state.copyWith(
+        selectedGroupIds: nextSelectedGroupIds,
+        autoInviteEnabled: snapshot.autoInviteEnabled,
+        relayAssistEnabled: snapshot.relayAssistEnabled,
+        isBoostActive: hasPersistedBoostFields
+            ? resolved.boostExpiresAt != null &&
+                  resolved.boostExpiresAt!.isAfter(now)
+            : notifier.state.isBoostActive,
+        boostedGroupId: hasPersistedBoostFields
+            ? resolved.boostedGroupId
+            : notifier.state.boostedGroupId,
+        boostExpiresAt: hasPersistedBoostFields
+            ? resolved.boostExpiresAt
+            : notifier.state.boostExpiresAt,
+      );
+
       AppLogger.debug(
-        'Loaded ${selectedIds.length} selected groups from storage',
+        'Loaded ${snapshot.selectedGroupIds.length} selected groups from storage',
         subCategory: 'group_monitor',
       );
+      AppLogger.debug(
+        'Loaded auto-invite setting: ${snapshot.autoInviteEnabled}',
+        subCategory: 'group_monitor',
+      );
+      AppLogger.debug(
+        'Loaded relay assist setting: ${snapshot.relayAssistEnabled}',
+        subCategory: 'group_monitor',
+      );
+      if (resolved.boostedGroupId != null && resolved.boostExpiresAt != null) {
+        AppLogger.debug(
+          'Loaded active boost settings for ${resolved.boostedGroupId}',
+          subCategory: 'group_monitor',
+        );
+      }
+
+      if (resolved.shouldClear) {
+        await persistStorageWrite(
+          actionDescription: 'persist boost settings',
+          action: () => GroupMonitorStorage.saveBoostSettings(
+            groupId: null,
+            boostExpiresAt: null,
+          ),
+        );
+        if (resolved.logExpired) {
+          AppLogger.info(
+            'Boost expired, reverting to normal polling',
+            subCategory: 'group_monitor',
+          );
+        }
+      }
+
       notifier._loopController.reconcileMonitoringForSelectionState();
     } catch (e) {
       AppLogger.error(
-        'Failed to load selected groups',
+        'Failed to load persisted group monitor state',
         subCategory: 'group_monitor',
         error: e,
       );

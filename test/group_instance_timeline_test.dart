@@ -76,6 +76,66 @@ void main() {
     );
   });
 
+  testWidgets(
+    'renders duplicate instance IDs without duplicate-key exceptions',
+    (tester) async {
+      final world = buildTestWorld(id: 'wrld_1', name: 'World One');
+      final detectedAtUtc = DateTime.utc(2026, 2, 13, 10);
+      final monitorState = GroupMonitorState(
+        allGroups: [buildTestGroup(groupId: 'grp_alpha', name: 'Alpha')],
+        selectedGroupIds: {'grp_alpha'},
+        groupInstances: {
+          'grp_alpha': [
+            GroupInstanceWithGroup(
+              instance: buildTestInstance(
+                instanceId: 'inst_dup',
+                world: world,
+                userCount: 3,
+              ),
+              groupId: 'grp_alpha',
+              firstDetectedAt: detectedAtUtc,
+            ),
+            GroupInstanceWithGroup(
+              instance: buildTestInstance(
+                instanceId: 'inst_dup',
+                world: world,
+                userCount: 5,
+              ),
+              groupId: 'grp_alpha',
+              firstDetectedAt: detectedAtUtc.add(const Duration(minutes: 5)),
+            ),
+          ],
+        },
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            groupMonitorProvider(
+              'usr_test',
+            ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: Scaffold(
+              body: SizedBox(
+                height: 400,
+                child: GroupInstanceTimeline(userId: 'usr_test'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Alpha'), findsNWidgets(2));
+      expect(find.text('3'), findsOneWidget);
+      expect(find.text('5'), findsOneWidget);
+    },
+  );
+
   testWidgets('renders no-group empty state', (tester) async {
     const monitorState = GroupMonitorState(
       selectedGroupIds: {},

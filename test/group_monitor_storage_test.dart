@@ -81,6 +81,139 @@ void main() {
     expect(loaded.expiresAt, isNull);
   });
 
+  test('load persisted state snapshot returns all settings together', () async {
+    final expiresAt = DateTime.utc(2026, 3, 14, 12, 0);
+    SharedPreferences.setMockInitialValues({
+      StorageKeys.selectedGroupIds: ['g1', 'g2'],
+      StorageKeys.autoInviteEnabled: false,
+      StorageKeys.relayAssistEnabled: false,
+      StorageKeys.boostedGroupId: 'g1',
+      StorageKeys.boostExpiresAt: expiresAt.toIso8601String(),
+    });
+
+    final snapshot = await GroupMonitorStorage.loadPersistedState(
+      relayAssistDefaultValue: true,
+    );
+
+    expect(snapshot.selectedGroupIds, {'g1', 'g2'});
+    expect(snapshot.autoInviteEnabled, isFalse);
+    expect(snapshot.relayAssistEnabled, isFalse);
+    expect(snapshot.boostSettings.groupId, 'g1');
+    expect(
+      snapshot.boostSettings.expiresAt?.toIso8601String(),
+      expiresAt.toIso8601String(),
+    );
+  });
+
+  test(
+    'load persisted state snapshot surfaces invalid boost timestamp as null',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        StorageKeys.selectedGroupIds: ['g1'],
+        StorageKeys.boostedGroupId: 'g1',
+        StorageKeys.boostExpiresAt: 'not-a-timestamp',
+      });
+
+      final snapshot = await GroupMonitorStorage.loadPersistedState(
+        relayAssistDefaultValue: true,
+      );
+
+      expect(snapshot.selectedGroupIds, {'g1'});
+      expect(snapshot.boostSettings.groupId, 'g1');
+      expect(snapshot.boostSettings.expiresAt, isNull);
+    },
+  );
+
+  test(
+    'load persisted state snapshot preserves selected groups when auto-invite value is malformed',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        StorageKeys.selectedGroupIds: ['g1'],
+        StorageKeys.autoInviteEnabled: 'nope',
+        StorageKeys.relayAssistEnabled: false,
+      });
+
+      final snapshot = await GroupMonitorStorage.loadPersistedState(
+        relayAssistDefaultValue: true,
+      );
+
+      expect(snapshot.selectedGroupIds, {'g1'});
+      expect(snapshot.autoInviteEnabled, isTrue);
+      expect(snapshot.relayAssistEnabled, isFalse);
+    },
+  );
+
+  test(
+    'load persisted state snapshot preserves valid fields when selected groups value is malformed',
+    () async {
+      final expiresAt = DateTime.utc(2026, 3, 14, 12, 0);
+      SharedPreferences.setMockInitialValues({
+        StorageKeys.selectedGroupIds: <Object>['g1', 2],
+        StorageKeys.autoInviteEnabled: false,
+        StorageKeys.relayAssistEnabled: false,
+        StorageKeys.boostedGroupId: 'g1',
+        StorageKeys.boostExpiresAt: expiresAt.toIso8601String(),
+      });
+
+      final snapshot = await GroupMonitorStorage.loadPersistedState(
+        relayAssistDefaultValue: true,
+      );
+
+      expect(snapshot.selectedGroupIds, isEmpty);
+      expect(snapshot.autoInviteEnabled, isFalse);
+      expect(snapshot.relayAssistEnabled, isFalse);
+      expect(snapshot.boostSettings.groupId, 'g1');
+      expect(
+        snapshot.boostSettings.expiresAt?.toIso8601String(),
+        expiresAt.toIso8601String(),
+      );
+    },
+  );
+
+  test(
+    'load persisted state snapshot falls back to relay assist default when value is malformed',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        StorageKeys.selectedGroupIds: ['g1'],
+        StorageKeys.relayAssistEnabled: 'disabled',
+      });
+
+      final snapshot = await GroupMonitorStorage.loadPersistedState(
+        relayAssistDefaultValue: false,
+      );
+
+      expect(snapshot.selectedGroupIds, {'g1'});
+      expect(snapshot.relayAssistEnabled, isFalse);
+    },
+  );
+
+  test(
+    'load persisted state snapshot ignores malformed boosted group id type',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        StorageKeys.selectedGroupIds: ['g1'],
+        StorageKeys.autoInviteEnabled: false,
+        StorageKeys.boostedGroupId: 7,
+        StorageKeys.boostExpiresAt: DateTime.utc(
+          2026,
+          3,
+          14,
+          12,
+          0,
+        ).toIso8601String(),
+      });
+
+      final snapshot = await GroupMonitorStorage.loadPersistedState(
+        relayAssistDefaultValue: true,
+      );
+
+      expect(snapshot.selectedGroupIds, {'g1'});
+      expect(snapshot.autoInviteEnabled, isFalse);
+      expect(snapshot.boostSettings.groupId, isNull);
+      expect(snapshot.boostSettings.expiresAt, isNotNull);
+    },
+  );
+
   test('save boost settings clears when either value is missing', () async {
     await GroupMonitorStorage.saveBoostSettings(
       groupId: 'g1',

@@ -225,6 +225,134 @@ void main() {
     });
   });
 
+  group('reconcileSingleLoopRefresh', () {
+    test('runs inactive callback when loop is inactive', () {
+      final controller = RefreshLoopController();
+      var inactiveCalls = 0;
+      var refreshCalls = 0;
+
+      final didRequestRefresh = reconcileSingleLoopRefresh(
+        loop: controller,
+        isActive: false,
+        isInFlight: false,
+        requestRefresh: () {
+          refreshCalls += 1;
+        },
+        onInactive: () {
+          inactiveCalls += 1;
+        },
+      );
+
+      expect(didRequestRefresh, isFalse);
+      expect(inactiveCalls, 1);
+      expect(refreshCalls, 0);
+    });
+
+    test('requests refresh when active loop needs scheduling', () {
+      final controller = RefreshLoopController();
+      var refreshCalls = 0;
+
+      final didRequestRefresh = reconcileSingleLoopRefresh(
+        loop: controller,
+        isActive: true,
+        isInFlight: false,
+        requestRefresh: () {
+          refreshCalls += 1;
+        },
+        onInactive: () => fail('should not mark active loop as inactive'),
+      );
+
+      expect(didRequestRefresh, isTrue);
+      expect(refreshCalls, 1);
+    });
+
+    test('does not request refresh when active loop already has a timer', () {
+      final controller = RefreshLoopController();
+      controller.state.timer = Timer(const Duration(seconds: 1), () {});
+
+      final didRequestRefresh = reconcileSingleLoopRefresh(
+        loop: controller,
+        isActive: true,
+        isInFlight: false,
+        requestRefresh: () =>
+            fail('should not request refresh with active timer'),
+        onInactive: () => fail('should not mark active loop as inactive'),
+      );
+
+      expect(didRequestRefresh, isFalse);
+      controller.state.timer?.cancel();
+    });
+  });
+
+  group('drainSingleLoopRefreshOrScheduleNext', () {
+    test('drains pending refresh before considering schedule/reconcile', () {
+      final controller = RefreshLoopController()
+        ..queuePending(bypassRateLimit: true);
+      var drainedBypass = false;
+
+      final didHandle = drainSingleLoopRefreshOrScheduleNext(
+        loop: controller,
+        isMounted: true,
+        isInFlight: false,
+        isActive: true,
+        runNow: ({required bypassRateLimit}) {
+          drainedBypass = bypassRateLimit;
+        },
+        scheduleNextTick: () => fail('should not schedule when draining'),
+        reconcile: () => fail('should not reconcile when draining'),
+      );
+
+      expect(didHandle, isTrue);
+      expect(drainedBypass, isTrue);
+    });
+
+    test('schedules next tick when nothing is pending and loop is active', () {
+      final controller = RefreshLoopController();
+      var scheduleNextCalls = 0;
+
+      final didHandle = drainSingleLoopRefreshOrScheduleNext(
+        loop: controller,
+        isMounted: true,
+        isInFlight: false,
+        isActive: true,
+        runNow: ({required bypassRateLimit}) =>
+            fail('should not drain without pending work'),
+        scheduleNextTick: () {
+          scheduleNextCalls += 1;
+        },
+        reconcile: () =>
+            fail('should not reconcile when tick can be scheduled'),
+      );
+
+      expect(didHandle, isTrue);
+      expect(scheduleNextCalls, 1);
+    });
+
+    test('reconciles when nothing is pending and next tick is not needed', () {
+      final controller = RefreshLoopController();
+      controller.state.timer = Timer(const Duration(seconds: 1), () {});
+      var reconcileCalls = 0;
+
+      final didHandle = drainSingleLoopRefreshOrScheduleNext(
+        loop: controller,
+        isMounted: true,
+        isInFlight: false,
+        isActive: true,
+        runNow: ({required bypassRateLimit}) {
+          fail('should not drain without pending work');
+        },
+        scheduleNextTick: () => fail('should not schedule with active timer'),
+        reconcile: () {
+          reconcileCalls += 1;
+        },
+      );
+
+      expect(didHandle, isFalse);
+      expect(reconcileCalls, 1);
+      controller.state.timer?.cancel();
+    });
+  });
+
   group('resolveCooldownAwareDelay', () {
     test('returns fallback delay when cooldown is absent', () {
       final delay = resolveCooldownAwareDelay(

@@ -26,6 +26,20 @@ enum InviteSendOutcome {
   nonRetryableFailure,
 }
 
+enum _InviteAttemptOutcome {
+  sent,
+  cancelled,
+  forbidden,
+  hardStop,
+  transientFailure,
+  nonRetryableFailure,
+}
+
+typedef _InviteAttemptResult = ({
+  _InviteAttemptOutcome outcome,
+  int? statusCode,
+});
+
 @visibleForTesting
 bool isSelfInviteForbiddenDioError(Object error) {
   if (error is! DioException) {
@@ -138,37 +152,20 @@ class InviteService {
     required String worldId,
     required String instanceId,
   }) async {
-    try {
-      await _sendSelfInvite(worldId: worldId, instanceId: instanceId);
-      AppLogger.info(
-        'Sent self-invite to $worldId:$instanceId',
-        subCategory: 'invite',
-      );
-      return InviteSendOutcome.sent;
-    } catch (e, s) {
-      if (isSelfInviteForbiddenDioError(e)) {
-        _log403Denial(worldId: worldId, instanceId: instanceId);
-        return InviteSendOutcome.forbidden;
-      }
-
-      final logged = logDioException(
-        'Failed to send self-invite',
-        e,
-        subCategory: 'invite',
-        stackTrace: s,
-        logResponseData: false,
-      );
-      if (!logged) {
-        AppLogger.error(
-          'Failed to send self-invite',
-          subCategory: 'invite',
-          error: e,
-          stackTrace: s,
-        );
-      }
-
-      return classifyInviteSendError(e);
-    }
+    final result = await _attemptSelfInvite(
+      worldId: worldId,
+      instanceId: instanceId,
+      logNonForbiddenFailures: true,
+    );
+    return switch (result.outcome) {
+      _InviteAttemptOutcome.sent => InviteSendOutcome.sent,
+      _InviteAttemptOutcome.forbidden => InviteSendOutcome.forbidden,
+      _InviteAttemptOutcome.transientFailure =>
+        InviteSendOutcome.transientFailure,
+      _InviteAttemptOutcome.hardStop ||
+      _InviteAttemptOutcome.nonRetryableFailure ||
+      _InviteAttemptOutcome.cancelled => InviteSendOutcome.nonRetryableFailure,
+    };
   }
 
   Future<InviteRetryOutcome> inviteSelfToLocationWithRetry({
@@ -190,84 +187,56 @@ class InviteService {
       }
 
       attempt += 1;
-      try {
-        await _sendSelfInvite(
-          worldId: worldId,
-          instanceId: instanceId,
-          cancelToken: cancelToken,
-        );
-        AppLogger.info(
-          'Sent self-invite to $worldId:$instanceId after $attempt attempt(s)',
-          subCategory: 'invite',
-        );
-        return InviteRetryOutcome.sent;
-      } catch (e, s) {
-        if (e is DioException && CancelToken.isCancel(e)) {
+      final result = await _attemptSelfInvite(
+        worldId: worldId,
+        instanceId: instanceId,
+        cancelToken: cancelToken,
+        successAttempt: attempt,
+      );
+      switch (result.outcome) {
+        case _InviteAttemptOutcome.sent:
+          return InviteRetryOutcome.sent;
+        case _InviteAttemptOutcome.cancelled:
           return InviteRetryOutcome.cancelled;
-        }
-
-        if (isSelfInviteForbiddenDioError(e)) {
-          _log403Denial(worldId: worldId, instanceId: instanceId);
+        case _InviteAttemptOutcome.forbidden:
           return InviteRetryOutcome.hardFailure;
-        }
-
-        if (isHardStopSelfInviteError(e)) {
-          final statusCode = selfInviteStatusCode(e);
+        case _InviteAttemptOutcome.hardStop:
           AppLogger.warning(
             'Stopping self-invite retry on hard failure '
-            '($statusCode) for $worldId:$instanceId',
+            '(${result.statusCode}) for $worldId:$instanceId',
             subCategory: 'invite',
           );
           return InviteRetryOutcome.hardFailure;
-        }
-
-        final isTransient = isTransientSelfInviteError(e);
-        if (!isTransient) {
-          final logged = logDioException(
-            'Failed to send self-invite',
-            e,
-            subCategory: 'invite',
-            stackTrace: s,
-            logResponseData: false,
-          );
-          if (!logged) {
-            AppLogger.error(
-              'Failed to send self-invite',
-              subCategory: 'invite',
-              error: e,
-              stackTrace: s,
-            );
-          }
+        case _InviteAttemptOutcome.nonRetryableFailure:
           return InviteRetryOutcome.nonRetryableFailure;
-        }
+        case _InviteAttemptOutcome.transientFailure:
+          final elapsed = DateTime.now().difference(start);
+          final delay = _retryDelayForAttempt(attempt);
+          if (elapsed + delay > maxWindow) {
+            AppLogger.warning(
+              'Stopping self-invite retry after transient failures for '
+              '$worldId:$instanceId',
+              subCategory: 'invite',
+            );
+            return InviteRetryOutcome.transientFailureExhausted;
+          }
 
-        final elapsed = DateTime.now().difference(start);
-        final delay = _retryDelayForAttempt(attempt);
-        if (elapsed + delay > maxWindow) {
-          AppLogger.warning(
-            'Stopping self-invite retry after transient failures for '
-            '$worldId:$instanceId',
+          AppLogger.debug(
+            'Retrying self-invite attempt $attempt for $worldId:$instanceId '
+            'after ${delay.inMilliseconds}ms',
             subCategory: 'invite',
           );
-          return InviteRetryOutcome.transientFailureExhausted;
-        }
-
-        AppLogger.debug(
-          'Retrying self-invite attempt $attempt for $worldId:$instanceId '
-          'after ${delay.inMilliseconds}ms',
-          subCategory: 'invite',
-        );
-        if (cancelToken == null) {
-          await Future<void>.delayed(delay);
-        } else {
-          await Future.any<void>([
-            Future<void>.delayed(delay),
-            cancelToken.whenCancel.then((_) {}),
-          ]);
-          if (cancelToken.isCancelled) {
-            return InviteRetryOutcome.cancelled;
+          if (cancelToken == null) {
+            await Future<void>.delayed(delay);
+          } else {
+            await Future.any<void>([
+              Future<void>.delayed(delay),
+              cancelToken.whenCancel.then((_) {}),
+            ]);
+            if (cancelToken.isCancelled) {
+              return InviteRetryOutcome.cancelled;
+            }
           }
-        }
       }
     }
   }
@@ -294,6 +263,85 @@ class InviteService {
       instanceId: instanceId,
       cancelToken: cancelToken,
     );
+  }
+
+  Future<_InviteAttemptResult> _attemptSelfInvite({
+    required String worldId,
+    required String instanceId,
+    CancelToken? cancelToken,
+    bool logNonForbiddenFailures = false,
+    int? successAttempt,
+  }) async {
+    try {
+      await _sendSelfInvite(
+        worldId: worldId,
+        instanceId: instanceId,
+        cancelToken: cancelToken,
+      );
+      final successMessage = successAttempt == null
+          ? 'Sent self-invite to $worldId:$instanceId'
+          : 'Sent self-invite to $worldId:$instanceId '
+                'after $successAttempt attempt(s)';
+      AppLogger.info(successMessage, subCategory: 'invite');
+      return (outcome: _InviteAttemptOutcome.sent, statusCode: null);
+    } catch (e, s) {
+      if (e is DioException && CancelToken.isCancel(e)) {
+        return (outcome: _InviteAttemptOutcome.cancelled, statusCode: null);
+      }
+
+      if (isSelfInviteForbiddenDioError(e)) {
+        _log403Denial(worldId: worldId, instanceId: instanceId);
+        return (
+          outcome: _InviteAttemptOutcome.forbidden,
+          statusCode: AppHttpStatus.forbidden,
+        );
+      }
+
+      final statusCode = selfInviteStatusCode(e);
+      final isHardStop = isHardStopSelfInviteError(e);
+      final sendOutcome = classifyInviteSendError(e);
+      final shouldLogFailure =
+          logNonForbiddenFailures ||
+          (sendOutcome == InviteSendOutcome.nonRetryableFailure && !isHardStop);
+      if (shouldLogFailure) {
+        _logNonForbiddenInviteFailure(error: e, stackTrace: s);
+      }
+
+      return (
+        outcome: switch (sendOutcome) {
+          InviteSendOutcome.sent => _InviteAttemptOutcome.sent,
+          InviteSendOutcome.forbidden => _InviteAttemptOutcome.forbidden,
+          InviteSendOutcome.transientFailure =>
+            _InviteAttemptOutcome.transientFailure,
+          InviteSendOutcome.nonRetryableFailure =>
+            isHardStop
+                ? _InviteAttemptOutcome.hardStop
+                : _InviteAttemptOutcome.nonRetryableFailure,
+        },
+        statusCode: statusCode,
+      );
+    }
+  }
+
+  void _logNonForbiddenInviteFailure({
+    required Object error,
+    required StackTrace stackTrace,
+  }) {
+    final logged = logDioException(
+      'Failed to send self-invite',
+      error,
+      subCategory: 'invite',
+      stackTrace: stackTrace,
+      logResponseData: false,
+    );
+    if (!logged) {
+      AppLogger.error(
+        'Failed to send self-invite',
+        subCategory: 'invite',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   void _log403Denial({required String worldId, required String instanceId}) {

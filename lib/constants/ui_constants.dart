@@ -27,7 +27,9 @@ class UiConstants {
   static const double dashboardMinEventsCardWidth = 320.0;
   static const double dashboardStackedEventsCardHeight = 320.0;
   static const double dashboardMinMonitoringCardHeight = 260.0;
-  static const double dashboardDebugPopoverMaxWidth = 360.0;
+  static const double dashboardDebugPopoverMaxWidth = 520.0;
+  static const double dashboardDebugInfoCardStackedBreakpoint = 360.0;
+  static const double dashboardUserCardNarrowBreakpoint = 800.0;
 
   // Login page
   static const double loginLogoVisualHeight = 68.0;

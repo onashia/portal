@@ -80,7 +80,7 @@ class RelayBootstrapClient {
 
     final response = await _dio.post<dynamic>(
       bootstrapUri.toString(),
-      data: {'groupId': groupId, 'clientId': clientId, 'version': '1'},
+      data: {'groupId': groupId, 'clientId': clientId},
       options: Options(
         headers: {
           'content-type': 'application/json',

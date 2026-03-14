@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../constants/app_constants.dart';
+
 /// Manages the WebSocket heartbeat ping/pong cycle and stale-connection
 /// detection for the relay assist service.
 ///
@@ -13,14 +15,11 @@ class RelayHeartbeatMonitor {
     DateTime Function()? now,
   }) : _interval =
            interval ??
-           const Duration(seconds: _kDefaultHeartbeatIntervalSeconds),
+           const Duration(seconds: AppConstants.relayHeartbeatIntervalSeconds),
        _staleAfter =
            staleAfter ??
-           const Duration(seconds: _kDefaultHeartbeatStaleSeconds),
+           const Duration(seconds: AppConstants.relayHeartbeatStaleSeconds),
        _now = now ?? DateTime.now;
-
-  static const int _kDefaultHeartbeatIntervalSeconds = 20;
-  static const int _kDefaultHeartbeatStaleSeconds = 60;
 
   final Duration _interval;
   final Duration _staleAfter;

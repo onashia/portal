@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../constants/app_constants.dart';
@@ -229,8 +228,8 @@ class RelayHintService {
     if (_channel == null || !_shouldStayConnected) {
       return;
     }
-    // Encode once so we can guard against the server's inbound size limit
-    // (MAX_PAYLOAD_BYTES in workers/relay_assist/src/index.js) before sending.
+    // Encode once so we can enforce the Relay Protocol Contract documented in
+    // workers/relay_assist/README.md before writing to the websocket.
     final encoded = jsonEncode({
       'type': 'publish_hint',
       'payload': hint.toJson(),
@@ -394,21 +393,5 @@ class RelayHintService {
       return;
     }
     _statusController.add(status);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Static helpers.
-  // ---------------------------------------------------------------------------
-
-  @visibleForTesting
-  static bool isHeartbeatStale({
-    required DateTime now,
-    required DateTime? lastInboundAt,
-    required Duration staleAfter,
-  }) {
-    if (lastInboundAt == null) {
-      return true;
-    }
-    return !lastInboundAt.add(staleAfter).isAfter(now);
   }
 }

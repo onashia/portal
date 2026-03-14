@@ -44,7 +44,14 @@ class EmptyState extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: iconSize, color: effectiveIconColor),
+            Container(
+              padding: EdgeInsets.all(context.m3e.spacing.sm),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: iconSize, color: effectiveIconColor),
+            ),
             SizedBox(height: context.m3e.spacing.lg),
             Text(title, style: effectiveTitleStyle),
             if (message != null) ...[

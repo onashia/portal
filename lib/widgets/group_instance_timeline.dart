@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../providers/group_monitor_provider.dart';
+import 'animated_fade_slide.dart';
 import 'group_instances/group_instances_empty_state.dart';
 import 'group_instances/instance_timeline_item.dart';
 
@@ -46,12 +47,19 @@ class GroupInstanceTimeline extends ConsumerWidget {
         final isNewest =
             instanceWithGroup.instance.instanceId == newestInstanceId;
 
-        return InstanceTimelineItem(
-          instanceWithGroup: instanceWithGroup,
-          group: group,
-          isFirst: index == 0,
-          isLast: isLast,
-          isNewest: isNewest,
+        return AnimatedFadeSlide(
+          key: ValueKey((
+            instanceWithGroup.groupId,
+            instanceWithGroup.instance.instanceId,
+            instanceWithGroup.firstDetectedAt,
+          )),
+          child: InstanceTimelineItem(
+            instanceWithGroup: instanceWithGroup,
+            group: group,
+            isFirst: index == 0,
+            isLast: isLast,
+            isNewest: isNewest,
+          ),
         );
       },
     );

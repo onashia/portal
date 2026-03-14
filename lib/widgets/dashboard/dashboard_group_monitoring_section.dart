@@ -60,11 +60,7 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
           SizedBox(height: context.m3e.spacing.lg),
           Expanded(child: GroupInstanceList(userId: userId)),
           SizedBox(height: context.m3e.spacing.md),
-          Divider(
-            color: Theme.of(
-              context,
-            ).colorScheme.outlineVariant.withValues(alpha: 0.4),
-          ),
+          const Divider(),
           SizedBox(height: context.m3e.spacing.sm),
           Row(
             children: [

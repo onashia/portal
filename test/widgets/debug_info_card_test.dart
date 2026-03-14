@@ -8,7 +8,7 @@ import 'package:portal/widgets/debug_info_card.dart';
 import '../test_helpers/provider_test_notifiers.dart';
 
 void main() {
-  testWidgets('renders Boost Last FetchedAt using local time', (tester) async {
+  testWidgets('renders Last FetchedAt using local time', (tester) async {
     final fetchedAtUtc = DateTime.utc(2026, 2, 13, 14, 15, 16);
     final expected = DateFormat.jms().format(fetchedAtUtc.toLocal());
 
@@ -33,7 +33,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    expect(find.text('Boost Last FetchedAt'), findsOneWidget);
+    expect(find.text('Last FetchedAt'), findsOneWidget);
     expect(find.text(expected), findsOneWidget);
   });
 }

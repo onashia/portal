@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
@@ -89,6 +91,13 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
           OverlayPortal(
             controller: _debugOverlayController,
             overlayChildBuilder: (context) {
+              final scheme = Theme.of(context).colorScheme;
+              final overlayMaxHeight = math.max(
+                240.0,
+                MediaQuery.sizeOf(context).height -
+                    (context.m3e.spacing.xl * 2),
+              );
+
               return Positioned.fill(
                 child: Stack(
                   children: [
@@ -102,10 +111,18 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
                       followerAnchor: Alignment.bottomRight,
                       offset: Offset(0, -context.m3e.spacing.sm),
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(
+                        constraints: BoxConstraints(
                           maxWidth: UiConstants.dashboardDebugPopoverMaxWidth,
+                          maxHeight: overlayMaxHeight,
                         ),
-                        child: Card(
+                        child: Material(
+                          elevation: 6,
+                          color: scheme.surfaceContainerHigh,
+                          shadowColor: scheme.shadow,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: context.m3e.shapes.square.md,
+                          ),
+                          clipBehavior: Clip.antiAlias,
                           child: DebugInfoCard(
                             userId: widget.userId,
                             useCard: false,

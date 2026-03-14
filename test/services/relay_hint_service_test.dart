@@ -598,8 +598,9 @@ void main() {
         final channel = _FakeWebSocketChannel();
         final service = await connectService(channel);
 
-        // Construct a hint whose encoded JSON exceeds relayMaxOutboundPayloadBytes
-        // by padding hintId with enough characters to tip it over the limit.
+        // The Relay Protocol Contract caps client->worker websocket payloads
+        // at relayMaxOutboundPayloadBytes. Pad hintId until the encoded frame
+        // crosses that limit.
         final oversizedHint = RelayHintMessage(
           version: '1',
           hintId: 'x' * 2048,
@@ -729,36 +730,5 @@ void main() {
         expect(statuses.length, countBeforeEmit);
       },
     );
-  });
-
-  group('RelayHintService.isHeartbeatStale', () {
-    test('returns false before staleness threshold', () {
-      final lastInboundAt = DateTime.utc(2026, 1, 1, 0, 0, 0);
-      final isStale = RelayHintService.isHeartbeatStale(
-        now: lastInboundAt.add(const Duration(seconds: 59)),
-        lastInboundAt: lastInboundAt,
-        staleAfter: const Duration(seconds: 60),
-      );
-
-      expect(isStale, isFalse);
-    });
-
-    test('returns true at and after staleness threshold', () {
-      final lastInboundAt = DateTime.utc(2026, 1, 1, 0, 0, 0);
-
-      final isStaleAtThreshold = RelayHintService.isHeartbeatStale(
-        now: lastInboundAt.add(const Duration(seconds: 60)),
-        lastInboundAt: lastInboundAt,
-        staleAfter: const Duration(seconds: 60),
-      );
-      final isStaleAfterThreshold = RelayHintService.isHeartbeatStale(
-        now: lastInboundAt.add(const Duration(seconds: 61)),
-        lastInboundAt: lastInboundAt,
-        staleAfter: const Duration(seconds: 60),
-      );
-
-      expect(isStaleAtThreshold, isTrue);
-      expect(isStaleAfterThreshold, isTrue);
-    });
   });
 }
