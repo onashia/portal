@@ -234,6 +234,50 @@ class _DelayedGroupMonitorApi extends FakeGroupMonitorApi {
   }
 }
 
+class _CountingGroupMonitorApi implements GroupMonitorApi {
+  _CountingGroupMonitorApi(this._delegate, this._counter);
+
+  final GroupMonitorApi _delegate;
+  final ApiCallCounterNotifier _counter;
+
+  @override
+  Future<Response<List<LimitedUserGroups>>> getUserGroups({
+    required String userId,
+  }) {
+    _counter.incrementApiCall(lane: ApiRequestLane.userGroups);
+    return _delegate.getUserGroups(userId: userId);
+  }
+
+  @override
+  Future<Response<List<GroupInstance>>> getGroupInstances({
+    required String groupId,
+    required ApiRequestLane lane,
+  }) {
+    _counter.incrementApiCall(lane: lane);
+    return _delegate.getGroupInstances(groupId: groupId, lane: lane);
+  }
+
+  @override
+  Future<Response<Instance>> getInstance({
+    required String worldId,
+    required String instanceId,
+    required ApiRequestLane lane,
+  }) {
+    _counter.incrementApiCall(lane: lane);
+    return _delegate.getInstance(
+      worldId: worldId,
+      instanceId: instanceId,
+      lane: lane,
+    );
+  }
+
+  @override
+  Future<Response<World>> getWorld({required String worldId}) {
+    _counter.incrementApiCall(lane: ApiRequestLane.worldDetails);
+    return _delegate.getWorld(worldId: worldId);
+  }
+}
+
 ({
   ProviderContainer container,
   TestAuthNotifier authNotifier,
@@ -253,7 +297,12 @@ createGroupMonitorHarness({
   final authHarness = createAuthHarness(
     initialAuthState: initialAuthState,
     overrides: [
-      groupMonitorApiProvider.overrideWithValue(monitorApi),
+      groupMonitorApiProvider.overrideWith((ref) {
+        return _CountingGroupMonitorApi(
+          monitorApi,
+          ref.read(apiCallCounterProvider.notifier),
+        );
+      }),
       inviteServiceProvider.overrideWithValue(effectiveInviteService),
       ...overrides,
     ],

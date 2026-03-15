@@ -2,9 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:portal/models/file_id_info.dart';
-import 'package:portal/providers/api_call_counter.dart';
-import 'package:portal/providers/auth_provider.dart';
-import 'package:portal/services/api_rate_limit_coordinator.dart';
+import 'package:portal/providers/portal_vrchat_api.dart';
 import 'package:portal/utils/app_logger.dart';
 
 FileIdInfo extractFileIdFromUrl(String url) {
@@ -48,7 +46,7 @@ Future<Uint8List?> fetchImageBytesWithAuth(
   }
 
   try {
-    final api = ref.read(vrchatApiProvider);
+    final fileApi = ref.read(portalFileApiProvider);
     final fileIdInfo = extractFileIdFromUrl(imageUrl);
 
     AppLogger.debug(
@@ -56,20 +54,15 @@ Future<Uint8List?> fetchImageBytesWithAuth(
       subCategory: 'image_fetch',
     );
 
-    ref
-        .read(apiCallCounterProvider.notifier)
-        .incrementApiCall(lane: ApiRequestLane.image);
-
-    final response = await api.rawApi.getFilesApi().downloadFileVersion(
+    final bytes = await fileApi.downloadFileVersion(
       fileId: fileIdInfo.fileId,
       versionId: fileIdInfo.version,
-      extra: apiRequestLaneExtra(ApiRequestLane.image),
     );
     AppLogger.debug(
       'Successfully fetched image: $imageUrl',
       subCategory: 'image_fetch',
     );
-    return response.data as Uint8List;
+    return bytes;
   } catch (e) {
     AppLogger.error(
       'Failed to fetch image: $e',

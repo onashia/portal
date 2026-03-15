@@ -6,9 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../models/group_calendar_event.dart';
-import '../providers/api_call_counter.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
+import '../providers/portal_vrchat_api.dart';
 import '../providers/polling_lifecycle.dart';
 import '../services/api_rate_limit_coordinator.dart';
 import '../utils/app_logger.dart';
@@ -328,7 +328,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       await _ensureGroupDetails(monitorState);
       final refreshedMonitor = ref.read(groupMonitorProvider(userId));
       final groupLookup = ref.read(groupMonitorAllGroupsByIdProvider(userId));
-      final api = ref.read(vrchatApiProvider);
+      final api = ref.read(portalCalendarApiProvider);
       final orderedGroupIds = refreshedMonitor.selectedGroupIds.toList(
         growable: false,
       )..sort();
@@ -341,17 +341,10 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
         previousEventsByGroup: state.eventsByGroup,
         maxConcurrentRequests: _maxConcurrentRequests,
         fetchEvents: (groupId) async {
-          ref
-              .read(apiCallCounterProvider.notifier)
-              .incrementApiCall(lane: ApiRequestLane.calendar);
-          final response = await api.rawApi
-              .getCalendarApi()
-              .getGroupCalendarEvents(
-                groupId: groupId,
-                n: _eventsPerGroup,
-                extra: apiRequestLaneExtra(ApiRequestLane.calendar),
-              );
-          return response.data?.results ?? [];
+          return api.getGroupCalendarEvents(
+            groupId: groupId,
+            n: _eventsPerGroup,
+          );
         },
         onFetchError: (groupId, error, stackTrace) {
           AppLogger.error(

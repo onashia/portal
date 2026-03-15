@@ -4,10 +4,8 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../constants/app_constants.dart';
 import '../services/auth_service.dart';
-import '../services/api_rate_limit_coordinator.dart';
 import '../services/two_factor_auth_service.dart';
-import 'api_call_counter.dart';
-import 'api_rate_limit_provider.dart';
+import 'portal_api_request_runner_provider.dart';
 
 enum AuthStatus {
   initial,
@@ -60,8 +58,9 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   @override
   AuthState build() {
     final api = ref.read(vrchatApiProvider);
-    _authService = AuthService(api);
-    _twoFactorAuthService = TwoFactorAuthService(api);
+    final runner = ref.read(portalApiRequestRunnerProvider);
+    _authService = AuthService(api, runner: runner);
+    _twoFactorAuthService = TwoFactorAuthService(api, runner: runner);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       checkExistingSession();
@@ -72,8 +71,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
   Future<void> login(String username, String password) async {
     state = const AsyncData(AuthState(status: AuthStatus.loading));
-
-    ref.read(apiCallCounterProvider.notifier).incrementApiCall();
 
     final result = await _authService.login(username, password);
 
@@ -120,8 +117,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       AuthState(status: AuthStatus.loading, requiresTwoFactorAuth: true),
     );
 
-    ref.read(apiCallCounterProvider.notifier).incrementApiCall();
-
     final result = await _twoFactorAuthService.verify2FA(code);
 
     if (result.status == TwoFactorAuthResultStatus.success) {
@@ -143,8 +138,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   }
 
   Future<void> logout() async {
-    ref.read(apiCallCounterProvider.notifier).incrementApiCall();
-
     await _authService.logout();
 
     state = AsyncData(AuthState(status: AuthStatus.initial));
@@ -178,8 +171,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 }
 
 final vrchatApiProvider = Provider<VrchatDart>((ref) {
-  final coordinator = ref.read(apiRateLimitCoordinatorProvider);
-
   // Single shared API instance for the entire application
   // This ensures authentication state is shared across all providers
   final api = VrchatDart(
@@ -195,7 +186,6 @@ final vrchatApiProvider = Provider<VrchatDart>((ref) {
   api.rawApi.dio.options.receiveTimeout = Duration(
     seconds: AppConstants.vrchatApiReceiveTimeoutSeconds,
   );
-  ensureApiRateLimitInterceptor(api.rawApi.dio, coordinator);
   return api;
 });
 

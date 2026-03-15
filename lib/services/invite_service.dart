@@ -5,8 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../constants/http_status_codes.dart';
+import 'api_rate_limit_coordinator.dart';
 import '../utils/app_logger.dart';
 import '../utils/dio_error_logger.dart';
+import 'portal_api_request_runner.dart';
 
 const Duration _selfInvite403LogDedupeWindow = Duration(minutes: 5);
 const Duration _selfInvite403LogRetentionWindow = Duration(minutes: 15);
@@ -125,10 +127,12 @@ String selfInviteDedupeKey({
 /// Sends in-game invites via the VRChat API.
 class InviteService {
   final VrchatDart _api;
+  final PortalApiRequestRunner _runner;
   final Map<String, DateTime> _selfInvite403LogAtByKey = <String, DateTime>{};
   final math.Random _random = math.Random();
 
-  InviteService(this._api);
+  InviteService(this._api, {PortalApiRequestRunner? runner})
+    : _runner = runner ?? PortalApiRequestRunner.untracked();
 
   void _pruneExpiredSelfInvite403LogKeys(DateTime now) {
     if (_selfInvite403LogAtByKey.isEmpty) {
@@ -258,10 +262,14 @@ class InviteService {
     required String instanceId,
     CancelToken? cancelToken,
   }) async {
-    await _api.rawApi.getInviteApi().inviteMyselfTo(
-      worldId: worldId,
-      instanceId: instanceId,
-      cancelToken: cancelToken,
+    await _runner.run(
+      lane: ApiRequestLane.invite,
+      request: (extra) => _api.rawApi.getInviteApi().inviteMyselfTo(
+        worldId: worldId,
+        instanceId: instanceId,
+        cancelToken: cancelToken,
+        extra: extra,
+      ),
     );
   }
 

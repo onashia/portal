@@ -116,9 +116,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       orderedGroupIds: context.selectedGroupIds,
       maxConcurrentRequests: AppConstants.groupInstancesMaxConcurrentRequests,
       fetchGroupInstances: (groupId) async {
-        ref
-            .read(apiCallCounterProvider.notifier)
-            .incrementApiCall(lane: ApiRequestLane.groupBaseline);
         try {
           return await api
               .getGroupInstances(
@@ -335,10 +332,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
 
     try {
       AppLogger.debug('Fetching groups for user', subCategory: 'group_monitor');
-
-      ref
-          .read(apiCallCounterProvider.notifier)
-          .incrementApiCall(lane: ApiRequestLane.userGroups);
 
       final response = await ref
           .read(groupMonitorApiProvider)
@@ -568,9 +561,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         subCategory: 'group_monitor',
       );
 
-      ref
-          .read(apiCallCounterProvider.notifier)
-          .incrementApiCall(lane: ApiRequestLane.groupBoost);
       final api = ref.read(groupMonitorApiProvider);
       final response = await api
           .getGroupInstances(groupId: groupId, lane: ApiRequestLane.groupBoost)

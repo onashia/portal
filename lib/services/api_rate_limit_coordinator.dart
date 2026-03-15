@@ -5,10 +5,14 @@ import 'package:dio/dio.dart';
 import '../constants/http_status_codes.dart';
 
 enum ApiRequestLane {
+  authSession,
+  authTwoFactor,
   userGroups,
   groupBaseline,
   groupBoost,
+  worldDetails,
   calendar,
+  invite,
   status,
   image,
 }

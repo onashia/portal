@@ -223,6 +223,7 @@ void main() {
           worldId: 'wrld_alpha',
           instanceId: 'inst_a',
           cancelToken: null,
+          extra: any(named: 'extra'),
         ),
       ).thenThrow(_inviteError(statusCode: 403));
 
@@ -242,6 +243,7 @@ void main() {
             worldId: 'wrld_alpha',
             instanceId: 'inst_a',
             cancelToken: null,
+            extra: any(named: 'extra'),
           ),
         ).thenThrow(_inviteError(statusCode: 429));
 
@@ -262,6 +264,7 @@ void main() {
             worldId: 'wrld_alpha',
             instanceId: 'inst_a',
             cancelToken: null,
+            extra: any(named: 'extra'),
           ),
         ).thenThrow(_inviteError(statusCode: 418));
 
@@ -280,6 +283,7 @@ void main() {
           worldId: 'wrld_alpha',
           instanceId: 'inst_a',
           cancelToken: null,
+          extra: any(named: 'extra'),
         ),
       ).thenThrow(_inviteError(statusCode: 403));
 
@@ -299,6 +303,7 @@ void main() {
             worldId: 'wrld_alpha',
             instanceId: 'inst_a',
             cancelToken: null,
+            extra: any(named: 'extra'),
           ),
         ).thenThrow(_inviteError(statusCode: 429));
 
@@ -320,6 +325,7 @@ void main() {
             worldId: 'wrld_alpha',
             instanceId: 'inst_a',
             cancelToken: null,
+            extra: any(named: 'extra'),
           ),
         ).thenThrow(_inviteError(statusCode: 418));
 
@@ -338,6 +344,7 @@ void main() {
           worldId: 'wrld_alpha',
           instanceId: 'inst_a',
           cancelToken: null,
+          extra: any(named: 'extra'),
         ),
       ).thenAnswer(
         (_) async => dio.Response<SentNotification>(
@@ -372,6 +379,7 @@ void main() {
             worldId: any(named: 'worldId'),
             instanceId: any(named: 'instanceId'),
             cancelToken: any(named: 'cancelToken'),
+            extra: any(named: 'extra'),
           ),
         );
       },

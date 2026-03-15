@@ -6,7 +6,9 @@ import 'package:portal/providers/api_rate_limit_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
 import 'package:portal/providers/group_calendar_provider.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
+import 'package:portal/providers/portal_vrchat_api.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
+import 'package:portal/services/portal_calendar_api.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import 'test_helpers/auth_test_harness.dart';
 
@@ -20,6 +22,21 @@ class _TestGroupMonitorNotifier extends GroupMonitorNotifier {
 
   void setData(GroupMonitorState next) {
     state = next;
+  }
+}
+
+class _FakePortalCalendarApi implements PortalCalendarApi {
+  _FakePortalCalendarApi(this._counter);
+
+  final ApiCallCounterNotifier _counter;
+
+  @override
+  Future<List<CalendarEvent>> getGroupCalendarEvents({
+    required String groupId,
+    required int n,
+  }) async {
+    _counter.incrementApiCall(lane: ApiRequestLane.calendar);
+    return const <CalendarEvent>[];
   }
 }
 
@@ -40,6 +57,11 @@ createCalendarHarness({
     initialAuthState: initialAuthState,
     overrides: [
       groupMonitorProvider(userId).overrideWith(() => monitorNotifier),
+      portalCalendarApiProvider.overrideWith((ref) {
+        return _FakePortalCalendarApi(
+          ref.read(apiCallCounterProvider.notifier),
+        );
+      }),
     ],
   );
   final provider = groupCalendarProvider(userId);
