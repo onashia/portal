@@ -460,8 +460,9 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     _isFetchingBaseline = true;
 
     try {
+      final runner = ref.read(portalApiRequestRunnerProvider);
       if (RefreshCooldownHandler.shouldDeferForCooldown(
-        ref: ref,
+        cooldownTracker: runner,
         bypassRateLimit: bypassRateLimit,
         lane: ApiRequestLane.groupBaseline,
         logContext: 'group_monitor',
@@ -541,8 +542,9 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         return;
       }
 
+      final runner = ref.read(portalApiRequestRunnerProvider);
       if (RefreshCooldownHandler.shouldDeferForCooldown(
-        ref: ref,
+        cooldownTracker: runner,
         bypassRateLimit: bypassRateLimit,
         lane: ApiRequestLane.groupBoost,
         logContext: 'group_monitor',

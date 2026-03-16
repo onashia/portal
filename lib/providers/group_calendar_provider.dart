@@ -8,6 +8,7 @@ import 'package:vrchat_dart/vrchat_dart.dart';
 import '../models/group_calendar_event.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
+import '../providers/portal_api_request_runner_provider.dart';
 import '../providers/portal_vrchat_api.dart';
 import '../providers/polling_lifecycle.dart';
 import '../services/api_rate_limit_coordinator.dart';
@@ -304,8 +305,9 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       return;
     }
 
+    final runner = ref.read(portalApiRequestRunnerProvider);
     if (RefreshCooldownHandler.shouldDeferForCooldown(
-      ref: ref,
+      cooldownTracker: runner,
       bypassRateLimit: bypassRateLimit,
       lane: ApiRequestLane.calendar,
       logContext: 'calendar',

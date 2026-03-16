@@ -10,17 +10,15 @@ void main() {
   group('PortalApiRequestRunner', () {
     late ApiRateLimitCoordinator coordinator;
     late List<ApiRequestLane?> recordedCalls;
-    late List<ApiRequestLane?> recordedSkips;
     late PortalApiRequestRunner runner;
 
     setUp(() {
       coordinator = ApiRateLimitCoordinator();
       recordedCalls = <ApiRequestLane?>[];
-      recordedSkips = <ApiRequestLane?>[];
       runner = PortalApiRequestRunner(
         coordinator: coordinator,
         recordApiCall: ({lane}) => recordedCalls.add(lane),
-        recordThrottledSkip: ({lane}) => recordedSkips.add(lane),
+        recordThrottledSkip: ({lane}) {},
       );
     });
 
@@ -34,30 +32,6 @@ void main() {
 
       expect(result, 'calendar');
       expect(recordedCalls, [ApiRequestLane.calendar]);
-    });
-
-    test('records throttled skip when cooldown is active', () {
-      coordinator.recordRateLimited(ApiRequestLane.groupBaseline);
-
-      final deferred = runner.shouldDeferForCooldown(
-        lane: ApiRequestLane.groupBaseline,
-        bypassRateLimit: false,
-      );
-
-      expect(deferred, isTrue);
-      expect(recordedSkips, [ApiRequestLane.groupBaseline]);
-    });
-
-    test('manual bypass ignores cooldown', () {
-      coordinator.recordRateLimited(ApiRequestLane.groupBaseline);
-
-      final deferred = runner.shouldDeferForCooldown(
-        lane: ApiRequestLane.groupBaseline,
-        bypassRateLimit: true,
-      );
-
-      expect(deferred, isFalse);
-      expect(recordedSkips, isEmpty);
     });
 
     test('records 429 cooldown from Dio errors', () async {

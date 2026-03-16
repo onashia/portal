@@ -4,8 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:dio_response_validator/dio_response_validator.dart';
 
 import 'api_rate_limit_coordinator.dart';
-
-typedef PortalApiCallRecorder = void Function({ApiRequestLane? lane});
+import 'portal_request_runner_common.dart';
 
 class _InFlightReadRequest {
   const _InFlightReadRequest({required this.resultType, required this.future});
@@ -14,7 +13,7 @@ class _InFlightReadRequest {
   final Future<Object?> future;
 }
 
-class PortalApiRequestRunner {
+class PortalApiRequestRunner implements PortalCooldownTracker {
   PortalApiRequestRunner({
     required ApiRateLimitCoordinator coordinator,
     required PortalApiCallRecorder recordApiCall,
@@ -37,29 +36,14 @@ class PortalApiRequestRunner {
   final Map<String, _InFlightReadRequest> _inFlightReadRequests =
       <String, _InFlightReadRequest>{};
 
+  @override
   Duration? remainingCooldown(ApiRequestLane lane) {
     return _coordinator.remainingCooldown(lane);
   }
 
+  @override
   void recordThrottledSkip({required ApiRequestLane lane}) {
     _recordThrottledSkip(lane: lane);
-  }
-
-  bool shouldDeferForCooldown({
-    required ApiRequestLane lane,
-    required bool bypassRateLimit,
-  }) {
-    if (bypassRateLimit) {
-      return false;
-    }
-
-    final remaining = remainingCooldown(lane);
-    if (remaining == null) {
-      return false;
-    }
-
-    recordThrottledSkip(lane: lane);
-    return true;
   }
 
   Future<T> run<T>({
@@ -109,10 +93,7 @@ class PortalApiRequestRunner {
       timeout: timeout,
       attachLaneExtra: attachLaneExtra,
     );
-    final inFlightRequest = _InFlightReadRequest(
-      resultType: T,
-      future: future,
-    );
+    final inFlightRequest = _InFlightReadRequest(resultType: T, future: future);
     _inFlightReadRequests[dedupeKey] = inFlightRequest;
     return future.whenComplete(() {
       if (identical(_inFlightReadRequests[dedupeKey], inFlightRequest)) {
