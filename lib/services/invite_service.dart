@@ -131,8 +131,8 @@ class InviteService {
   final Map<String, DateTime> _selfInvite403LogAtByKey = <String, DateTime>{};
   final math.Random _random = math.Random();
 
-  InviteService(this._api, {PortalApiRequestRunner? runner})
-    : _runner = runner ?? PortalApiRequestRunner.untracked();
+  InviteService(this._api, {required PortalApiRequestRunner runner})
+    : _runner = runner;
 
   void _pruneExpiredSelfInvite403LogKeys(DateTime now) {
     if (_selfInvite403LogAtByKey.isEmpty) {

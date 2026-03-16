@@ -143,6 +143,9 @@ void main() {
         );
 
     final notifier = container.read(vrchatStatusProvider.notifier);
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    clearInteractions(mockDio);
     await notifier.refresh(bypassRateLimit: true);
 
     verify(() => mockDio.get(any(), options: any(named: 'options'))).called(1);

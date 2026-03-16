@@ -143,17 +143,15 @@ class PortalApiRequestRunner implements PortalCooldownTracker {
       return;
     }
 
-    if (statusCode >= 200 && statusCode < 300) {
-      _coordinator.recordSuccess(lane);
-      return;
-    }
-
     if (statusCode == 429) {
       final retryAfter = _coordinator.parseRetryAfterFromHeaders(
         failureResponse?.headers,
       );
       _coordinator.recordRateLimited(lane, retryAfter: retryAfter);
+      return;
     }
+
+    _coordinator.recordSuccess(lane);
   }
 
   void _recordRateLimitedError(ApiRequestLane lane, DioException error) {

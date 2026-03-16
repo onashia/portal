@@ -1,4 +1,3 @@
-import 'package:dio_response_validator/dio_response_validator.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../utils/app_logger.dart';
 import '../utils/dio_error_logger.dart';
@@ -24,8 +23,8 @@ class TwoFactorAuthService {
   final VrchatDart api;
   final PortalApiRequestRunner _runner;
 
-  TwoFactorAuthService(this.api, {PortalApiRequestRunner? runner})
-    : _runner = runner ?? PortalApiRequestRunner.untracked();
+  TwoFactorAuthService(this.api, {required PortalApiRequestRunner runner})
+    : _runner = runner;
 
   Future<TwoFactorAuthResult> verify2FA(String code) async {
     AppLogger.info('2FA verification started', subCategory: 'auth');
@@ -34,41 +33,18 @@ class TwoFactorAuthService {
       AppLogger.debug('Calling VRChat API verify2fa', subCategory: 'auth');
 
       final verify2faResponse = await _runner
-          .runValidatedTransform<dynamic, AuthResponse>(
+          .runValidatedTransform<Verify2FAResult, Verify2FAResult>(
             lane: ApiRequestLane.authTwoFactor,
-            request: (extra) async {
-              final (success, failure) = await api.rawApi
-                  .getAuthenticationApi()
-                  .verify2FA(
-                    twoFactorAuthCode: TwoFactorAuthCode(code: code),
-                    extra: extra,
-                  )
-                  .validateVrc();
-
-              if (failure != null) {
-                return (null, failure);
-              }
-
-              return _runner.runValidatedTransform<dynamic, AuthResponse>(
-                lane: ApiRequestLane.authSession,
-                request: (loginExtra) async {
-                  final (userSuccess, userFailure) = await api.rawApi
-                      .getAuthenticationApi()
-                      .getCurrentUser(extra: loginExtra)
-                      .validateVrc();
-                  if (userSuccess != null) {
-                    return (
-                      ValidResponse(AuthResponse(), userSuccess.response),
-                      null,
-                    );
-                  }
-                  return (null, userFailure);
-                },
-              );
-            },
+            request: (extra) => api.rawApi
+                .getAuthenticationApi()
+                .verify2FA(
+                  twoFactorAuthCode: TwoFactorAuthCode(code: code),
+                  extra: extra,
+                )
+                .validateVrc(),
           );
 
-      final (success, failure) = verify2faResponse;
+      final (_, failure) = verify2faResponse;
 
       if (failure != null) {
         final failureSummary = summarizeErrorForLog(failure);
@@ -87,7 +63,32 @@ class TwoFactorAuthService {
         subCategory: 'auth',
       );
 
-      final currentUser = verify2faResponse.$1?.response.data;
+      final currentUserResponse = await _runner
+          .runValidatedTransform<CurrentUser, CurrentUser>(
+            lane: ApiRequestLane.authSession,
+            request: (extra) => api.rawApi
+                .getAuthenticationApi()
+                .getCurrentUser(extra: extra)
+                .validateVrc(),
+          );
+
+      final (currentUserSuccess, currentUserFailure) = currentUserResponse;
+      if (currentUserFailure != null) {
+        final failureSummary = summarizeErrorForLog(currentUserFailure);
+        AppLogger.warning(
+          'Fetching current user after 2FA failed: $failureSummary',
+          subCategory: 'auth',
+        );
+        return TwoFactorAuthResult(
+          status: TwoFactorAuthResultStatus.failure,
+          errorMessage: formatApiError(
+            '2FA verification failed',
+            currentUserFailure,
+          ),
+        );
+      }
+
+      final currentUser = currentUserSuccess?.data;
       if (currentUser != null) {
         AppLogger.info('2FA verification successful', subCategory: 'auth');
         return TwoFactorAuthResult(

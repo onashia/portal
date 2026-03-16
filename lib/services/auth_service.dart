@@ -27,8 +27,8 @@ class AuthService {
   final VrchatDart api;
   final PortalApiRequestRunner _runner;
 
-  AuthService(this.api, {PortalApiRequestRunner? runner})
-    : _runner = runner ?? PortalApiRequestRunner.untracked();
+  AuthService(this.api, {required PortalApiRequestRunner runner})
+    : _runner = runner;
 
   String _basicAuthorizationHeader(String username, String password) {
     final encodedUsername = Uri.encodeComponent(username);

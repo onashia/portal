@@ -72,7 +72,7 @@ class ApiRateLimitCoordinator {
 
   void recordSuccess(ApiRequestLane lane, {DateTime? now}) {
     _consecutiveRateLimitHitsByLane.remove(lane);
-    remainingCooldown(lane, now: now);
+    _blockedUntilByLane.remove(lane);
   }
 
   void recordRateLimited(

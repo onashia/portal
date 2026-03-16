@@ -95,13 +95,11 @@ void main() {
             .having(
               (error) => error.message,
               'message',
-              contains('Expected Uint8List from file download for file_alpha/2'),
+              contains(
+                'Expected Uint8List from file download for file_alpha/2',
+              ),
             )
-            .having(
-              (error) => error.message,
-              'message',
-              contains('got Null'),
-            ),
+            .having((error) => error.message, 'message', contains('got Null')),
       ),
     );
   });

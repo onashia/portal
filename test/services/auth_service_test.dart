@@ -128,33 +128,36 @@ void main() {
       expect(recordedLanes, contains(ApiRequestLane.authSession));
     });
 
-    test('returns requires2FA when login response requests two-factor auth', () async {
-      when(
-        () => mockAuthenticationApi.getCurrentUser(
-          headers: any(named: 'headers'),
-          extra: any(named: 'extra'),
-        ),
-      ).thenAnswer(
-        (_) => Future<dio.Response<CurrentUser>>.error(
-          dio.DioException(
-            requestOptions: dio.RequestOptions(path: '/auth/user'),
-            response: dio.Response<Map<String, dynamic>>(
-              requestOptions: dio.RequestOptions(path: '/auth/user'),
-              statusCode: 200,
-              data: <String, dynamic>{
-                'requiresTwoFactorAuth': <String>['totp'],
-              },
-            ),
-            type: dio.DioExceptionType.badResponse,
+    test(
+      'returns requires2FA when login response requests two-factor auth',
+      () async {
+        when(
+          () => mockAuthenticationApi.getCurrentUser(
+            headers: any(named: 'headers'),
+            extra: any(named: 'extra'),
           ),
-        ),
-      );
+        ).thenAnswer(
+          (_) => Future<dio.Response<CurrentUser>>.error(
+            dio.DioException(
+              requestOptions: dio.RequestOptions(path: '/auth/user'),
+              response: dio.Response<Map<String, dynamic>>(
+                requestOptions: dio.RequestOptions(path: '/auth/user'),
+                statusCode: 200,
+                data: <String, dynamic>{
+                  'requiresTwoFactorAuth': <String>['totp'],
+                },
+              ),
+              type: dio.DioExceptionType.badResponse,
+            ),
+          ),
+        );
 
-      final result = await service.login('alice', 'secret');
+        final result = await service.login('alice', 'secret');
 
-      expect(result.status, AuthResultStatus.requires2FA);
-      expect(result.currentUser, isNull);
-      expect(recordedLanes, contains(ApiRequestLane.authSession));
-    });
+        expect(result.status, AuthResultStatus.requires2FA);
+        expect(result.currentUser, isNull);
+        expect(recordedLanes, contains(ApiRequestLane.authSession));
+      },
+    );
   });
 }

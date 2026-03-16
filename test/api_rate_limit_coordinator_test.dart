@@ -76,6 +76,27 @@ void main() {
       );
     });
 
+    test('recordSuccess clears an active cooldown for the lane', () {
+      final now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+      final coordinator = ApiRateLimitCoordinator(nowProvider: () => now);
+
+      coordinator.recordRateLimited(
+        ApiRequestLane.authSession,
+        retryAfter: const Duration(seconds: 60),
+      );
+      expect(
+        coordinator.remainingCooldown(ApiRequestLane.authSession, now: now),
+        const Duration(seconds: 60),
+      );
+
+      coordinator.recordSuccess(ApiRequestLane.authSession, now: now);
+
+      expect(
+        coordinator.remainingCooldown(ApiRequestLane.authSession, now: now),
+        isNull,
+      );
+    });
+
     test('preserves server-provided Retry-After without clamping', () {
       final now = DateTime.utc(2026, 2, 14, 12, 0, 0);
       final coordinator = ApiRateLimitCoordinator(nowProvider: () => now);

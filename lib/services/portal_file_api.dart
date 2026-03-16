@@ -1,10 +1,10 @@
-import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
+
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import 'api_rate_limit_coordinator.dart';
 import 'portal_api_request_runner.dart';
 
-@visibleForTesting
 Uint8List extractDownloadedFileBytes({
   required Object? data,
   required String fileId,

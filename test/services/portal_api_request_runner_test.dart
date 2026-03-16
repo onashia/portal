@@ -58,70 +58,76 @@ void main() {
       expect(coordinator.remainingCooldown(ApiRequestLane.image), isNotNull);
     });
 
-    test('dedupes concurrent read requests by key and cleans up in-flight state', () async {
-      final completer = Completer<String>();
-      var executions = 0;
+    test(
+      'dedupes concurrent read requests by key and cleans up in-flight state',
+      () async {
+        final completer = Completer<String>();
+        var executions = 0;
 
-      final first = runner.runWithReadDedupe<String>(
-        dedupeKey: 'world|wrld_alpha',
-        lane: ApiRequestLane.worldDetails,
-        request: (_) async {
-          executions += 1;
-          return completer.future;
-        },
-      );
-      final second = runner.runWithReadDedupe<String>(
-        dedupeKey: 'world|wrld_alpha',
-        lane: ApiRequestLane.worldDetails,
-        request: (_) async {
-          executions += 1;
-          return completer.future;
-        },
-      );
-
-      completer.complete('ok');
-
-      expect(await first, 'ok');
-      expect(await second, 'ok');
-      final third = await runner.runWithReadDedupe<String>(
-        dedupeKey: 'world|wrld_alpha',
-        lane: ApiRequestLane.worldDetails,
-        request: (_) async {
-          executions += 1;
-          return 'fresh';
-        },
-      );
-
-      expect(third, 'fresh');
-      expect(executions, 2);
-      expect(recordedCalls, [
-        ApiRequestLane.worldDetails,
-        ApiRequestLane.worldDetails,
-      ]);
-    });
-
-    test('throws a clear error when a dedupe key is reused for a different type', () {
-      runner.runWithReadDedupe<String>(
-        dedupeKey: 'world|wrld_alpha',
-        lane: ApiRequestLane.worldDetails,
-        request: (_) async => 'ok',
-      );
-
-      expect(
-        () => runner.runWithReadDedupe<int>(
+        final first = runner.runWithReadDedupe<String>(
           dedupeKey: 'world|wrld_alpha',
           lane: ApiRequestLane.worldDetails,
-          request: (_) async => 1,
-        ),
-        throwsA(
-          isA<StateError>().having(
-            (error) => error.message,
-            'message',
-            contains('cannot reuse it for int'),
+          request: (_) async {
+            executions += 1;
+            return completer.future;
+          },
+        );
+        final second = runner.runWithReadDedupe<String>(
+          dedupeKey: 'world|wrld_alpha',
+          lane: ApiRequestLane.worldDetails,
+          request: (_) async {
+            executions += 1;
+            return completer.future;
+          },
+        );
+
+        completer.complete('ok');
+
+        expect(await first, 'ok');
+        expect(await second, 'ok');
+        final third = await runner.runWithReadDedupe<String>(
+          dedupeKey: 'world|wrld_alpha',
+          lane: ApiRequestLane.worldDetails,
+          request: (_) async {
+            executions += 1;
+            return 'fresh';
+          },
+        );
+
+        expect(third, 'fresh');
+        expect(executions, 2);
+        expect(recordedCalls, [
+          ApiRequestLane.worldDetails,
+          ApiRequestLane.worldDetails,
+        ]);
+      },
+    );
+
+    test(
+      'throws a clear error when a dedupe key is reused for a different type',
+      () {
+        runner.runWithReadDedupe<String>(
+          dedupeKey: 'world|wrld_alpha',
+          lane: ApiRequestLane.worldDetails,
+          request: (_) async => 'ok',
+        );
+
+        expect(
+          () => runner.runWithReadDedupe<int>(
+            dedupeKey: 'world|wrld_alpha',
+            lane: ApiRequestLane.worldDetails,
+            request: (_) async => 1,
           ),
-        ),
-      );
-    });
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              contains('cannot reuse it for int'),
+            ),
+          ),
+        );
+      },
+    );
 
     test('runValidatedTransform records success for 2xx responses', () async {
       final result = await runner.runValidatedTransform<String, String>(
@@ -144,47 +150,148 @@ void main() {
       expect(recordedCalls, [ApiRequestLane.authSession]);
     });
 
-    test('runValidatedTransform records cooldown from 429 invalid responses', () async {
-      await runner.runValidatedTransform<String, String>(
-        lane: ApiRequestLane.authSession,
-        request: (_) async => (
-          null,
-          InvalidResponse(
-            StateError('rate limited'),
-            StackTrace.empty,
-            response: Response<void>(
-              requestOptions: RequestOptions(path: '/auth/user'),
-              statusCode: 429,
-              headers: Headers.fromMap(<String, List<String>>{
-                'retry-after': ['12'],
-              }),
+    test(
+      'runValidatedTransform records cooldown from 429 invalid responses',
+      () async {
+        await runner.runValidatedTransform<String, String>(
+          lane: ApiRequestLane.authSession,
+          request: (_) async => (
+            null,
+            InvalidResponse(
+              StateError('rate limited'),
+              StackTrace.empty,
+              response: Response<void>(
+                requestOptions: RequestOptions(path: '/auth/user'),
+                statusCode: 429,
+                headers: Headers.fromMap(<String, List<String>>{
+                  'retry-after': ['12'],
+                }),
+              ),
             ),
           ),
-        ),
-      );
+        );
 
-      final cooldown = coordinator.remainingCooldown(ApiRequestLane.authSession);
-      expect(cooldown, isNotNull);
-      expect(cooldown!.inSeconds, greaterThanOrEqualTo(11));
-    });
+        final cooldown = coordinator.remainingCooldown(
+          ApiRequestLane.authSession,
+        );
+        expect(cooldown, isNotNull);
+        expect(cooldown!.inSeconds, greaterThanOrEqualTo(11));
+      },
+    );
 
-    test('runValidatedTransform ignores responses without a status code', () async {
-      final result = await runner.runValidatedTransform<String, String>(
-        lane: ApiRequestLane.authSession,
-        request: (_) async => (
-          ValidResponse(
-            'ok',
-            Response<String>(
-              requestOptions: RequestOptions(path: '/auth/user'),
-              data: 'ok',
+    test(
+      'runValidatedTransform records cooldown from thrown 429 Dio errors',
+      () async {
+        await expectLater(
+          runner.runValidatedTransform<String, String>(
+            lane: ApiRequestLane.authSession,
+            request: (_) async {
+              throw DioException(
+                requestOptions: RequestOptions(path: '/auth/user'),
+                response: Response<void>(
+                  requestOptions: RequestOptions(path: '/auth/user'),
+                  statusCode: 429,
+                  headers: Headers.fromMap(<String, List<String>>{
+                    'retry-after': ['9'],
+                  }),
+                ),
+                type: DioExceptionType.badResponse,
+              );
+            },
+          ),
+          throwsA(isA<DioException>()),
+        );
+
+        final cooldown = coordinator.remainingCooldown(
+          ApiRequestLane.authSession,
+        );
+        expect(cooldown, isNotNull);
+        expect(cooldown!.inSeconds, greaterThanOrEqualTo(8));
+      },
+    );
+
+    test(
+      'runValidatedTransform does not create cooldown from non-429 Dio errors',
+      () async {
+        await expectLater(
+          runner.runValidatedTransform<String, String>(
+            lane: ApiRequestLane.authSession,
+            request: (_) async {
+              throw DioException(
+                requestOptions: RequestOptions(path: '/auth/user'),
+                response: Response<void>(
+                  requestOptions: RequestOptions(path: '/auth/user'),
+                  statusCode: 500,
+                ),
+                type: DioExceptionType.badResponse,
+              );
+            },
+          ),
+          throwsA(isA<DioException>()),
+        );
+
+        expect(
+          coordinator.remainingCooldown(ApiRequestLane.authSession),
+          isNull,
+        );
+      },
+    );
+
+    test(
+      'runValidatedTransform clears a prior cooldown on non-429 validated responses',
+      () async {
+        coordinator.recordRateLimited(
+          ApiRequestLane.authSession,
+          retryAfter: const Duration(seconds: 30),
+        );
+
+        final result = await runner.runValidatedTransform<String, String>(
+          lane: ApiRequestLane.authSession,
+          request: (_) async => (
+            null,
+            InvalidResponse(
+              StateError('unauthorized'),
+              StackTrace.empty,
+              response: Response<void>(
+                requestOptions: RequestOptions(path: '/auth/user'),
+                statusCode: 401,
+              ),
             ),
           ),
-          null,
-        ),
-      );
+        );
 
-      expect(result.$1?.data, 'ok');
-      expect(coordinator.remainingCooldown(ApiRequestLane.authSession), isNull);
-    });
+        expect(result.$1, isNull);
+        expect(result.$2, isNotNull);
+        expect(
+          coordinator.remainingCooldown(ApiRequestLane.authSession),
+          isNull,
+        );
+      },
+    );
+
+    test(
+      'runValidatedTransform ignores responses without a status code',
+      () async {
+        final result = await runner.runValidatedTransform<String, String>(
+          lane: ApiRequestLane.authSession,
+          request: (_) async => (
+            ValidResponse(
+              'ok',
+              Response<String>(
+                requestOptions: RequestOptions(path: '/auth/user'),
+                data: 'ok',
+              ),
+            ),
+            null,
+          ),
+        );
+
+        expect(result.$1?.data, 'ok');
+        expect(
+          coordinator.remainingCooldown(ApiRequestLane.authSession),
+          isNull,
+        );
+      },
+    );
   });
 }

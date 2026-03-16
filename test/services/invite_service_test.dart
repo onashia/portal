@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart' as dio;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:portal/services/api_rate_limit_coordinator.dart';
+import 'package:portal/services/portal_api_request_runner.dart';
 import 'package:portal/services/invite_service.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
@@ -211,7 +213,14 @@ void main() {
       mockApi = _MockVrchatDart();
       mockRawApi = _MockVrchatRawApi();
       mockInviteApi = _MockInviteApi();
-      service = InviteService(mockApi);
+      service = InviteService(
+        mockApi,
+        runner: PortalApiRequestRunner(
+          coordinator: ApiRateLimitCoordinator(),
+          recordApiCall: ({lane}) {},
+          recordThrottledSkip: ({lane}) {},
+        ),
+      );
 
       when(() => mockApi.rawApi).thenReturn(mockRawApi);
       when(() => mockRawApi.getInviteApi()).thenReturn(mockInviteApi);
