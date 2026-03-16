@@ -1,8 +1,6 @@
 import 'dart:io';
 
-import 'package:dio/dio.dart';
-
-import '../constants/http_status_codes.dart';
+import 'package:dio/dio.dart' show Headers;
 
 enum ApiRequestLane {
   authSession,
@@ -155,50 +153,4 @@ class ApiRateLimitCoordinator {
     }
     return value;
   }
-}
-
-class ApiRateLimitInterceptor extends Interceptor {
-  ApiRateLimitInterceptor(this._coordinator);
-
-  final ApiRateLimitCoordinator _coordinator;
-
-  @override
-  void onResponse(Response response, ResponseInterceptorHandler handler) {
-    final lane = _laneForOptions(response.requestOptions);
-    if (lane != null) {
-      _coordinator.recordSuccess(lane);
-    }
-    handler.next(response);
-  }
-
-  @override
-  void onError(DioException err, ErrorInterceptorHandler handler) {
-    final lane = _laneForOptions(err.requestOptions);
-    if (lane != null &&
-        err.response?.statusCode == AppHttpStatus.tooManyRequests) {
-      final retryAfter = _coordinator.parseRetryAfterFromHeaders(
-        err.response?.headers,
-      );
-      _coordinator.recordRateLimited(lane, retryAfter: retryAfter);
-    }
-    handler.next(err);
-  }
-
-  ApiRequestLane? _laneForOptions(RequestOptions options) {
-    return apiRequestLaneFromExtraValue(options.extra[portalApiLaneExtraKey]);
-  }
-}
-
-void ensureApiRateLimitInterceptor(
-  Dio dio,
-  ApiRateLimitCoordinator coordinator,
-) {
-  final alreadyPresent = dio.interceptors
-      .whereType<ApiRateLimitInterceptor>()
-      .isNotEmpty;
-  if (alreadyPresent) {
-    return;
-  }
-
-  dio.interceptors.add(ApiRateLimitInterceptor(coordinator));
 }

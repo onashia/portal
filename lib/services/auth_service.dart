@@ -30,6 +30,9 @@ class AuthService {
   AuthService(this.api, {required PortalApiRequestRunner runner})
     : _runner = runner;
 
+  static const String _unsupportedTwoFactorMessage =
+      'Unsupported VRChat 2FA challenge';
+
   String _basicAuthorizationHeader(String username, String password) {
     final encodedUsername = Uri.encodeComponent(username);
     final encodedPassword = Uri.encodeComponent(password);
@@ -81,29 +84,87 @@ class AuthService {
       return (null, failure);
     }
 
-    final twoFactorAuthTypes = _extractTwoFactorAuthTypes(response.data);
-    if (twoFactorAuthTypes == null) {
+    final parsed = _extractTwoFactorAuthTypes(response.data);
+    if (parsed == null) {
       return (null, failure);
+    }
+
+    if (parsed.unsupportedTypes.isNotEmpty) {
+      AppLogger.warning(
+        'Login response included unsupported 2FA types: '
+        '${parsed.unsupportedTypes.join(', ')}',
+        subCategory: 'auth',
+      );
+    }
+
+    if (parsed.supportedTypes.isEmpty) {
+      AppLogger.warning(
+        'Login response included no supported 2FA types',
+        subCategory: 'auth',
+      );
+      return (
+        null,
+        InvalidResponse(
+          _unsupportedTwoFactorMessage,
+          StackTrace.current,
+          response: response,
+        ),
+      );
     }
 
     return (
       ValidResponse(
-        AuthResponse(twoFactorAuthTypes: twoFactorAuthTypes),
+        AuthResponse(twoFactorAuthTypes: parsed.supportedTypes),
         response,
       ),
       null,
     );
   }
 
-  List<TwoFactorAuthType>? _extractTwoFactorAuthTypes(Object? data) {
+  _ParsedTwoFactorAuthTypes? _extractTwoFactorAuthTypes(Object? data) {
     if (data is! Map<String, dynamic>) {
       return null;
     }
 
-    return (data['requiresTwoFactorAuth'] as List?)
-        ?.cast<String>()
-        .map(TwoFactorAuthType.values.byName)
-        .toList();
+    if (!data.containsKey('requiresTwoFactorAuth')) {
+      return null;
+    }
+
+    final rawTypes = data['requiresTwoFactorAuth'];
+    if (rawTypes is! List) {
+      return null;
+    }
+
+    final supportedTypes = <TwoFactorAuthType>[];
+    final unsupportedTypes = <String>[];
+
+    for (final rawType in rawTypes) {
+      if (rawType is! String) {
+        return null;
+      }
+
+      final supportedType = _twoFactorAuthTypeFromName(rawType);
+      if (supportedType == null) {
+        unsupportedTypes.add(rawType);
+        continue;
+      }
+
+      supportedTypes.add(supportedType);
+    }
+
+    return _ParsedTwoFactorAuthTypes(
+      supportedTypes: supportedTypes,
+      unsupportedTypes: unsupportedTypes,
+    );
+  }
+
+  TwoFactorAuthType? _twoFactorAuthTypeFromName(String rawType) {
+    for (final type in TwoFactorAuthType.values) {
+      if (type.name == rawType) {
+        return type;
+      }
+    }
+    return null;
   }
 
   Future<AuthResult> login(String username, String password) async {
@@ -257,4 +318,14 @@ class AuthService {
       );
     }
   }
+}
+
+class _ParsedTwoFactorAuthTypes {
+  const _ParsedTwoFactorAuthTypes({
+    required this.supportedTypes,
+    required this.unsupportedTypes,
+  });
+
+  final List<TwoFactorAuthType> supportedTypes;
+  final List<String> unsupportedTypes;
 }

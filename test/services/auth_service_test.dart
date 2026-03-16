@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart' as dio;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,45 +17,60 @@ class _MockAuthenticationApi extends Mock implements AuthenticationApi {}
 
 class _MockCurrentUser extends Mock implements CurrentUser {}
 
+dio.DioException _authFailure({
+  required int statusCode,
+  required Object? data,
+}) {
+  return dio.DioException(
+    requestOptions: dio.RequestOptions(path: '/auth/user'),
+    response: dio.Response<dynamic>(
+      requestOptions: dio.RequestOptions(path: '/auth/user'),
+      statusCode: statusCode,
+      data: data,
+    ),
+    type: dio.DioExceptionType.badResponse,
+  );
+}
+
 void main() {
+  late _MockVrchatDart mockApi;
+  late _MockVrchatRawApi mockRawApi;
+  late _MockAuthenticationApi mockAuthenticationApi;
+  late AuthService service;
+  late List<String> loggedMessages;
+  late DebugPrintCallback originalDebugPrint;
+  late List<ApiRequestLane?> recordedLanes;
+
+  setUp(() {
+    mockApi = _MockVrchatDart();
+    mockRawApi = _MockVrchatRawApi();
+    mockAuthenticationApi = _MockAuthenticationApi();
+    recordedLanes = <ApiRequestLane?>[];
+    final runner = PortalApiRequestRunner(
+      coordinator: ApiRateLimitCoordinator(),
+      recordApiCall: ({lane}) => recordedLanes.add(lane),
+      recordThrottledSkip: ({lane}) {},
+    );
+    service = AuthService(mockApi, runner: runner);
+    loggedMessages = <String>[];
+    originalDebugPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) {
+        loggedMessages.add(message);
+      }
+    };
+
+    when(() => mockApi.rawApi).thenReturn(mockRawApi);
+    when(
+      () => mockRawApi.getAuthenticationApi(),
+    ).thenReturn(mockAuthenticationApi);
+  });
+
+  tearDown(() {
+    debugPrint = originalDebugPrint;
+  });
+
   group('AuthService.login', () {
-    late _MockVrchatDart mockApi;
-    late _MockVrchatRawApi mockRawApi;
-    late _MockAuthenticationApi mockAuthenticationApi;
-    late AuthService service;
-    late List<String> loggedMessages;
-    late DebugPrintCallback originalDebugPrint;
-    late List<ApiRequestLane?> recordedLanes;
-
-    setUp(() {
-      mockApi = _MockVrchatDart();
-      mockRawApi = _MockVrchatRawApi();
-      mockAuthenticationApi = _MockAuthenticationApi();
-      recordedLanes = <ApiRequestLane?>[];
-      final runner = PortalApiRequestRunner(
-        coordinator: ApiRateLimitCoordinator(),
-        recordApiCall: ({lane}) => recordedLanes.add(lane),
-        recordThrottledSkip: ({lane}) {},
-      );
-      service = AuthService(mockApi, runner: runner);
-      loggedMessages = <String>[];
-      originalDebugPrint = debugPrint;
-      debugPrint = (String? message, {int? wrapWidth}) {
-        if (message != null) {
-          loggedMessages.add(message);
-        }
-      };
-
-      when(() => mockApi.rawApi).thenReturn(mockRawApi);
-      when(
-        () => mockRawApi.getAuthenticationApi(),
-      ).thenReturn(mockAuthenticationApi);
-    });
-
-    tearDown(() {
-      debugPrint = originalDebugPrint;
-    });
-
     test('logs a single-line failure summary when login is rejected', () async {
       when(
         () => mockAuthenticationApi.getCurrentUser(
@@ -62,20 +79,15 @@ void main() {
         ),
       ).thenAnswer(
         (_) => Future<dio.Response<CurrentUser>>.error(
-          dio.DioException(
-            requestOptions: dio.RequestOptions(path: '/auth/user'),
-            response: dio.Response<Map<String, dynamic>>(
-              requestOptions: dio.RequestOptions(path: '/auth/user'),
-              statusCode: 403,
-              data: <String, dynamic>{
-                'error': <String, dynamic>{
-                  'message':
-                      'Account banned\nfull backend payload should not be logged',
-                  'status_code': 403,
-                },
+          _authFailure(
+            statusCode: 403,
+            data: <String, dynamic>{
+              'error': <String, dynamic>{
+                'message':
+                    'Account banned\nfull backend payload should not be logged',
+                'status_code': 403,
               },
-            ),
-            type: dio.DioExceptionType.badResponse,
+            },
           ),
         ),
       );
@@ -129,7 +141,7 @@ void main() {
     });
 
     test(
-      'returns requires2FA when login response requests two-factor auth',
+      'returns requires2FA when login response requests a known two-factor auth type',
       () async {
         when(
           () => mockAuthenticationApi.getCurrentUser(
@@ -138,16 +150,11 @@ void main() {
           ),
         ).thenAnswer(
           (_) => Future<dio.Response<CurrentUser>>.error(
-            dio.DioException(
-              requestOptions: dio.RequestOptions(path: '/auth/user'),
-              response: dio.Response<Map<String, dynamic>>(
-                requestOptions: dio.RequestOptions(path: '/auth/user'),
-                statusCode: 200,
-                data: <String, dynamic>{
-                  'requiresTwoFactorAuth': <String>['totp'],
-                },
-              ),
-              type: dio.DioExceptionType.badResponse,
+            _authFailure(
+              statusCode: 200,
+              data: <String, dynamic>{
+                'requiresTwoFactorAuth': <String>['totp'],
+              },
             ),
           ),
         );
@@ -157,6 +164,226 @@ void main() {
         expect(result.status, AuthResultStatus.requires2FA);
         expect(result.currentUser, isNull);
         expect(recordedLanes, contains(ApiRequestLane.authSession));
+      },
+    );
+
+    test('ignores unknown 2FA types when a supported one is present', () async {
+      when(
+        () => mockAuthenticationApi.getCurrentUser(
+          headers: any(named: 'headers'),
+          extra: any(named: 'extra'),
+        ),
+      ).thenAnswer(
+        (_) => Future<dio.Response<CurrentUser>>.error(
+          _authFailure(
+            statusCode: 200,
+            data: <String, dynamic>{
+              'requiresTwoFactorAuth': <String>['totp', 'future_method'],
+            },
+          ),
+        ),
+      );
+
+      final result = await service.login('alice', 'secret');
+
+      expect(result.status, AuthResultStatus.requires2FA);
+      expect(loggedMessages.join('\n'), contains('unsupported 2FA types'));
+      expect(loggedMessages.join('\n'), contains('future_method'));
+    });
+
+    test(
+      'returns explicit failure when only unknown 2FA types are returned',
+      () async {
+        when(
+          () => mockAuthenticationApi.getCurrentUser(
+            headers: any(named: 'headers'),
+            extra: any(named: 'extra'),
+          ),
+        ).thenAnswer(
+          (_) => Future<dio.Response<CurrentUser>>.error(
+            _authFailure(
+              statusCode: 200,
+              data: <String, dynamic>{
+                'requiresTwoFactorAuth': <String>['future_method'],
+              },
+            ),
+          ),
+        );
+
+        final result = await service.login('alice', 'secret');
+
+        expect(result.status, AuthResultStatus.failure);
+        expect(
+          result.errorMessage,
+          'Login failed: Unsupported VRChat 2FA challenge',
+        );
+      },
+    );
+
+    test(
+      'returns failure when the API returns an empty 2FA type list',
+      () async {
+        when(
+          () => mockAuthenticationApi.getCurrentUser(
+            headers: any(named: 'headers'),
+            extra: any(named: 'extra'),
+          ),
+        ).thenAnswer(
+          (_) => Future<dio.Response<CurrentUser>>.error(
+            _authFailure(
+              statusCode: 200,
+              data: <String, dynamic>{'requiresTwoFactorAuth': <String>[]},
+            ),
+          ),
+        );
+
+        final result = await service.login('alice', 'secret');
+
+        expect(result.status, AuthResultStatus.failure);
+        expect(
+          result.errorMessage,
+          'Login failed: Unsupported VRChat 2FA challenge',
+        );
+        expect(
+          loggedMessages.join('\n'),
+          contains('included no supported 2FA types'),
+        );
+      },
+    );
+
+    test('encodes special-character credentials per VRChat auth docs', () async {
+      final currentUser = _MockCurrentUser();
+      when(
+        () => mockAuthenticationApi.getCurrentUser(
+          headers: any(named: 'headers'),
+          extra: any(named: 'extra'),
+        ),
+      ).thenAnswer(
+        (_) async => dio.Response<CurrentUser>(
+          requestOptions: dio.RequestOptions(path: '/auth/user'),
+          statusCode: 200,
+          data: currentUser,
+        ),
+      );
+      when(() => currentUser.twoFactorAuthEnabled).thenReturn(false);
+
+      await service.login('alice+vr@example.com', 'pa ss:%+word');
+
+      final headers =
+          verify(
+                () => mockAuthenticationApi.getCurrentUser(
+                  headers: captureAny(named: 'headers'),
+                  extra: any(named: 'extra'),
+                ),
+              ).captured.single
+              as Map<String, dynamic>;
+      final expectedAuthorization =
+          'Basic ${base64.encode(utf8.encode('${Uri.encodeComponent('alice+vr@example.com')}:'
+          '${Uri.encodeComponent('pa ss:%+word')}'))}';
+      expect(headers['Authorization'], expectedAuthorization);
+    });
+  });
+
+  group('AuthService.logout', () {
+    test('returns success when logout succeeds', () async {
+      when(
+        () => mockAuthenticationApi.logout(extra: any(named: 'extra')),
+      ).thenAnswer(
+        (_) async => dio.Response<Success>(
+          requestOptions: dio.RequestOptions(path: '/auth/logout'),
+          statusCode: 200,
+          data: Success(),
+        ),
+      );
+
+      final result = await service.logout();
+
+      expect(result.status, AuthResultStatus.success);
+      expect(recordedLanes, contains(ApiRequestLane.authSession));
+      final extra =
+          verify(
+                () => mockAuthenticationApi.logout(
+                  extra: captureAny(named: 'extra'),
+                ),
+              ).captured.single
+              as Map<String, dynamic>?;
+      expect(
+        apiRequestLaneFromExtraValue(extra?[portalApiLaneExtraKey]),
+        ApiRequestLane.authSession,
+      );
+    });
+
+    test('returns failure when logout throws', () async {
+      when(
+        () => mockAuthenticationApi.logout(extra: any(named: 'extra')),
+      ).thenThrow(StateError('logout exploded'));
+
+      final result = await service.logout();
+
+      expect(result.status, AuthResultStatus.failure);
+      expect(result.errorMessage, 'Logout failed: Bad state: logout exploded');
+    });
+  });
+
+  group('AuthService.checkExistingSession', () {
+    test('returns success when an authenticated session exists', () async {
+      final currentUser = _MockCurrentUser();
+      when(
+        () => mockAuthenticationApi.getCurrentUser(extra: any(named: 'extra')),
+      ).thenAnswer(
+        (_) async => dio.Response<CurrentUser>(
+          requestOptions: dio.RequestOptions(path: '/auth/user'),
+          statusCode: 200,
+          data: currentUser,
+        ),
+      );
+
+      final result = await service.checkExistingSession();
+
+      expect(result.status, AuthResultStatus.success);
+      expect(result.currentUser, same(currentUser));
+      expect(recordedLanes, contains(ApiRequestLane.authSession));
+    });
+
+    test('returns failure when no valid existing session is found', () async {
+      when(
+        () => mockAuthenticationApi.getCurrentUser(extra: any(named: 'extra')),
+      ).thenAnswer(
+        (_) => Future<dio.Response<CurrentUser>>.error(
+          _authFailure(
+            statusCode: 401,
+            data: <String, dynamic>{
+              'error': <String, dynamic>{
+                'message': 'Missing credentials',
+                'status_code': 401,
+              },
+            },
+          ),
+        ),
+      );
+
+      final result = await service.checkExistingSession();
+
+      expect(result.status, AuthResultStatus.failure);
+      expect(result.currentUser, isNull);
+      expect(result.errorMessage, isNull);
+    });
+
+    test(
+      'returns failure with an error message when session check throws',
+      () async {
+        when(
+          () =>
+              mockAuthenticationApi.getCurrentUser(extra: any(named: 'extra')),
+        ).thenThrow(StateError('session exploded'));
+
+        final result = await service.checkExistingSession();
+
+        expect(result.status, AuthResultStatus.failure);
+        expect(
+          result.errorMessage,
+          'Session check failed: Bad state: session exploded',
+        );
       },
     );
   });
