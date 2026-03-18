@@ -396,6 +396,20 @@ final groupMonitorSortedInstancesProvider =
       );
     });
 
+final groupMonitorHasIncompleteCooldownDataProvider =
+    Provider.family<bool, String>((ref, userId) {
+      final state = ref.watch(groupMonitorProvider(userId));
+      if (!state.isMonitoring || state.lastBaselineSkipReason != 'cooldown') {
+        return false;
+      }
+
+      return state.selectedGroupIds.any(
+        (groupId) =>
+            !state.groupInstances.containsKey(groupId) &&
+            !state.groupErrors.containsKey(groupId),
+      );
+    });
+
 final groupMonitorInstanceCountProvider = Provider.family<int, String>((
   ref,
   userId,

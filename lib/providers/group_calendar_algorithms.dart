@@ -1,6 +1,8 @@
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../models/group_calendar_event.dart';
+import '../services/api_rate_limit_coordinator.dart';
+import '../services/portal_request_runner_common.dart';
 import '../utils/chunked_async.dart';
 import '../utils/collection_equivalence.dart' as collection_eq;
 import 'group_calendar_state.dart';
@@ -9,37 +11,101 @@ Future<
   ({
     Map<String, List<CalendarEvent>> eventsByGroup,
     Map<String, String> groupErrors,
+    bool interruptedByCooldown,
+    Duration? cooldownRemaining,
   })
 >
 fetchGroupCalendarEventsChunked({
   required List<String> orderedGroupIds,
   required Map<String, List<CalendarEvent>> previousEventsByGroup,
+  required Map<String, String> previousGroupErrors,
   required Future<List<CalendarEvent>> Function(String groupId) fetchEvents,
+  required PortalCooldownTracker cooldownTracker,
+  required ApiRequestLane lane,
+  bool respectCooldownBetweenChunks = true,
   int maxConcurrentRequests = 4,
   void Function(String groupId, Object error, StackTrace stackTrace)?
   onFetchError,
 }) async {
   final eventsByGroup = <String, List<CalendarEvent>>{};
   final groupErrors = <String, String>{};
+  Duration? cooldownRemaining;
 
   final results =
-      await runInChunks<
-        String,
-        ({String groupId, List<CalendarEvent>? events, bool failed})
-      >(
-        items: orderedGroupIds,
-        maxConcurrent: maxConcurrentRequests,
-        operation: (groupId) async {
-          try {
-            final events = await fetchEvents(groupId);
-            return (groupId: groupId, events: events, failed: false);
-          } catch (e, s) {
-            onFetchError?.call(groupId, e, s);
-            final previousEvents = previousEventsByGroup[groupId];
-            return (groupId: groupId, events: previousEvents, failed: true);
-          }
-        },
+      <
+        ({
+          String groupId,
+          List<CalendarEvent>? events,
+          bool failed,
+          bool skippedDueToCooldown,
+        })
+      >[];
+
+  for (
+    int start = 0;
+    start < orderedGroupIds.length;
+    start += maxConcurrentRequests
+  ) {
+    final remainingCooldown = respectCooldownBetweenChunks
+        ? cooldownTracker.remainingCooldown(lane)
+        : null;
+    if (remainingCooldown != null) {
+      cooldownRemaining ??= remainingCooldown;
+      final remainingGroupIds = orderedGroupIds.sublist(start);
+      results.addAll(
+        remainingGroupIds.map(
+          (groupId) => (
+            groupId: groupId,
+            events: previousEventsByGroup[groupId],
+            failed: false,
+            skippedDueToCooldown: true,
+          ),
+        ),
       );
+      break;
+    }
+
+    final chunkEnd = start + maxConcurrentRequests < orderedGroupIds.length
+        ? start + maxConcurrentRequests
+        : orderedGroupIds.length;
+    final chunkGroupIds = orderedGroupIds.sublist(start, chunkEnd);
+    // Cooldown is only checked between chunks. Requests already in-flight
+    // within this chunk will complete; the next boundary check catches it.
+    final chunkResults =
+        await runInChunks<
+          String,
+          ({
+            String groupId,
+            List<CalendarEvent>? events,
+            bool failed,
+            bool skippedDueToCooldown,
+          })
+        >(
+          items: chunkGroupIds,
+          maxConcurrent: maxConcurrentRequests,
+          operation: (groupId) async {
+            try {
+              final events = await fetchEvents(groupId);
+              return (
+                groupId: groupId,
+                events: events,
+                failed: false,
+                skippedDueToCooldown: false,
+              );
+            } catch (e, s) {
+              onFetchError?.call(groupId, e, s);
+              final previousEvents = previousEventsByGroup[groupId];
+              return (
+                groupId: groupId,
+                events: previousEvents,
+                failed: true,
+                skippedDueToCooldown: false,
+              );
+            }
+          },
+        );
+    results.addAll(chunkResults);
+  }
 
   for (final result in results) {
     if (result.events != null) {
@@ -47,10 +113,20 @@ fetchGroupCalendarEventsChunked({
     }
     if (result.failed) {
       groupErrors[result.groupId] = 'Failed to fetch events';
+    } else if (result.skippedDueToCooldown) {
+      final previousError = previousGroupErrors[result.groupId];
+      if (previousError != null) {
+        groupErrors[result.groupId] = previousError;
+      }
     }
   }
 
-  return (eventsByGroup: eventsByGroup, groupErrors: groupErrors);
+  return (
+    eventsByGroup: eventsByGroup,
+    groupErrors: groupErrors,
+    interruptedByCooldown: cooldownRemaining != null,
+    cooldownRemaining: cooldownRemaining,
+  );
 }
 
 bool areCalendarEventsEquivalent(CalendarEvent previous, CalendarEvent next) {
@@ -180,6 +256,7 @@ bool shouldEnterForegroundCalendarLoading(GroupCalendarState currentState) {
 bool shouldEmitCalendarRefreshStateUpdate({
   required GroupCalendarState currentState,
   required bool didDataChange,
+  required bool nextIsLoading,
 }) {
-  return didDataChange || currentState.isLoading;
+  return didDataChange || currentState.isLoading != nextIsLoading;
 }

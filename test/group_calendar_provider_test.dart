@@ -9,6 +9,7 @@ import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/providers/portal_vrchat_api.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
 import 'package:portal/services/portal_calendar_api.dart';
+import 'package:portal/services/portal_request_runner_common.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import 'test_helpers/auth_test_harness.dart';
 
@@ -40,6 +41,80 @@ class _FakePortalCalendarApi implements PortalCalendarApi {
   }
 }
 
+class _RateLimitingPortalCalendarApi implements PortalCalendarApi {
+  _RateLimitingPortalCalendarApi({
+    required ApiCallCounterNotifier counter,
+    required ApiRateLimitCoordinator coordinator,
+  }) : _counter = counter,
+       _coordinator = coordinator;
+
+  final ApiCallCounterNotifier _counter;
+  final ApiRateLimitCoordinator _coordinator;
+  Duration? _armedRetryAfter;
+
+  void armRateLimit(Duration retryAfter) {
+    _armedRetryAfter = retryAfter;
+  }
+
+  @override
+  Future<List<CalendarEvent>> getGroupCalendarEvents({
+    required String groupId,
+    required int n,
+  }) async {
+    _counter.incrementApiCall(lane: ApiRequestLane.calendar);
+    if (_armedRetryAfter != null && groupId == 'grp_d') {
+      _coordinator.recordRateLimited(
+        ApiRequestLane.calendar,
+        retryAfter: _armedRetryAfter,
+      );
+      _armedRetryAfter = null;
+    }
+    return [_buildEvent(id: 'event_$groupId')];
+  }
+}
+
+class _EmptyRateLimitingPortalCalendarApi implements PortalCalendarApi {
+  _EmptyRateLimitingPortalCalendarApi({
+    required ApiCallCounterNotifier counter,
+    required ApiRateLimitCoordinator coordinator,
+  }) : _counter = counter,
+       _coordinator = coordinator;
+
+  final ApiCallCounterNotifier _counter;
+  final ApiRateLimitCoordinator _coordinator;
+  Duration? _armedRetryAfter;
+
+  void armRateLimit(Duration retryAfter) {
+    _armedRetryAfter = retryAfter;
+  }
+
+  @override
+  Future<List<CalendarEvent>> getGroupCalendarEvents({
+    required String groupId,
+    required int n,
+  }) async {
+    _counter.incrementApiCall(lane: ApiRequestLane.calendar);
+    if (_armedRetryAfter != null && groupId == 'grp_d') {
+      _coordinator.recordRateLimited(
+        ApiRequestLane.calendar,
+        retryAfter: _armedRetryAfter,
+      );
+      _armedRetryAfter = null;
+    }
+    return const <CalendarEvent>[];
+  }
+}
+
+class _FakeCooldownTracker implements PortalCooldownTracker {
+  Duration? remaining;
+
+  @override
+  Duration? remainingCooldown(ApiRequestLane lane) => remaining;
+
+  @override
+  void recordThrottledSkip({required ApiRequestLane lane}) {}
+}
+
 ({
   ProviderContainer container,
   TestAuthNotifier authNotifier,
@@ -51,6 +126,9 @@ createCalendarHarness({
   required AuthState initialAuthState,
   required GroupMonitorState initialMonitorState,
   String userId = 'usr_test',
+  PortalCalendarApi Function(ApiCallCounterNotifier counter)?
+  calendarApiFactory,
+  List<dynamic> overrides = const <dynamic>[],
 }) {
   final monitorNotifier = _TestGroupMonitorNotifier(initialMonitorState);
   final authHarness = createAuthHarness(
@@ -58,10 +136,11 @@ createCalendarHarness({
     overrides: [
       groupMonitorProvider(userId).overrideWith(() => monitorNotifier),
       portalCalendarApiProvider.overrideWith((ref) {
-        return _FakePortalCalendarApi(
-          ref.read(apiCallCounterProvider.notifier),
-        );
+        final counter = ref.read(apiCallCounterProvider.notifier);
+        return calendarApiFactory?.call(counter) ??
+            _FakePortalCalendarApi(counter);
       }),
+      ...overrides,
     ],
   );
   final provider = groupCalendarProvider(userId);
@@ -79,6 +158,7 @@ void main() {
   group('fetchGroupCalendarEventsChunked', () {
     test('fetches in deterministic chunks with bounded concurrency', () async {
       final orderedGroupIds = ['grp_a', 'grp_b', 'grp_c', 'grp_d', 'grp_e'];
+      final cooldownTracker = _FakeCooldownTracker();
       var inFlight = 0;
       var maxInFlight = 0;
       final started = <String>[];
@@ -86,6 +166,9 @@ void main() {
       final result = await fetchGroupCalendarEventsChunked(
         orderedGroupIds: orderedGroupIds,
         previousEventsByGroup: const {},
+        previousGroupErrors: const {},
+        cooldownTracker: cooldownTracker,
+        lane: ApiRequestLane.calendar,
         maxConcurrentRequests: 2,
         fetchEvents: (groupId) async {
           started.add(groupId);
@@ -105,6 +188,8 @@ void main() {
       expect(maxInFlight, lessThanOrEqualTo(2));
       expect(result.groupErrors, isEmpty);
       expect(result.eventsByGroup.keys.toList(), orderedGroupIds);
+      expect(result.interruptedByCooldown, isFalse);
+      expect(result.cooldownRemaining, isNull);
     });
 
     test(
@@ -114,11 +199,15 @@ void main() {
         final previousEventsByGroup = {
           'grp_b': [_buildEvent(id: 'previous_grp_b')],
         };
+        final cooldownTracker = _FakeCooldownTracker();
         final fetchErrors = <String>[];
 
         final result = await fetchGroupCalendarEventsChunked(
           orderedGroupIds: orderedGroupIds,
           previousEventsByGroup: previousEventsByGroup,
+          previousGroupErrors: const {},
+          cooldownTracker: cooldownTracker,
+          lane: ApiRequestLane.calendar,
           maxConcurrentRequests: 2,
           fetchEvents: (groupId) async {
             if (groupId == 'grp_b' || groupId == 'grp_c') {
@@ -136,6 +225,8 @@ void main() {
           'grp_c': 'Failed to fetch events',
         });
         expect(fetchErrors, ['grp_b', 'grp_c']);
+        expect(result.interruptedByCooldown, isFalse);
+        expect(result.cooldownRemaining, isNull);
 
         expect(result.eventsByGroup['grp_a']?.first.id, 'fresh_grp_a');
         expect(result.eventsByGroup['grp_b']?.first.id, 'previous_grp_b');
@@ -143,6 +234,76 @@ void main() {
         expect(result.eventsByGroup['grp_d']?.first.id, 'fresh_grp_d');
       },
     );
+
+    test(
+      'stops launching later chunks once calendar cooldown becomes active',
+      () async {
+        final cooldownTracker = _FakeCooldownTracker();
+        final started = <String>[];
+
+        final result = await fetchGroupCalendarEventsChunked(
+          orderedGroupIds: const ['grp_a', 'grp_b', 'grp_c', 'grp_d'],
+          previousEventsByGroup: {
+            'grp_c': [_buildEvent(id: 'previous_grp_c')],
+            'grp_d': [_buildEvent(id: 'previous_grp_d')],
+          },
+          previousGroupErrors: const {},
+          cooldownTracker: cooldownTracker,
+          lane: ApiRequestLane.calendar,
+          maxConcurrentRequests: 2,
+          fetchEvents: (groupId) async {
+            started.add(groupId);
+            if (groupId == 'grp_b') {
+              cooldownTracker.remaining = const Duration(seconds: 60);
+            }
+            return [_buildEvent(id: 'fresh_$groupId')];
+          },
+        );
+
+        expect(started, const ['grp_a', 'grp_b']);
+        expect(result.groupErrors, isEmpty);
+        expect(result.eventsByGroup['grp_a']?.first.id, 'fresh_grp_a');
+        expect(result.eventsByGroup['grp_b']?.first.id, 'fresh_grp_b');
+        expect(result.eventsByGroup['grp_c']?.first.id, 'previous_grp_c');
+        expect(result.eventsByGroup['grp_d']?.first.id, 'previous_grp_d');
+        expect(result.interruptedByCooldown, isTrue);
+        expect(result.cooldownRemaining, const Duration(seconds: 60));
+      },
+    );
+
+    test('preserves prior errors for groups skipped due to cooldown', () async {
+      final cooldownTracker = _FakeCooldownTracker();
+
+      final result = await fetchGroupCalendarEventsChunked(
+        orderedGroupIds: const ['grp_a', 'grp_b', 'grp_c', 'grp_d'],
+        previousEventsByGroup: {
+          'grp_c': [_buildEvent(id: 'previous_grp_c')],
+          'grp_d': [_buildEvent(id: 'previous_grp_d')],
+        },
+        previousGroupErrors: const {
+          'grp_c': 'Failed to fetch events',
+          'grp_d': 'Failed to fetch events',
+        },
+        cooldownTracker: cooldownTracker,
+        lane: ApiRequestLane.calendar,
+        maxConcurrentRequests: 2,
+        fetchEvents: (groupId) async {
+          if (groupId == 'grp_b') {
+            cooldownTracker.remaining = const Duration(seconds: 60);
+          }
+          return [_buildEvent(id: 'fresh_$groupId')];
+        },
+      );
+
+      expect(result.groupErrors, const {
+        'grp_c': 'Failed to fetch events',
+        'grp_d': 'Failed to fetch events',
+      });
+      expect(result.eventsByGroup['grp_c']?.first.id, 'previous_grp_c');
+      expect(result.eventsByGroup['grp_d']?.first.id, 'previous_grp_d');
+      expect(result.interruptedByCooldown, isTrue);
+      expect(result.cooldownRemaining, const Duration(seconds: 60));
+    });
   });
 
   group('calendar state equivalence helpers', () {
@@ -274,6 +435,7 @@ void main() {
         shouldEmitCalendarRefreshStateUpdate(
           currentState: populatedState,
           didDataChange: false,
+          nextIsLoading: false,
         ),
         isFalse,
       );
@@ -281,6 +443,7 @@ void main() {
         shouldEmitCalendarRefreshStateUpdate(
           currentState: const GroupCalendarState(isLoading: true),
           didDataChange: false,
+          nextIsLoading: false,
         ),
         isTrue,
       );
@@ -395,6 +558,175 @@ void main() {
 
       expect(container.read(apiCallCounterProvider).totalCalls, greaterThan(0));
     });
+
+    test(
+      'partial cooldown refresh retries on cooldown timer instead of 30-minute loop',
+      () async {
+        final coordinator = ApiRateLimitCoordinator();
+        late _RateLimitingPortalCalendarApi calendarApi;
+        final harness = createCalendarHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          initialMonitorState: GroupMonitorState(
+            selectedGroupIds: const {
+              'grp_a',
+              'grp_b',
+              'grp_c',
+              'grp_d',
+              'grp_e',
+            },
+            allGroups: [
+              _buildGroup('grp_a'),
+              _buildGroup('grp_b'),
+              _buildGroup('grp_c'),
+              _buildGroup('grp_d'),
+              _buildGroup('grp_e'),
+            ],
+          ),
+          calendarApiFactory: (counter) {
+            calendarApi = _RateLimitingPortalCalendarApi(
+              counter: counter,
+              coordinator: coordinator,
+            );
+            return calendarApi;
+          },
+          overrides: [
+            apiRateLimitCoordinatorProvider.overrideWithValue(coordinator),
+          ],
+        );
+        final container = harness.container;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        container.read(apiCallCounterProvider.notifier).reset();
+
+        calendarApi.armRateLimit(const Duration(milliseconds: 30));
+        await notifier.refresh();
+
+        expect(container.read(apiCallCounterProvider).totalCalls, 4);
+        expect(notifier.hasActiveRefreshTimer, isTrue);
+
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        expect(container.read(apiCallCounterProvider).totalCalls, 4);
+
+        await Future<void>.delayed(const Duration(milliseconds: 800));
+        expect(container.read(apiCallCounterProvider).totalCalls, 9);
+      },
+    );
+
+    test(
+      'partial cooldown with uncached skipped groups keeps calendar loading',
+      () async {
+        final coordinator = ApiRateLimitCoordinator();
+        final harness = createCalendarHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          initialMonitorState: const GroupMonitorState(),
+          calendarApiFactory: (counter) {
+            return _EmptyRateLimitingPortalCalendarApi(
+              counter: counter,
+              coordinator: coordinator,
+            );
+          },
+          overrides: [
+            apiRateLimitCoordinatorProvider.overrideWithValue(coordinator),
+          ],
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
+        final monitorNotifier = harness.monitorNotifier;
+        addTearDown(container.dispose);
+        final calendarApi =
+            container.read(portalCalendarApiProvider)
+                as _EmptyRateLimitingPortalCalendarApi;
+
+        monitorNotifier.setData(
+          GroupMonitorState(
+            selectedGroupIds: const {
+              'grp_a',
+              'grp_b',
+              'grp_c',
+              'grp_d',
+              'grp_e',
+            },
+            allGroups: [
+              _buildGroup('grp_a'),
+              _buildGroup('grp_b'),
+              _buildGroup('grp_c'),
+              _buildGroup('grp_d'),
+              _buildGroup('grp_e'),
+            ],
+          ),
+        );
+        calendarApi.armRateLimit(const Duration(milliseconds: 30));
+        await notifier.refresh();
+
+        final state = container.read(provider);
+        expect(state.isLoading, isTrue);
+        expect(state.todayEvents, isEmpty);
+        expect(state.eventsByGroup.containsKey('grp_e'), isFalse);
+      },
+    );
+
+    test(
+      'partial cooldown with cached skipped groups clears calendar loading',
+      () async {
+        final coordinator = ApiRateLimitCoordinator();
+        final harness = createCalendarHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          initialMonitorState: const GroupMonitorState(),
+          calendarApiFactory: (counter) {
+            return _EmptyRateLimitingPortalCalendarApi(
+              counter: counter,
+              coordinator: coordinator,
+            );
+          },
+          overrides: [
+            apiRateLimitCoordinatorProvider.overrideWithValue(coordinator),
+          ],
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
+        final monitorNotifier = harness.monitorNotifier;
+        addTearDown(container.dispose);
+        final calendarApi =
+            container.read(portalCalendarApiProvider)
+                as _EmptyRateLimitingPortalCalendarApi;
+
+        monitorNotifier.setData(
+          GroupMonitorState(
+            selectedGroupIds: const {
+              'grp_a',
+              'grp_b',
+              'grp_c',
+              'grp_d',
+              'grp_e',
+            },
+            allGroups: [
+              _buildGroup('grp_a'),
+              _buildGroup('grp_b'),
+              _buildGroup('grp_c'),
+              _buildGroup('grp_d'),
+              _buildGroup('grp_e'),
+            ],
+          ),
+        );
+        await notifier.refresh(bypassRateLimit: true);
+        expect(container.read(provider).isLoading, isFalse);
+        expect(
+          container.read(provider).eventsByGroup.containsKey('grp_e'),
+          isTrue,
+        );
+
+        calendarApi.armRateLimit(const Duration(milliseconds: 30));
+        await notifier.refresh();
+
+        final state = container.read(provider);
+        expect(state.isLoading, isFalse);
+        expect(state.eventsByGroup.containsKey('grp_e'), isTrue);
+      },
+    );
 
     test('selection refresh debounce collapses rapid bursts', () async {
       final harness = createCalendarHarness(

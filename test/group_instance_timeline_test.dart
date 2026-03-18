@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:portal/models/group_instance_with_group.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
 import 'package:portal/theme/app_theme.dart';
+import 'package:portal/widgets/common/loading_state.dart';
 import 'package:portal/widgets/group_instance_timeline.dart';
 
 import 'test_helpers/fake_vrchat_models.dart';
@@ -62,7 +63,7 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.text('Alpha'), findsNWidgets(2));
     expect(find.text('New'), findsOneWidget);
@@ -162,7 +163,7 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.text('No Groups Selected'), findsOneWidget);
   });
@@ -195,7 +196,7 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.text('Unable to Load Instances'), findsOneWidget);
   });
@@ -232,4 +233,78 @@ void main() {
 
     expect(find.text('No Instances Open'), findsOneWidget);
   });
+
+  testWidgets('renders loading state for cooldown-incomplete instance data', (
+    tester,
+  ) async {
+    const monitorState = GroupMonitorState(
+      selectedGroupIds: {'grp_alpha', 'grp_beta'},
+      isMonitoring: true,
+      groupInstances: {'grp_alpha': <GroupInstanceWithGroup>[]},
+      groupErrors: {},
+      lastBaselineSkipReason: 'cooldown',
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          groupMonitorProvider(
+            'usr_test',
+          ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Scaffold(
+            body: SizedBox(
+              height: 300,
+              child: GroupInstanceTimeline(userId: 'usr_test'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+
+    expect(find.byType(LoadingState), findsOneWidget);
+    expect(find.text('Loading instances...'), findsOneWidget);
+    expect(find.text('No Instances Open'), findsNothing);
+  });
+
+  testWidgets(
+    'does not render loading state for cooldown-incomplete data when monitoring is off',
+    (tester) async {
+      const monitorState = GroupMonitorState(
+        selectedGroupIds: {'grp_alpha', 'grp_beta'},
+        groupInstances: {'grp_alpha': <GroupInstanceWithGroup>[]},
+        groupErrors: {},
+        lastBaselineSkipReason: 'cooldown',
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            groupMonitorProvider(
+              'usr_test',
+            ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: Scaffold(
+              body: SizedBox(
+                height: 300,
+                child: GroupInstanceTimeline(userId: 'usr_test'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      expect(find.byType(LoadingState), findsNothing);
+      expect(find.text('Loading instances...'), findsNothing);
+      expect(find.text('No Instances Open'), findsOneWidget);
+    },
+  );
 }

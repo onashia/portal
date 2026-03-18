@@ -40,8 +40,10 @@ The Flutter client and this Worker both enforce the same wire-level rules.
 Relevant worker-side error codes and responses:
 
 - Bootstrap may return `unauthorized`, `bootstrap_rate_limited`, `invalid_json`, `invalid_bootstrap_payload`, `invalid_group_id_format`, or `missing_secret`.
+- Bootstrap `429` responses include both `retryAfterSeconds` in the JSON body and an HTTP `Retry-After` header.
 - Bootstrap may also return `relayEnabled: false` with `retryAfterSeconds` when relay is runtime-disabled.
-- WebSocket error frames may contain `payload_too_large`, `invalid_json`, `unsupported_message_type`, `forbidden_publish`, `publish_rate_limited`, or `invalid_hint_payload`.
+- WebSocket error frames use `type: "error"` and include a machine-readable `code`. They may also include `message` for compatibility text and `retryAfterSeconds` when the server is asking the client to back off.
+- WebSocket error codes may contain `payload_too_large`, `invalid_json`, `unsupported_message_type`, `forbidden_publish`, `publish_rate_limited`, or `invalid_hint_payload`.
 
 ## Deploy
 

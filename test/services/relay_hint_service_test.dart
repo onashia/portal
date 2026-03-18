@@ -439,6 +439,65 @@ void main() {
       expect(last.error, 'relay_overloaded');
     });
 
+    test('error_code_takes_priority_over_message', () async {
+      final channel = _FakeWebSocketChannel();
+      final service = await connectService(channel);
+      final statuses = <RelayConnectionStatus>[];
+      final sub = service.statuses.listen(statuses.add);
+      addTearDown(sub.cancel);
+
+      channel.emit(
+        jsonEncode({
+          'type': 'error',
+          'code': 'invalid_hint_payload',
+          'message': 'relay_overloaded',
+        }),
+      );
+      await pumpEventQueue();
+
+      expect(statuses, isNotEmpty);
+      final last = statuses.last;
+      expect(last.connected, isFalse);
+      expect(last.error, 'invalid_hint_payload');
+    });
+
+    test(
+      'publish_rate_limited_sets_publish_backoff_without_disconnect',
+      () async {
+        final fixedNow = DateTime.utc(2026, 3, 3, 12, 0, 0);
+        final channel = _FakeWebSocketChannel();
+        final service = RelayHintService(
+          bootstrapClient: _FakeBootstrapClient(Uri.parse('ws://relay.test')),
+          heartbeatMonitor: _FakeHeartbeatMonitor(),
+          reconnectScheduler: _FakeReconnectScheduler(),
+          channelConnector: (_) => channel,
+          now: () => fixedNow,
+        );
+        addTearDown(service.dispose);
+        await service.connect(groupId: 'grp', clientId: 'client');
+        final statuses = <RelayConnectionStatus>[];
+        final sub = service.statuses.listen(statuses.add);
+        addTearDown(sub.cancel);
+
+        channel.emit(
+          jsonEncode({
+            'type': 'error',
+            'code': 'publish_rate_limited',
+            'retryAfterSeconds': 45,
+          }),
+        );
+        await pumpEventQueue();
+
+        expect(service.runtimeDisabledUntil, isNull);
+        expect(
+          service.publishBlockedUntil,
+          fixedNow.add(const Duration(seconds: 45)),
+        );
+        expect(service.isConnected, isTrue);
+        expect(statuses, isEmpty);
+      },
+    );
+
     test(
       'disabled_message_sets_runtimeDisabledUntil_and_disconnects',
       () async {
@@ -560,9 +619,10 @@ void main() {
           nUsers: 5,
           sourceClientId: 'client',
         );
-        await service.publishHint(hint);
+        final result = await service.publishHint(hint);
         await pumpEventQueue();
 
+        expect(result, RelayPublishOutcome.published);
         expect(channel.sentMessages, isNotEmpty);
         final sent =
             jsonDecode(channel.sentMessages.last as String)
@@ -591,7 +651,10 @@ void main() {
           sourceClientId: 'client',
         );
         // Must complete without throwing.
-        await expectLater(service.publishHint(hint), completes);
+        await expectLater(
+          service.publishHint(hint),
+          completion(RelayPublishOutcome.skippedDisconnected),
+        );
       });
 
       test('publishHint_drops_oversized_payload', () async {
@@ -614,15 +677,189 @@ void main() {
         );
 
         final sinkSizeBefore = channel.sentMessages.length;
-        await service.publishHint(oversizedHint);
+        final result = await service.publishHint(oversizedHint);
         await pumpEventQueue();
 
+        expect(result, RelayPublishOutcome.skippedOversize);
         expect(
           channel.sentMessages.length,
           sinkSizeBefore,
           reason: 'oversized publish_hint must not be written to the sink',
         );
       });
+
+      test('publishHint_is_suppressed_during_publish_backoff', () async {
+        final fixedNow = DateTime.utc(2026, 3, 3, 12, 0, 0);
+        final channel = _FakeWebSocketChannel();
+        final service = RelayHintService(
+          bootstrapClient: _FakeBootstrapClient(Uri.parse('ws://relay.test')),
+          heartbeatMonitor: _FakeHeartbeatMonitor(),
+          reconnectScheduler: _FakeReconnectScheduler(),
+          channelConnector: (_) => channel,
+          now: () => fixedNow,
+        );
+        addTearDown(service.dispose);
+        await service.connect(groupId: 'grp', clientId: 'client');
+
+        channel.emit(
+          jsonEncode({
+            'type': 'error',
+            'code': 'publish_rate_limited',
+            'retryAfterSeconds': 45,
+          }),
+        );
+        await pumpEventQueue();
+
+        final hint = RelayHintMessage.create(
+          groupId: 'grp_alpha',
+          worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+          instanceId: '12345~alpha',
+          nUsers: 5,
+          sourceClientId: 'client',
+          now: fixedNow,
+        );
+        final sinkSizeBefore = channel.sentMessages.length;
+        final result = await service.publishHint(hint);
+        await pumpEventQueue();
+
+        expect(result, RelayPublishOutcome.skippedBackoff);
+        expect(service.publishBlockedUntil, isNotNull);
+        expect(channel.sentMessages.length, sinkSizeBefore);
+      });
+
+      test(
+        'publishHint_backoff_is_cleared_after_disconnect_and_reconnect',
+        () async {
+          final fixedNow = DateTime.utc(2026, 3, 3, 12, 0, 0);
+          final firstChannel = _FakeWebSocketChannel();
+          final secondChannel = _FakeWebSocketChannel();
+          var connectCount = 0;
+          final service = RelayHintService(
+            bootstrapClient: _FakeBootstrapClient(Uri.parse('ws://relay.test')),
+            heartbeatMonitor: _FakeHeartbeatMonitor(),
+            reconnectScheduler: _FakeReconnectScheduler(),
+            channelConnector: (_) {
+              connectCount += 1;
+              return connectCount == 1 ? firstChannel : secondChannel;
+            },
+            now: () => fixedNow,
+          );
+          addTearDown(service.dispose);
+
+          await service.connect(groupId: 'grp', clientId: 'client');
+          firstChannel.emit(
+            jsonEncode({
+              'type': 'error',
+              'code': 'publish_rate_limited',
+              'retryAfterSeconds': 45,
+            }),
+          );
+          await pumpEventQueue();
+
+          final blockedHint = RelayHintMessage.create(
+            groupId: 'grp_alpha',
+            worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+            instanceId: '12345~alpha',
+            nUsers: 5,
+            sourceClientId: 'client',
+            now: fixedNow,
+          );
+          expect(
+            await service.publishHint(blockedHint),
+            RelayPublishOutcome.skippedBackoff,
+          );
+          expect(service.publishBlockedUntil, isNotNull);
+
+          await service.disconnect();
+          expect(service.publishBlockedUntil, isNull);
+
+          await service.connect(groupId: 'grp', clientId: 'client');
+          final recoveredHint = RelayHintMessage.create(
+            groupId: 'grp_alpha',
+            worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+            instanceId: '67890~alpha',
+            nUsers: 6,
+            sourceClientId: 'client',
+            now: fixedNow,
+          );
+          final result = await service.publishHint(recoveredHint);
+          await pumpEventQueue();
+
+          expect(result, RelayPublishOutcome.published);
+          expect(service.publishBlockedUntil, isNull);
+          expect(secondChannel.sentMessages, isNotEmpty);
+        },
+      );
+
+      test(
+        'publishHint_backoff_is_cleared_after_disconnect_path_reconnect',
+        () async {
+          final fixedNow = DateTime.utc(2026, 3, 3, 12, 0, 0);
+          final firstChannel = _FakeWebSocketChannel();
+          final secondChannel = _FakeWebSocketChannel();
+          final fakeHeartbeat = _FakeHeartbeatMonitor();
+          final fakeScheduler = _FakeReconnectScheduler();
+          var connectCount = 0;
+
+          final service = RelayHintService(
+            bootstrapClient: _FakeBootstrapClient(Uri.parse('ws://relay.test')),
+            heartbeatMonitor: fakeHeartbeat,
+            reconnectScheduler: fakeScheduler,
+            channelConnector: (_) {
+              connectCount += 1;
+              return connectCount == 1 ? firstChannel : secondChannel;
+            },
+            now: () => fixedNow,
+          );
+          addTearDown(service.dispose);
+
+          await service.connect(groupId: 'grp', clientId: 'client');
+          firstChannel.emit(
+            jsonEncode({
+              'type': 'error',
+              'code': 'publish_rate_limited',
+              'retryAfterSeconds': 45,
+            }),
+          );
+          await pumpEventQueue();
+
+          final blockedHint = RelayHintMessage.create(
+            groupId: 'grp_alpha',
+            worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+            instanceId: '12345~alpha',
+            nUsers: 5,
+            sourceClientId: 'client',
+            now: fixedNow,
+          );
+          expect(
+            await service.publishHint(blockedHint),
+            RelayPublishOutcome.skippedBackoff,
+          );
+          expect(service.publishBlockedUntil, isNotNull);
+
+          fakeHeartbeat.triggerStale();
+          await pumpEventQueue();
+          expect(service.publishBlockedUntil, isNull);
+
+          fakeScheduler.fireScheduled();
+          await pumpEventQueue();
+
+          final recoveredHint = RelayHintMessage.create(
+            groupId: 'grp_alpha',
+            worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+            instanceId: '67890~alpha',
+            nUsers: 6,
+            sourceClientId: 'client',
+            now: fixedNow,
+          );
+          final result = await service.publishHint(recoveredHint);
+          await pumpEventQueue();
+
+          expect(result, RelayPublishOutcome.published);
+          expect(service.publishBlockedUntil, isNull);
+          expect(secondChannel.sentMessages, isNotEmpty);
+        },
+      );
     });
   });
 

@@ -16,6 +16,13 @@ import 'relay_reconnect_scheduler.dart';
 /// to substitute a fake in-memory channel.
 typedef ChannelConnector = WebSocketChannel Function(Uri uri);
 
+enum RelayPublishOutcome {
+  published,
+  skippedBackoff,
+  skippedDisconnected,
+  skippedOversize,
+}
+
 class RelayHintService {
   RelayHintService({
     RelayBootstrapClient? bootstrapClient,
@@ -85,6 +92,7 @@ class RelayHintService {
   String? _targetGroupId;
   String? _targetClientId;
   DateTime? _runtimeDisabledUntil;
+  DateTime? _publishBlockedUntil;
 
   Stream<RelayHintMessage> get hints => _hintsController.stream;
   Stream<RelayConnectionStatus> get statuses => _statusController.stream;
@@ -95,6 +103,44 @@ class RelayHintService {
   bool get isConfigured => _bootstrapClient.isConfigured;
 
   DateTime? get runtimeDisabledUntil => _runtimeDisabledUntil;
+
+  DateTime? get publishBlockedUntil {
+    final blockedUntil = _publishBlockedUntil;
+    if (blockedUntil == null || !blockedUntil.isAfter(_now())) {
+      _publishBlockedUntil = null;
+      return null;
+    }
+    return blockedUntil;
+  }
+
+  Duration? _parseRetryAfterFromPayload(Map<String, dynamic> payload) {
+    final retryAfterSeconds = (payload['retryAfterSeconds'] as num?)?.toInt();
+    if (retryAfterSeconds == null) {
+      return null;
+    }
+
+    final clampedSeconds = retryAfterSeconds.clamp(
+      0,
+      AppConstants.relayMaxRetryAfterSeconds,
+    );
+    return Duration(seconds: clampedSeconds);
+  }
+
+  void _applyServerRetryAfter(Duration? retryAfter) {
+    if (retryAfter == null) {
+      return;
+    }
+
+    _runtimeDisabledUntil = _now().add(retryAfter);
+  }
+
+  void _applyPublishRetryAfter(Duration? retryAfter) {
+    if (retryAfter == null) {
+      return;
+    }
+
+    _publishBlockedUntil = _now().add(retryAfter);
+  }
 
   Future<void> connect({
     required String groupId,
@@ -224,9 +270,17 @@ class RelayHintService {
     _emitStatus(const RelayConnectionStatus(connected: false));
   }
 
-  Future<void> publishHint(RelayHintMessage hint) async {
+  Future<RelayPublishOutcome> publishHint(RelayHintMessage hint) async {
     if (_channel == null || !_shouldStayConnected) {
-      return;
+      return RelayPublishOutcome.skippedDisconnected;
+    }
+    final publishBlockedUntil = this.publishBlockedUntil;
+    if (publishBlockedUntil != null) {
+      AppLogger.warning(
+        'Relay publish skipped due to server backoff until ${publishBlockedUntil.toIso8601String()}',
+        subCategory: 'relay',
+      );
+      return RelayPublishOutcome.skippedBackoff;
     }
     // Encode once so we can enforce the Relay Protocol Contract documented in
     // workers/relay_assist/README.md before writing to the websocket.
@@ -240,9 +294,10 @@ class RelayHintService {
         '(${encoded.length} > ${AppConstants.relayMaxOutboundPayloadBytes} bytes)',
         subCategory: 'relay',
       );
-      return;
+      return RelayPublishOutcome.skippedOversize;
     }
     _channel?.sink.add(encoded);
+    return RelayPublishOutcome.published;
   }
 
   Future<void> dispose() async {
@@ -322,17 +377,35 @@ class RelayHintService {
     }
 
     if (type == 'error') {
-      final message = payload['message']?.toString() ?? 'Relay error';
+      final code = payload['code']?.toString();
+      if (code == 'publish_rate_limited') {
+        final retryAfter = _parseRetryAfterFromPayload(payload);
+        _applyPublishRetryAfter(retryAfter);
+        final blockedUntil = publishBlockedUntil;
+        if (blockedUntil != null) {
+          AppLogger.warning(
+            'Relay publish backoff requested by server until ${blockedUntil.toIso8601String()}',
+            subCategory: 'relay',
+          );
+        } else {
+          AppLogger.warning(
+            'Relay publish backoff requested by server',
+            subCategory: 'relay',
+          );
+        }
+        return;
+      }
+      _applyServerRetryAfter(_parseRetryAfterFromPayload(payload));
+      final message = code ?? payload['message']?.toString() ?? 'Relay error';
       _emitStatus(RelayConnectionStatus(connected: false, error: message));
       return;
     }
 
     if (type == 'disabled') {
-      final retryAfterSeconds =
-          ((payload['retryAfterSeconds'] as num?)?.toInt() ??
-                  AppConstants.relayCircuitBreakerCooldownSeconds)
-              .clamp(0, AppConstants.relayMaxRetryAfterSeconds);
-      _runtimeDisabledUntil = _now().add(Duration(seconds: retryAfterSeconds));
+      _applyServerRetryAfter(
+        _parseRetryAfterFromPayload(payload) ??
+            Duration(seconds: AppConstants.relayCircuitBreakerCooldownSeconds),
+      );
       _emitStatus(
         const RelayConnectionStatus(
           connected: false,
@@ -358,6 +431,7 @@ class RelayHintService {
     _channelSubscription = null;
     await _channel?.sink.close();
     _channel = null;
+    _publishBlockedUntil = null;
   }
 
   void _scheduleReconnect() {

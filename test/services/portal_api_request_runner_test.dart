@@ -11,9 +11,11 @@ void main() {
     late ApiRateLimitCoordinator coordinator;
     late List<ApiRequestLane?> recordedCalls;
     late PortalApiRequestRunner runner;
+    late DateTime currentTime;
 
     setUp(() {
-      coordinator = ApiRateLimitCoordinator();
+      currentTime = DateTime.utc(2026, 2, 14, 12, 0, 0);
+      coordinator = ApiRateLimitCoordinator(nowProvider: () => currentTime);
       recordedCalls = <ApiRequestLane?>[];
       runner = PortalApiRequestRunner(
         coordinator: coordinator,
@@ -57,6 +59,102 @@ void main() {
 
       expect(coordinator.remainingCooldown(ApiRequestLane.image), isNotNull);
     });
+
+    test(
+      'run preserves cooldown when overlapping same-lane success completes after 429',
+      () async {
+        final rateLimitedGate = Completer<void>();
+        final successGate = Completer<void>();
+
+        final rateLimitedFuture = runner.run<String>(
+          lane: ApiRequestLane.groupBaseline,
+          request: (_) async {
+            await rateLimitedGate.future;
+            throw DioException(
+              requestOptions: RequestOptions(
+                path: '/groups/grp_alpha/instances',
+              ),
+              response: Response<void>(
+                requestOptions: RequestOptions(
+                  path: '/groups/grp_alpha/instances',
+                ),
+                statusCode: 429,
+                headers: Headers.fromMap(<String, List<String>>{
+                  'retry-after': ['30'],
+                }),
+              ),
+              type: DioExceptionType.badResponse,
+            );
+          },
+        );
+        final successFuture = runner.run<String>(
+          lane: ApiRequestLane.groupBaseline,
+          request: (_) async {
+            await successGate.future;
+            return 'ok';
+          },
+        );
+
+        rateLimitedGate.complete();
+        await expectLater(rateLimitedFuture, throwsA(isA<DioException>()));
+        successGate.complete();
+        expect(await successFuture, 'ok');
+
+        final cooldown = coordinator.remainingCooldown(
+          ApiRequestLane.groupBaseline,
+        );
+        expect(cooldown, isNotNull);
+        expect(cooldown!.inSeconds, greaterThanOrEqualTo(29));
+      },
+    );
+
+    test(
+      'run preserves cooldown when overlapping same-lane 429 completes after success',
+      () async {
+        final successGate = Completer<void>();
+        final rateLimitedGate = Completer<void>();
+
+        final successFuture = runner.run<String>(
+          lane: ApiRequestLane.groupBaseline,
+          request: (_) async {
+            await successGate.future;
+            return 'ok';
+          },
+        );
+        final rateLimitedFuture = runner.run<String>(
+          lane: ApiRequestLane.groupBaseline,
+          request: (_) async {
+            await rateLimitedGate.future;
+            throw DioException(
+              requestOptions: RequestOptions(
+                path: '/groups/grp_beta/instances',
+              ),
+              response: Response<void>(
+                requestOptions: RequestOptions(
+                  path: '/groups/grp_beta/instances',
+                ),
+                statusCode: 429,
+                headers: Headers.fromMap(<String, List<String>>{
+                  'retry-after': ['30'],
+                }),
+              ),
+              type: DioExceptionType.badResponse,
+            );
+          },
+        );
+
+        successGate.complete();
+        expect(await successFuture, 'ok');
+        rateLimitedGate.complete();
+        await expectLater(rateLimitedFuture, throwsA(isA<DioException>()));
+
+        final cooldown = coordinator.remainingCooldown(
+          ApiRequestLane.groupBaseline,
+        );
+        expect(cooldown, isNotNull);
+        expect(cooldown!.inSeconds, greaterThanOrEqualTo(29));
+      },
+    );
 
     test(
       'dedupes concurrent read requests by key and cleans up in-flight state',
@@ -238,12 +336,45 @@ void main() {
     );
 
     test(
-      'runValidatedTransform clears a prior cooldown on non-429 validated responses',
+      'runValidatedTransform does not clear an active cooldown on non-429 validated responses',
       () async {
         coordinator.recordRateLimited(
           ApiRequestLane.authSession,
           retryAfter: const Duration(seconds: 30),
         );
+
+        final result = await runner.runValidatedTransform<String, String>(
+          lane: ApiRequestLane.authSession,
+          request: (_) async => (
+            null,
+            InvalidResponse(
+              StateError('unauthorized'),
+              StackTrace.empty,
+              response: Response<void>(
+                requestOptions: RequestOptions(path: '/auth/user'),
+                statusCode: 401,
+              ),
+            ),
+          ),
+        );
+
+        expect(result.$1, isNull);
+        expect(result.$2, isNotNull);
+        expect(
+          coordinator.remainingCooldown(ApiRequestLane.authSession),
+          isNotNull,
+        );
+      },
+    );
+
+    test(
+      'runValidatedTransform clears cooldown after it has already expired',
+      () async {
+        coordinator.recordRateLimited(
+          ApiRequestLane.authSession,
+          retryAfter: const Duration(seconds: 30),
+        );
+        currentTime = currentTime.add(const Duration(seconds: 31));
 
         final result = await runner.runValidatedTransform<String, String>(
           lane: ApiRequestLane.authSession,

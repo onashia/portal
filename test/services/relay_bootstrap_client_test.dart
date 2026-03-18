@@ -55,6 +55,16 @@ void main() {
     );
   }
 
+  void stubPostThrows(DioException error) {
+    when(
+      () => mockDio.post<dynamic>(
+        any(),
+        data: any(named: 'data'),
+        options: any(named: 'options'),
+      ),
+    ).thenThrow(error);
+  }
+
   group('isConfigured', () {
     test('returns true with valid url and secret', () {
       expect(makeClient().isConfigured, isTrue);
@@ -163,6 +173,58 @@ void main() {
     });
 
     test(
+      'uses retryAfterSeconds from bootstrap 429 responses to set cooldown',
+      () async {
+        stubPostThrows(
+          DioException(
+            requestOptions: RequestOptions(path: '/relay/bootstrap'),
+            response: Response<Map<String, dynamic>>(
+              requestOptions: RequestOptions(path: '/relay/bootstrap'),
+              statusCode: 429,
+              data: {
+                'error': 'bootstrap_rate_limited',
+                'retryAfterSeconds': 45,
+              },
+            ),
+            type: DioExceptionType.badResponse,
+          ),
+        );
+
+        await expectLater(call(makeClient()), throwsA(isA<DioException>()));
+        expect(
+          capturedDisabledUntil,
+          fixedNow.add(const Duration(seconds: 45)),
+        );
+      },
+    );
+
+    test(
+      'falls back to Retry-After header when bootstrap 429 omits JSON retryAfterSeconds',
+      () async {
+        stubPostThrows(
+          DioException(
+            requestOptions: RequestOptions(path: '/relay/bootstrap'),
+            response: Response<Map<String, dynamic>>(
+              requestOptions: RequestOptions(path: '/relay/bootstrap'),
+              statusCode: 429,
+              data: {'error': 'bootstrap_rate_limited'},
+              headers: Headers.fromMap(<String, List<String>>{
+                'retry-after': ['30'],
+              }),
+            ),
+            type: DioExceptionType.badResponse,
+          ),
+        );
+
+        await expectLater(call(makeClient()), throwsA(isA<DioException>()));
+        expect(
+          capturedDisabledUntil,
+          fixedNow.add(const Duration(seconds: 30)),
+        );
+      },
+    );
+
+    test(
       'falls back to default cooldown when retryAfterSeconds is absent',
       () async {
         stubPost({'relayEnabled': false});
@@ -246,13 +308,7 @@ void main() {
     );
 
     test('propagates DioException from the HTTP layer', () async {
-      when(
-        () => mockDio.post<dynamic>(
-          any(),
-          data: any(named: 'data'),
-          options: any(named: 'options'),
-        ),
-      ).thenThrow(DioException(requestOptions: RequestOptions(path: '')));
+      stubPostThrows(DioException(requestOptions: RequestOptions(path: '')));
 
       await expectLater(call(makeClient()), throwsA(isA<DioException>()));
     });

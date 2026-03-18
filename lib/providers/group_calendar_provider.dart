@@ -258,7 +258,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   /// If a refresh was queued while the previous fetch was in-flight, run it
   /// now. Otherwise schedule the next periodic tick (or reconcile if the loop
   /// is no longer active).
-  void _drainPendingRefreshesOrScheduleTick() {
+  void _drainPendingRefreshesOrScheduleTick({Duration? overrideDelay}) {
     if (!ref.mounted || _isFetching) {
       return;
     }
@@ -272,7 +272,8 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       runNow: ({required bypassRateLimit}) {
         unawaited(refresh(bypassRateLimit: bypassRateLimit));
       },
-      scheduleNextTick: () => _scheduleNextCalendarTick(),
+      scheduleNextTick: () =>
+          _scheduleNextCalendarTick(overrideDelay: overrideDelay),
       reconcile: _reconcileCalendarLoop,
     );
   }
@@ -318,6 +319,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     }
 
     _isFetching = true;
+    Duration? cooldownRetryDelay;
     final previousState = state;
     final shouldEnterForegroundLoading =
         shouldEnterForegroundCalendarLoading(previousState) &&
@@ -341,6 +343,10 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       final fetched = await fetchGroupCalendarEventsChunked(
         orderedGroupIds: orderedGroupIds,
         previousEventsByGroup: state.eventsByGroup,
+        previousGroupErrors: state.groupErrors,
+        cooldownTracker: runner,
+        lane: ApiRequestLane.calendar,
+        respectCooldownBetweenChunks: !bypassRateLimit,
         maxConcurrentRequests: _maxConcurrentRequests,
         fetchEvents: (groupId) async {
           return api.getGroupCalendarEvents(
@@ -359,6 +365,19 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       );
       final updatedEventsByGroup = fetched.eventsByGroup;
       final updatedErrors = fetched.groupErrors;
+      final shouldKeepLoading =
+          fetched.interruptedByCooldown &&
+          orderedGroupIds.any(
+            (groupId) =>
+                !updatedEventsByGroup.containsKey(groupId) &&
+                !updatedErrors.containsKey(groupId),
+          );
+      if (fetched.interruptedByCooldown) {
+        cooldownRetryDelay = resolveCooldownAwareDelay(
+          remainingCooldown: fetched.cooldownRemaining,
+          fallbackDelay: const Duration(minutes: _refreshMinutes),
+        );
+      }
 
       final today = DateTime.now();
       final todayEvents = _buildTodayEvents(
@@ -376,13 +395,14 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       final shouldEmitState = shouldEmitCalendarRefreshStateUpdate(
         currentState: state,
         didDataChange: selectedData.didDataChange,
+        nextIsLoading: shouldKeepLoading,
       );
       if (shouldEmitState) {
         state = state.copyWith(
           eventsByGroup: selectedData.effectiveEventsByGroup,
           todayEvents: selectedData.effectiveTodayEvents,
           groupErrors: selectedData.effectiveGroupErrors,
-          isLoading: false,
+          isLoading: shouldKeepLoading,
           lastDataChangedAt: selectedData.didDataChange
               ? DateTime.now()
               : state.lastDataChangedAt,
@@ -400,7 +420,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       }
     } finally {
       _isFetching = false;
-      _drainPendingRefreshesOrScheduleTick();
+      _drainPendingRefreshesOrScheduleTick(overrideDelay: cooldownRetryDelay);
     }
   }
 

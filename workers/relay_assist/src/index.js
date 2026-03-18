@@ -6,6 +6,7 @@ const PUBLISH_WINDOW_MS = 10_000;
 const BOOTSTRAP_WINDOW_MS = 10_000;
 const MAX_BOOTSTRAP_PER_WINDOW = 8;
 const MAX_CONNECTIONS_PER_ROOM = 100;
+const BOOTSTRAP_RETRY_AFTER_SECONDS = Math.ceil(BOOTSTRAP_WINDOW_MS / 1000);
 
 export default {
   async fetch(request, env) {
@@ -46,7 +47,14 @@ async function handleBootstrap(request, env) {
   }));
   const { allowed } = await rlRes.json();
   if (!allowed) {
-    return json({ error: 'bootstrap_rate_limited' }, 429);
+    return json(
+      {
+        error: 'bootstrap_rate_limited',
+        retryAfterSeconds: BOOTSTRAP_RETRY_AFTER_SECONDS,
+      },
+      429,
+      { 'retry-after': `${BOOTSTRAP_RETRY_AFTER_SECONDS}` },
+    );
   }
 
   let payload;
@@ -142,10 +150,10 @@ function isRelayEnabled(env) {
   return `${env.RELAY_RUNTIME_ENABLED ?? 'true'}`.toLowerCase() !== 'false';
 }
 
-function json(data, status = 200) {
+function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...extraHeaders },
   });
 }
 
@@ -325,7 +333,13 @@ export class RelayRoom {
     }
 
     if (message.length > MAX_PAYLOAD_BYTES) {
-      ws.send(JSON.stringify({ type: 'error', code: 'payload_too_large' }));
+      ws.send(
+        JSON.stringify({
+          type: 'error',
+          code: 'payload_too_large',
+          message: 'payload_too_large',
+        }),
+      );
       return;
     }
 
@@ -333,7 +347,13 @@ export class RelayRoom {
     try {
       data = JSON.parse(message);
     } catch {
-      ws.send(JSON.stringify({ type: 'error', code: 'invalid_json' }));
+      ws.send(
+        JSON.stringify({
+          type: 'error',
+          code: 'invalid_json',
+          message: 'invalid_json',
+        }),
+      );
       return;
     }
 
@@ -344,13 +364,25 @@ export class RelayRoom {
     }
 
     if (type !== 'publish_hint') {
-      ws.send(JSON.stringify({ type: 'error', code: 'unsupported_message_type' }));
+      ws.send(
+        JSON.stringify({
+          type: 'error',
+          code: 'unsupported_message_type',
+          message: 'unsupported_message_type',
+        }),
+      );
       return;
     }
 
     const metadata = ws.deserializeAttachment() || {};
     if (metadata.canPublish !== true) {
-      ws.send(JSON.stringify({ type: 'error', code: 'forbidden_publish' }));
+      ws.send(
+        JSON.stringify({
+          type: 'error',
+          code: 'forbidden_publish',
+          message: 'forbidden_publish',
+        }),
+      );
       return;
     }
 
@@ -360,6 +392,7 @@ export class RelayRoom {
         JSON.stringify({
           type: 'error',
           code: 'publish_rate_limited',
+          message: 'publish_rate_limited',
           retryAfterSeconds: 10,
         }),
       );
@@ -368,7 +401,13 @@ export class RelayRoom {
 
     const hint = data.payload;
     if (!this.#isValidHint(hint, metadata.groupId, now)) {
-      ws.send(JSON.stringify({ type: 'error', code: 'invalid_hint_payload' }));
+      ws.send(
+        JSON.stringify({
+          type: 'error',
+          code: 'invalid_hint_payload',
+          message: 'invalid_hint_payload',
+        }),
+      );
       return;
     }
 

@@ -76,8 +76,8 @@ void main() {
       );
     });
 
-    test('recordSuccess clears an active cooldown for the lane', () {
-      final now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+    test('recordSuccess does not clear an active cooldown for the lane', () {
+      var now = DateTime.utc(2026, 2, 14, 12, 0, 0);
       final coordinator = ApiRateLimitCoordinator(nowProvider: () => now);
 
       coordinator.recordRateLimited(
@@ -93,9 +93,52 @@ void main() {
 
       expect(
         coordinator.remainingCooldown(ApiRequestLane.authSession, now: now),
+        const Duration(seconds: 60),
+      );
+    });
+
+    test('recordSuccess clears cooldown once it has already expired', () {
+      var now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+      final coordinator = ApiRateLimitCoordinator(nowProvider: () => now);
+
+      coordinator.recordRateLimited(
+        ApiRequestLane.authSession,
+        retryAfter: const Duration(seconds: 60),
+      );
+
+      now = now.add(const Duration(seconds: 61));
+      coordinator.recordSuccess(ApiRequestLane.authSession, now: now);
+
+      expect(
+        coordinator.remainingCooldown(ApiRequestLane.authSession, now: now),
         isNull,
       );
     });
+
+    test(
+      'recordSuccess resets fallback streak even while cooldown remains active',
+      () {
+        var now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+        final coordinator = ApiRateLimitCoordinator(nowProvider: () => now);
+
+        coordinator.recordRateLimited(
+          ApiRequestLane.authSession,
+          retryAfter: const Duration(seconds: 60),
+          now: now,
+        );
+
+        now = now.add(const Duration(seconds: 1));
+        coordinator.recordSuccess(ApiRequestLane.authSession, now: now);
+
+        now = now.add(const Duration(seconds: 60));
+        coordinator.recordRateLimited(ApiRequestLane.authSession, now: now);
+
+        expect(
+          coordinator.remainingCooldown(ApiRequestLane.authSession, now: now),
+          coordinator.initialFallbackBackoff,
+        );
+      },
+    );
 
     test('preserves server-provided Retry-After without clamping', () {
       final now = DateTime.utc(2026, 2, 14, 12, 0, 0);

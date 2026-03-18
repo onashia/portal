@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../providers/group_monitor_provider.dart';
 import 'animated_fade_slide.dart';
+import 'common/loading_state.dart';
 import 'group_instances/group_instances_empty_state.dart';
 import 'group_instances/instance_timeline_item.dart';
 
@@ -28,8 +29,18 @@ class GroupInstanceTimeline extends ConsumerWidget {
         userId,
       ).select((state) => state.groupErrors.isNotEmpty),
     );
+    final hasIncompleteCooldownData = ref.watch(
+      groupMonitorHasIncompleteCooldownDataProvider(userId),
+    );
 
     if (allInstances.isEmpty) {
+      if (hasSelectedGroups && !hasErrors && hasIncompleteCooldownData) {
+        return const LoadingState(
+          semanticLabel: 'Loading instances',
+          message: 'Loading instances...',
+        );
+      }
+
       return GroupInstancesEmptyState(
         hasSelectedGroups: hasSelectedGroups,
         hasErrors: hasErrors,
