@@ -11,6 +11,7 @@ import '../utils/app_logger.dart';
 import 'relay_bootstrap_client.dart';
 import 'relay_heartbeat_monitor.dart';
 import 'relay_reconnect_scheduler.dart';
+import 'relay_retry_after.dart';
 
 /// Injectable factory type for opening a [WebSocketChannel], used in tests
 /// to substitute a fake in-memory channel.
@@ -111,19 +112,6 @@ class RelayHintService {
       return null;
     }
     return blockedUntil;
-  }
-
-  Duration? _parseRetryAfterFromPayload(Map<String, dynamic> payload) {
-    final retryAfterSeconds = (payload['retryAfterSeconds'] as num?)?.toInt();
-    if (retryAfterSeconds == null) {
-      return null;
-    }
-
-    final clampedSeconds = retryAfterSeconds.clamp(
-      0,
-      AppConstants.relayMaxRetryAfterSeconds,
-    );
-    return Duration(seconds: clampedSeconds);
   }
 
   void _applyServerRetryAfter(Duration? retryAfter) {
@@ -379,7 +367,7 @@ class RelayHintService {
     if (type == 'error') {
       final code = payload['code']?.toString();
       if (code == 'publish_rate_limited') {
-        final retryAfter = _parseRetryAfterFromPayload(payload);
+        final retryAfter = parseRelayRetryAfterFromPayload(payload);
         _applyPublishRetryAfter(retryAfter);
         final blockedUntil = publishBlockedUntil;
         if (blockedUntil != null) {
@@ -395,7 +383,7 @@ class RelayHintService {
         }
         return;
       }
-      _applyServerRetryAfter(_parseRetryAfterFromPayload(payload));
+      _applyServerRetryAfter(parseRelayRetryAfterFromPayload(payload));
       final message = code ?? payload['message']?.toString() ?? 'Relay error';
       _emitStatus(RelayConnectionStatus(connected: false, error: message));
       return;
@@ -403,7 +391,7 @@ class RelayHintService {
 
     if (type == 'disabled') {
       _applyServerRetryAfter(
-        _parseRetryAfterFromPayload(payload) ??
+        parseRelayRetryAfterFromPayload(payload) ??
             Duration(seconds: AppConstants.relayCircuitBreakerCooldownSeconds),
       );
       _emitStatus(

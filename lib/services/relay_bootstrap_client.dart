@@ -1,8 +1,8 @@
 import 'package:dio/dio.dart';
 
 import '../constants/app_constants.dart';
-import 'api_rate_limit_coordinator.dart';
 import '../utils/app_logger.dart';
+import 'relay_retry_after.dart';
 
 /// Handles the HTTP bootstrap exchange that issues a short-lived WebSocket URI.
 ///
@@ -52,43 +52,6 @@ class RelayBootstrapClient {
     return scheme == 'wss' || (_allowInsecureTransport && scheme == 'ws');
   }
 
-  Duration _clampRetryAfter(Duration retryAfter) {
-    if (retryAfter <= Duration.zero) {
-      return Duration.zero;
-    }
-
-    final maxRetryAfter = Duration(
-      seconds: AppConstants.relayMaxRetryAfterSeconds,
-    );
-    if (retryAfter > maxRetryAfter) {
-      return maxRetryAfter;
-    }
-    return retryAfter;
-  }
-
-  Duration? _parseRetryAfter({
-    required Object? data,
-    required Headers? headers,
-    required DateTime Function() now,
-  }) {
-    final coordinator = ApiRateLimitCoordinator(nowProvider: now);
-    if (data is Map<String, dynamic>) {
-      final retryAfterSeconds = (data['retryAfterSeconds'] as num?)?.toInt();
-      if (retryAfterSeconds != null) {
-        return _clampRetryAfter(Duration(seconds: retryAfterSeconds));
-      }
-    }
-
-    final retryAfter = coordinator.parseRetryAfterFromHeaders(
-      headers,
-      now: now(),
-    );
-    if (retryAfter == null) {
-      return null;
-    }
-    return _clampRetryAfter(retryAfter);
-  }
-
   /// Requests a WebSocket URI from the relay bootstrap endpoint.
   ///
   /// Throws [StateError] when the server disables relay or returns an
@@ -131,7 +94,7 @@ class RelayBootstrapClient {
       );
     } on DioException catch (error) {
       if (error.response?.statusCode == 429) {
-        final retryAfter = _parseRetryAfter(
+        final retryAfter = parseRelayRetryAfter(
           data: error.response?.data,
           headers: error.response?.headers,
           now: now,
@@ -151,7 +114,11 @@ class RelayBootstrapClient {
     final relayEnabled = data['relayEnabled'] != false;
     if (!relayEnabled) {
       final retryAfter =
-          _parseRetryAfter(data: data, headers: response.headers, now: now) ??
+          parseRelayRetryAfter(
+            data: data,
+            headers: response.headers,
+            now: now,
+          ) ??
           Duration(seconds: AppConstants.relayCircuitBreakerCooldownSeconds);
       onRuntimeDisabled(now().add(retryAfter));
       throw StateError('Relay runtime disabled by server');
