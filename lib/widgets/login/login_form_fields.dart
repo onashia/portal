@@ -12,6 +12,8 @@ class LoginFormFields extends StatelessWidget {
   final ValueNotifier<bool> obscurePassword;
   final String? errorMessage;
   final Widget errorMessageWidget;
+  final bool isSubmitting;
+  final VoidCallback onSubmit;
 
   const LoginFormFields({
     super.key,
@@ -22,6 +24,8 @@ class LoginFormFields extends StatelessWidget {
     required this.obscurePassword,
     required this.errorMessage,
     required this.errorMessageWidget,
+    required this.isSubmitting,
+    required this.onSubmit,
   });
 
   @override
@@ -33,7 +37,12 @@ class LoginFormFields extends StatelessWidget {
         AppTextField(
           controller: usernameController,
           focusNode: usernameFocusNode,
-          onFieldSubmitted: (_) => passwordFocusNode.requestFocus(),
+          onFieldSubmitted: (_) {
+            if (!isSubmitting) {
+              passwordFocusNode.requestFocus();
+            }
+          },
+          enabled: !isSubmitting,
           decoration: const InputDecoration(
             labelText: 'Username',
             hintText: 'Enter your username',
@@ -53,6 +62,13 @@ class LoginFormFields extends StatelessWidget {
           obscurePassword: obscurePassword,
           errorMessage: errorMessage,
           errorMessageWidget: errorMessageWidget,
+          enabled: !isSubmitting,
+          textInputAction: TextInputAction.done,
+          onFieldSubmitted: (_) {
+            if (!isSubmitting) {
+              onSubmit();
+            }
+          },
         ),
         SizedBox(height: context.m3e.spacing.lg),
       ],

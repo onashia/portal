@@ -38,11 +38,38 @@ class _LoginPageState extends ConsumerState<LoginPage>
   void initState() {
     super.initState();
     ref.listenManual<AsyncValue<AuthState>>(authProvider, (previous, next) {
-      final wasTwoFactor =
-          previous?.asData?.value.requiresTwoFactorAuth ?? false;
-      final isTwoFactor = next.asData?.value.requiresTwoFactorAuth ?? false;
+      final previousState = previous?.asData?.value;
+      final nextState = next.asData?.value;
+      if (nextState == null) {
+        return;
+      }
+
+      final wasTwoFactor = previousState?.requiresTwoFactorAuth ?? false;
+      final isTwoFactor = nextState.requiresTwoFactorAuth;
       if (!wasTwoFactor && isTwoFactor) {
         _scheduleTwoFactorFocus();
+        return;
+      }
+
+      final wasLoading = previousState?.status == AuthStatus.loading;
+      if (!wasLoading) {
+        return;
+      }
+
+      if (!isTwoFactor &&
+          (nextState.status == AuthStatus.error ||
+              nextState.status == AuthStatus.requiresEmailVerification)) {
+        _scheduleFocus(
+          _passwordFocusNode,
+          isVisible: (authState) => !authState.requiresTwoFactorAuth,
+        );
+      }
+
+      if (isTwoFactor && nextState.status == AuthStatus.requires2FA) {
+        _scheduleFocus(
+          _twoFactorFocusNode,
+          isVisible: (authState) => authState.requiresTwoFactorAuth,
+        );
       }
     }, fireImmediately: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -54,15 +81,25 @@ class _LoginPageState extends ConsumerState<LoginPage>
   }
 
   void _scheduleTwoFactorFocus() {
+    _scheduleFocus(
+      _twoFactorFocusNode,
+      isVisible: (authState) => authState.requiresTwoFactorAuth,
+    );
+  }
+
+  void _scheduleFocus(
+    FocusNode focusNode, {
+    required bool Function(AuthState authState) isVisible,
+  }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authState = ref.read(authProvider).value;
-      if (!mounted || !(authState?.requiresTwoFactorAuth ?? false)) {
+      if (!mounted || authState == null || !isVisible(authState)) {
         return;
       }
-      if (!_twoFactorFocusNode.canRequestFocus) {
+      if (!focusNode.canRequestFocus) {
         return;
       }
-      _twoFactorFocusNode.requestFocus();
+      focusNode.requestFocus();
     });
   }
 
@@ -79,10 +116,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
   }
 
   Future<void> _handleSubmit() async {
-    if (!_formKey.currentState!.validate()) return;
-
     final authState = ref.read(authProvider).value;
     if (authState == null) return;
+    if (authState.status == AuthStatus.loading) return;
+    if (!_formKey.currentState!.validate()) return;
 
     final username = _usernameController.text;
     final password = _passwordController.text;
@@ -151,6 +188,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
         ? authState.errorMessage
         : null;
     final selectedTwoFactorMethod = authState.selectedTwoFactorMethod;
+    final isSubmitting = authState.status == AuthStatus.loading;
 
     return AuthPageScaffold(
       showBranding: false,
@@ -177,6 +215,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
                       errorMessageWidget: LoginErrorMessage(
                         passwordErrorMessage,
                       ),
+                      isSubmitting: isSubmitting,
+                      onSubmit: _handleSubmit,
                     )
                   else
                     TwoFactorFormFields(
@@ -185,6 +225,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                       errorMessage: twoFactorErrorMessage,
                       onSubmit: _handleSubmit,
                       method: selectedTwoFactorMethod,
+                      isSubmitting: isSubmitting,
                       errorMessageWidget: LoginErrorMessage(
                         twoFactorErrorMessage,
                       ),

@@ -11,6 +11,7 @@ class TwoFactorFormFields extends StatelessWidget {
   final VoidCallback onSubmit;
   final Widget errorMessageWidget;
   final TwoFactorAuthType? method;
+  final bool isSubmitting;
 
   const TwoFactorFormFields({
     super.key,
@@ -20,6 +21,7 @@ class TwoFactorFormFields extends StatelessWidget {
     required this.onSubmit,
     required this.errorMessageWidget,
     required this.method,
+    required this.isSubmitting,
   });
 
   @override
@@ -70,11 +72,16 @@ class TwoFactorFormFields extends StatelessWidget {
         Pinput(
           controller: controller,
           focusNode: focusNode,
+          enabled: !isSubmitting,
           keyboardType: TextInputType.number,
           textInputAction: TextInputAction.done,
           length: 6,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          onSubmitted: (_) => onSubmit(),
+          onSubmitted: (_) {
+            if (!isSubmitting) {
+              onSubmit();
+            }
+          },
           validator: (value) {
             if (value == null || value.isEmpty) {
               return 'Please enter your verification code';
