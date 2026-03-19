@@ -108,7 +108,6 @@ class ApiRateLimitCoordinator {
     final currentTime = now ?? _nowProvider();
     final blockedUntil = _blockedUntilByLane[lane];
     if (blockedUntil == null || !blockedUntil.isAfter(currentTime)) {
-      _blockedUntilByLane.remove(lane);
       return null;
     }
 
@@ -117,12 +116,7 @@ class ApiRateLimitCoordinator {
 
   void recordSuccess(ApiRequestLane lane, {DateTime? now}) {
     _consecutiveRateLimitHitsByLane.remove(lane);
-
-    if (remainingCooldown(lane, now: now) != null) {
-      return;
-    }
-
-    _blockedUntilByLane.remove(lane);
+    _pruneExpiredCooldown(lane, now ?? _nowProvider());
   }
 
   void recordRateLimited(
@@ -170,5 +164,12 @@ class ApiRateLimitCoordinator {
       return maxFallbackBackoff;
     }
     return value;
+  }
+
+  void _pruneExpiredCooldown(ApiRequestLane lane, DateTime currentTime) {
+    final blockedUntil = _blockedUntilByLane[lane];
+    if (blockedUntil == null || !blockedUntil.isAfter(currentTime)) {
+      _blockedUntilByLane.remove(lane);
+    }
   }
 }
