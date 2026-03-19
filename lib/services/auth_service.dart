@@ -234,8 +234,7 @@ class AuthService {
           subCategory: 'auth',
         );
         final failureMessage = failure.toString().split('\n').first.trim();
-        final errorMessage =
-            failureMessage == _unsupportedRecoveryCodeMessage
+        final errorMessage = failureMessage == _unsupportedRecoveryCodeMessage
             ? 'Login failed: $failureMessage'
             : formatApiError('Login failed', failure);
 
