@@ -19,8 +19,14 @@ class AuthResult {
   final AuthResultStatus status;
   final String? errorMessage;
   final CurrentUser? currentUser;
+  final TwoFactorAuthType? selectedTwoFactorMethod;
 
-  AuthResult({required this.status, this.errorMessage, this.currentUser});
+  AuthResult({
+    required this.status,
+    this.errorMessage,
+    this.currentUser,
+    this.selectedTwoFactorMethod,
+  });
 }
 
 class AuthService {
@@ -32,6 +38,10 @@ class AuthService {
 
   static const String _unsupportedTwoFactorMessage =
       'Unsupported VRChat 2FA challenge';
+  static const String _unsupportedRecoveryCodeMessage =
+      'Portal does not accept VRChat recovery codes. Recovery codes are '
+      'single-use emergency credentials. Please sign in with them through '
+      'the official VRChat website or VRChat client.';
 
   String _basicAuthorizationHeader(String username, String password) {
     final encodedUsername = Uri.encodeComponent(username);
@@ -97,18 +107,35 @@ class AuthService {
       );
     }
 
+    if (parsed.malformedTypes.isNotEmpty) {
+      AppLogger.warning(
+        'Login response included non-string 2FA types: '
+        '${parsed.malformedTypes.join(', ')}',
+        subCategory: 'auth',
+      );
+    }
+
+    if (parsed.recoveryCodeTypes.isNotEmpty) {
+      AppLogger.warning(
+        'Login response included recovery-code 2FA, which Portal '
+        'intentionally rejects because recovery codes are single-use '
+        'emergency credentials: '
+        '${parsed.recoveryCodeTypes.map((type) => type.name).join(', ')}',
+        subCategory: 'auth',
+      );
+    }
+
     if (parsed.supportedTypes.isEmpty) {
       AppLogger.warning(
         'Login response included no supported 2FA types',
         subCategory: 'auth',
       );
+      final errorMessage = parsed.recoveryCodeTypes.isNotEmpty
+          ? _unsupportedRecoveryCodeMessage
+          : _unsupportedTwoFactorMessage;
       return (
         null,
-        InvalidResponse(
-          _unsupportedTwoFactorMessage,
-          StackTrace.current,
-          response: response,
-        ),
+        InvalidResponse(errorMessage, StackTrace.current, response: response),
       );
     }
 
@@ -137,15 +164,23 @@ class AuthService {
 
     final supportedTypes = <TwoFactorAuthType>[];
     final unsupportedTypes = <String>[];
+    final malformedTypes = <Object?>[];
+    final recoveryCodeTypes = <TwoFactorAuthType>[];
 
     for (final rawType in rawTypes) {
       if (rawType is! String) {
-        return null;
+        malformedTypes.add(rawType);
+        continue;
       }
 
       final supportedType = _twoFactorAuthTypeFromName(rawType);
       if (supportedType == null) {
         unsupportedTypes.add(rawType);
+        continue;
+      }
+
+      if (supportedType == TwoFactorAuthType.otp) {
+        recoveryCodeTypes.add(supportedType);
         continue;
       }
 
@@ -155,6 +190,8 @@ class AuthService {
     return _ParsedTwoFactorAuthTypes(
       supportedTypes: supportedTypes,
       unsupportedTypes: unsupportedTypes,
+      malformedTypes: malformedTypes,
+      recoveryCodeTypes: recoveryCodeTypes,
     );
   }
 
@@ -197,7 +234,10 @@ class AuthService {
           subCategory: 'auth',
         );
         final failureMessage = failure.toString().split('\n').first.trim();
-        final errorMessage = formatApiError('Login failed', failure);
+        final errorMessage =
+            failureMessage == _unsupportedRecoveryCodeMessage
+            ? 'Login failed: $failureMessage'
+            : formatApiError('Login failed', failure);
 
         if (failureMessage.contains('Check your email') ||
             failureMessage.contains('logging in from somewhere new')) {
@@ -219,7 +259,14 @@ class AuthService {
           '2FA is required based on login response',
           subCategory: 'auth',
         );
-        return AuthResult(status: AuthResultStatus.requires2FA);
+        final availableTwoFactorMethods = authResponse.twoFactorAuthTypes;
+        return AuthResult(
+          status: AuthResultStatus.requires2FA,
+          selectedTwoFactorMethod:
+              availableTwoFactorMethods.contains(TwoFactorAuthType.totp)
+              ? TwoFactorAuthType.totp
+              : availableTwoFactorMethods.first,
+        );
       }
 
       final currentUser = success.response.data;
@@ -238,7 +285,10 @@ class AuthService {
 
       if (currentUser.twoFactorAuthEnabled) {
         AppLogger.info('2FA is enabled for user', subCategory: 'auth');
-        return AuthResult(status: AuthResultStatus.requires2FA);
+        return AuthResult(
+          status: AuthResultStatus.requires2FA,
+          selectedTwoFactorMethod: TwoFactorAuthType.totp,
+        );
       } else {
         AppLogger.info(
           '2FA is not enabled, user fully authenticated',
@@ -324,8 +374,12 @@ class _ParsedTwoFactorAuthTypes {
   const _ParsedTwoFactorAuthTypes({
     required this.supportedTypes,
     required this.unsupportedTypes,
+    required this.malformedTypes,
+    required this.recoveryCodeTypes,
   });
 
   final List<TwoFactorAuthType> supportedTypes;
   final List<String> unsupportedTypes;
+  final List<Object?> malformedTypes;
+  final List<TwoFactorAuthType> recoveryCodeTypes;
 }

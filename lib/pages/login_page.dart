@@ -64,7 +64,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
 
     final username = _usernameController.text;
     final password = _passwordController.text;
-    final code = _twoFactorController.text;
+    final code = _twoFactorController.text.trim();
     final requiresTwoFactor = authState.requiresTwoFactorAuth;
 
     if (requiresTwoFactor) {
@@ -125,6 +125,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
             authState.status == AuthStatus.requiresEmailVerification
         ? authState.errorMessage
         : null;
+    final twoFactorErrorMessage = authState.requiresTwoFactorAuth
+        ? authState.errorMessage
+        : null;
+    final selectedTwoFactorMethod = authState.selectedTwoFactorMethod;
 
     return AuthPageScaffold(
       showBranding: false,
@@ -156,10 +160,11 @@ class _LoginPageState extends ConsumerState<LoginPage>
                     TwoFactorFormFields(
                       controller: _twoFactorController,
                       focusNode: _twoFactorFocusNode,
-                      errorMessage: authState.errorMessage,
+                      errorMessage: twoFactorErrorMessage,
                       onSubmit: _handleSubmit,
+                      method: selectedTwoFactorMethod,
                       errorMessageWidget: LoginErrorMessage(
-                        authState.errorMessage,
+                        twoFactorErrorMessage,
                       ),
                     ),
                   if (authState.requiresTwoFactorAuth)

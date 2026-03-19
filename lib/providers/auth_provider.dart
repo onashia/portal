@@ -19,11 +19,14 @@ enum AuthStatus {
 
 @immutable
 class AuthState {
+  static const Object _unset = Object();
+
   final AuthStatus status;
   final String? errorMessage;
   final CurrentUser? currentUser;
   final StreamedCurrentUser? streamedUser;
   final bool requiresTwoFactorAuth;
+  final TwoFactorAuthType? selectedTwoFactorMethod;
 
   const AuthState({
     required this.status,
@@ -31,22 +34,33 @@ class AuthState {
     this.currentUser,
     this.streamedUser,
     this.requiresTwoFactorAuth = false,
+    this.selectedTwoFactorMethod,
   });
 
   AuthState copyWith({
     AuthStatus? status,
-    String? errorMessage,
-    CurrentUser? currentUser,
-    StreamedCurrentUser? streamedUser,
+    Object? errorMessage = _unset,
+    Object? currentUser = _unset,
+    Object? streamedUser = _unset,
     bool? requiresTwoFactorAuth,
+    Object? selectedTwoFactorMethod = _unset,
   }) {
     return AuthState(
       status: status ?? this.status,
-      errorMessage: errorMessage ?? this.errorMessage,
-      currentUser: currentUser ?? this.currentUser,
-      streamedUser: streamedUser ?? this.streamedUser,
+      errorMessage: identical(errorMessage, _unset)
+          ? this.errorMessage
+          : errorMessage as String?,
+      currentUser: identical(currentUser, _unset)
+          ? this.currentUser
+          : currentUser as CurrentUser?,
+      streamedUser: identical(streamedUser, _unset)
+          ? this.streamedUser
+          : streamedUser as StreamedCurrentUser?,
       requiresTwoFactorAuth:
           requiresTwoFactorAuth ?? this.requiresTwoFactorAuth,
+      selectedTwoFactorMethod: identical(selectedTwoFactorMethod, _unset)
+          ? this.selectedTwoFactorMethod
+          : selectedTwoFactorMethod as TwoFactorAuthType?,
     );
   }
 }
@@ -90,6 +104,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           AuthState(
             status: AuthStatus.requires2FA,
             requiresTwoFactorAuth: true,
+            selectedTwoFactorMethod: result.selectedTwoFactorMethod,
           ),
         );
         break;
@@ -113,11 +128,31 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   }
 
   Future<void> verify2FA(String code) async {
-    state = const AsyncData(
-      AuthState(status: AuthStatus.loading, requiresTwoFactorAuth: true),
+    final current = state.asData?.value;
+    if (current == null) {
+      return;
+    }
+
+    final selectedMethod = current.selectedTwoFactorMethod;
+    if (selectedMethod == null) {
+      state = AsyncData(
+        current.copyWith(
+          status: AuthStatus.requires2FA,
+          errorMessage:
+              '2FA verification failed: Could not determine verification method',
+        ),
+      );
+      return;
+    }
+
+    state = AsyncData(
+      current.copyWith(status: AuthStatus.loading, errorMessage: null),
     );
 
-    final result = await _twoFactorAuthService.verify2FA(code);
+    final result = await _twoFactorAuthService.verify2FA(
+      code,
+      method: selectedMethod,
+    );
 
     if (result.status == TwoFactorAuthResultStatus.success) {
       state = AsyncData(
@@ -128,9 +163,8 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       );
     } else {
       state = AsyncData(
-        AuthState(
+        current.copyWith(
           status: AuthStatus.requires2FA,
-          requiresTwoFactorAuth: true,
           errorMessage: result.errorMessage,
         ),
       );

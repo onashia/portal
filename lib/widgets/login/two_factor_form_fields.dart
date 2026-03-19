@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:pinput/pinput.dart';
+import 'package:vrchat_dart/vrchat_dart.dart';
 
 class TwoFactorFormFields extends StatelessWidget {
   final TextEditingController controller;
@@ -9,6 +10,7 @@ class TwoFactorFormFields extends StatelessWidget {
   final String? errorMessage;
   final VoidCallback onSubmit;
   final Widget errorMessageWidget;
+  final TwoFactorAuthType? method;
 
   const TwoFactorFormFields({
     super.key,
@@ -17,6 +19,7 @@ class TwoFactorFormFields extends StatelessWidget {
     required this.errorMessage,
     required this.onSubmit,
     required this.errorMessageWidget,
+    required this.method,
   });
 
   @override
@@ -45,12 +48,25 @@ class TwoFactorFormFields extends StatelessWidget {
         border: Border.all(color: scheme.error, width: 2),
       ),
     );
+    final helperText = switch (method) {
+      TwoFactorAuthType.totp =>
+        'Enter the 6-digit code from your authenticator app.',
+      TwoFactorAuthType.emailOtp =>
+        'Enter the verification code that VRChat sent to your email.',
+      _ => 'Enter your verification code to continue.',
+    };
 
     return Column(
       key: const ValueKey('twoFactorForm'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
+        Text(
+          helperText,
+          style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+          textAlign: TextAlign.center,
+        ),
+        SizedBox(height: context.m3e.spacing.lg),
         Pinput(
           controller: controller,
           focusNode: focusNode,

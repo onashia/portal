@@ -18,6 +18,8 @@ class _MockCurrentUser extends Mock implements CurrentUser {}
 
 class _FakeTwoFactorAuthCode extends Fake implements TwoFactorAuthCode {}
 
+class _FakeTwoFactorEmailCode extends Fake implements TwoFactorEmailCode {}
+
 class _StubPortalApiRequestRunner extends PortalApiRequestRunner {
   _StubPortalApiRequestRunner(this._responses)
     : super(
@@ -46,6 +48,7 @@ class _StubPortalApiRequestRunner extends PortalApiRequestRunner {
 void main() {
   setUpAll(() {
     registerFallbackValue(_FakeTwoFactorAuthCode());
+    registerFallbackValue(_FakeTwoFactorEmailCode());
   });
 
   group('TwoFactorAuthService.verify2FA', () {
@@ -116,7 +119,10 @@ void main() {
         ),
       );
 
-      final result = await service.verify2FA('123456');
+      final result = await service.verify2FA(
+        '123456',
+        method: TwoFactorAuthType.totp,
+      );
 
       expect(result.status, TwoFactorAuthResultStatus.failure);
       expect(recordedLanes, contains(ApiRequestLane.authTwoFactor));
@@ -173,7 +179,10 @@ void main() {
         ),
       );
 
-      final result = await service.verify2FA('123456');
+      final result = await service.verify2FA(
+        '123456',
+        method: TwoFactorAuthType.totp,
+      );
 
       expect(result.status, TwoFactorAuthResultStatus.success);
       expect(result.currentUser, same(currentUser));
@@ -245,7 +254,10 @@ void main() {
           ),
         );
 
-        final result = await service.verify2FA('123456');
+        final result = await service.verify2FA(
+          '123456',
+          method: TwoFactorAuthType.totp,
+        );
 
         expect(result.status, TwoFactorAuthResultStatus.failure);
         expect(
@@ -294,7 +306,10 @@ void main() {
           ),
         );
 
-        final result = await service.verify2FA('123456');
+        final result = await service.verify2FA(
+          '123456',
+          method: TwoFactorAuthType.totp,
+        );
 
         expect(result.status, TwoFactorAuthResultStatus.failure);
         expect(
@@ -323,12 +338,97 @@ void main() {
       ]);
       service = TwoFactorAuthService(mockApi, runner: runner);
 
-      final result = await service.verify2FA('123456');
+      final result = await service.verify2FA(
+        '123456',
+        method: TwoFactorAuthType.totp,
+      );
 
       expect(result.status, TwoFactorAuthResultStatus.failure);
       expect(
         result.errorMessage,
         '2FA verification failed: No user data received',
+      );
+    });
+
+    test('verifies email 2FA codes through the email endpoint', () async {
+      final currentUser = _MockCurrentUser();
+      when(
+        () => mockAuthenticationApi.verify2FAEmailCode(
+          twoFactorEmailCode: any(named: 'twoFactorEmailCode'),
+          extra: any(named: 'extra'),
+        ),
+      ).thenAnswer(
+        (_) async => dio.Response<Verify2FAEmailCodeResult>(
+          requestOptions: dio.RequestOptions(
+            path: '/auth/twofactorauth/emailotp/verify',
+          ),
+          statusCode: 200,
+          data: Verify2FAEmailCodeResult(verified: true),
+        ),
+      );
+      when(
+        () => mockAuthenticationApi.getCurrentUser(extra: any(named: 'extra')),
+      ).thenAnswer(
+        (_) async => dio.Response<CurrentUser>(
+          requestOptions: dio.RequestOptions(path: '/auth/user'),
+          statusCode: 200,
+          data: currentUser,
+        ),
+      );
+
+      final result = await service.verify2FA(
+        'mail-code',
+        method: TwoFactorAuthType.emailOtp,
+      );
+
+      expect(result.status, TwoFactorAuthResultStatus.success);
+      expect(result.currentUser, same(currentUser));
+      verifyNever(
+        () => mockAuthenticationApi.verify2FA(
+          twoFactorAuthCode: any(named: 'twoFactorAuthCode'),
+          extra: any(named: 'extra'),
+        ),
+      );
+      final emailExtra =
+          verify(
+                () => mockAuthenticationApi.verify2FAEmailCode(
+                  twoFactorEmailCode: any(named: 'twoFactorEmailCode'),
+                  extra: captureAny(named: 'extra'),
+                ),
+              ).captured.single
+              as Map<String, dynamic>?;
+      expect(
+        apiRequestLaneFromExtraValue(emailExtra?[portalApiLaneExtraKey]),
+        ApiRequestLane.authTwoFactor,
+      );
+    });
+
+    test('rejects recovery-code verification without calling the API', () async {
+      final result = await service.verify2FA(
+        '123456',
+        method: TwoFactorAuthType.otp,
+      );
+
+      expect(result.status, TwoFactorAuthResultStatus.failure);
+      expect(
+        result.errorMessage,
+        '2FA verification failed: Recovery-code sign-in is not supported in Portal',
+      );
+      expect(recordedLanes, isEmpty);
+      verifyNever(
+        () => mockAuthenticationApi.verify2FA(
+          twoFactorAuthCode: any(named: 'twoFactorAuthCode'),
+          extra: any(named: 'extra'),
+        ),
+      );
+      verifyNever(
+        () => mockAuthenticationApi.verify2FAEmailCode(
+          twoFactorEmailCode: any(named: 'twoFactorEmailCode'),
+          extra: any(named: 'extra'),
+        ),
+      );
+      verifyNever(
+        () => mockAuthenticationApi.getCurrentUser(extra: any(named: 'extra')),
       );
     });
   });

@@ -163,7 +163,60 @@ void main() {
 
         expect(result.status, AuthResultStatus.requires2FA);
         expect(result.currentUser, isNull);
+        expect(result.selectedTwoFactorMethod, TwoFactorAuthType.totp);
         expect(recordedLanes, contains(ApiRequestLane.authSession));
+      },
+    );
+
+    test(
+      'returns requires2FA when login response requests an email two-factor auth type',
+      () async {
+        when(
+          () => mockAuthenticationApi.getCurrentUser(
+            headers: any(named: 'headers'),
+            extra: any(named: 'extra'),
+          ),
+        ).thenAnswer(
+          (_) => Future<dio.Response<CurrentUser>>.error(
+            _authFailure(
+              statusCode: 200,
+              data: <String, dynamic>{
+                'requiresTwoFactorAuth': <String>['emailOtp'],
+              },
+            ),
+          ),
+        );
+
+        final result = await service.login('alice', 'secret');
+
+        expect(result.status, AuthResultStatus.requires2FA);
+        expect(result.selectedTwoFactorMethod, TwoFactorAuthType.emailOtp);
+      },
+    );
+
+    test(
+      'tolerates duplicate email 2FA entries in the login response',
+      () async {
+        when(
+          () => mockAuthenticationApi.getCurrentUser(
+            headers: any(named: 'headers'),
+            extra: any(named: 'extra'),
+          ),
+        ).thenAnswer(
+          (_) => Future<dio.Response<CurrentUser>>.error(
+            _authFailure(
+              statusCode: 200,
+              data: <String, dynamic>{
+                'requiresTwoFactorAuth': <String>['emailOtp', 'emailOtp'],
+              },
+            ),
+          ),
+        );
+
+        final result = await service.login('alice', 'secret');
+
+        expect(result.status, AuthResultStatus.requires2FA);
+        expect(result.selectedTwoFactorMethod, TwoFactorAuthType.emailOtp);
       },
     );
 
@@ -187,9 +240,142 @@ void main() {
       final result = await service.login('alice', 'secret');
 
       expect(result.status, AuthResultStatus.requires2FA);
+      expect(result.selectedTwoFactorMethod, TwoFactorAuthType.totp);
       expect(loggedMessages.join('\n'), contains('unsupported 2FA types'));
       expect(loggedMessages.join('\n'), contains('future_method'));
     });
+
+    test(
+      'ignores non-string 2FA types when a supported one is present',
+      () async {
+        when(
+          () => mockAuthenticationApi.getCurrentUser(
+            headers: any(named: 'headers'),
+            extra: any(named: 'extra'),
+          ),
+        ).thenAnswer(
+          (_) => Future<dio.Response<CurrentUser>>.error(
+            _authFailure(
+              statusCode: 200,
+              data: <String, dynamic>{
+                'requiresTwoFactorAuth': <Object>['totp', 42],
+              },
+            ),
+          ),
+        );
+
+        final result = await service.login('alice', 'secret');
+
+        expect(result.status, AuthResultStatus.requires2FA);
+        expect(result.selectedTwoFactorMethod, TwoFactorAuthType.totp);
+        expect(loggedMessages.join('\n'), contains('non-string 2FA types'));
+        expect(loggedMessages.join('\n'), contains('42'));
+      },
+    );
+
+    test(
+      'returns explicit failure when only non-string 2FA types are returned',
+      () async {
+        when(
+          () => mockAuthenticationApi.getCurrentUser(
+            headers: any(named: 'headers'),
+            extra: any(named: 'extra'),
+          ),
+        ).thenAnswer(
+          (_) => Future<dio.Response<CurrentUser>>.error(
+            _authFailure(
+              statusCode: 200,
+              data: <String, dynamic>{
+                'requiresTwoFactorAuth': <Object>[42, true],
+              },
+            ),
+          ),
+        );
+
+        final result = await service.login('alice', 'secret');
+
+        expect(result.status, AuthResultStatus.failure);
+        expect(
+          result.errorMessage,
+          'Login failed: Unsupported VRChat 2FA challenge',
+        );
+        final logged = loggedMessages.join('\n');
+        expect(logged, contains('non-string 2FA types'));
+        expect(logged, contains('42'));
+        expect(logged, contains('true'));
+        expect(logged, contains('included no supported 2FA types'));
+      },
+    );
+
+    test(
+      'logs malformed and unsupported 2FA types while keeping supported ones',
+      () async {
+        when(
+          () => mockAuthenticationApi.getCurrentUser(
+            headers: any(named: 'headers'),
+            extra: any(named: 'extra'),
+          ),
+        ).thenAnswer(
+          (_) => Future<dio.Response<CurrentUser>>.error(
+            _authFailure(
+              statusCode: 200,
+              data: <String, dynamic>{
+                'requiresTwoFactorAuth': <Object>['future_method', 42, 'totp'],
+              },
+            ),
+          ),
+        );
+
+        final result = await service.login('alice', 'secret');
+
+        expect(result.status, AuthResultStatus.requires2FA);
+        expect(result.selectedTwoFactorMethod, TwoFactorAuthType.totp);
+        final logged = loggedMessages.join('\n');
+        expect(logged, contains('unsupported 2FA types'));
+        expect(logged, contains('future_method'));
+        expect(logged, contains('non-string 2FA types'));
+        expect(logged, contains('42'));
+      },
+    );
+
+    test(
+      'returns explicit failure when only recovery-code auth is returned',
+      () async {
+        when(
+          () => mockAuthenticationApi.getCurrentUser(
+            headers: any(named: 'headers'),
+            extra: any(named: 'extra'),
+          ),
+        ).thenAnswer(
+          (_) => Future<dio.Response<CurrentUser>>.error(
+            _authFailure(
+              statusCode: 200,
+              data: <String, dynamic>{
+                'requiresTwoFactorAuth': <String>['otp'],
+              },
+            ),
+          ),
+        );
+
+        final result = await service.login('alice', 'secret');
+
+        expect(result.status, AuthResultStatus.failure);
+        final errorMessage = result.errorMessage;
+        expect(errorMessage, isNotNull);
+        expect(
+          errorMessage,
+          contains('Portal does not accept VRChat recovery codes'),
+        );
+        expect(errorMessage, contains('single-use emergency credential'));
+        expect(
+          errorMessage,
+          contains('official VRChat website or VRChat client'),
+        );
+        final logged = loggedMessages.join('\n');
+        expect(logged, contains('recovery-code 2FA'));
+        expect(logged, contains('single-use emergency credentials'));
+      },
+    );
 
     test(
       'returns explicit failure when only unknown 2FA types are returned',
