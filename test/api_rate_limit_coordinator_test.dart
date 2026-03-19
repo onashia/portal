@@ -1,9 +1,54 @@
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
 
 void main() {
+  group('Retry-After parsing helpers', () {
+    final now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+
+    test('parseRetryAfterValue parses seconds', () {
+      final parsed = parseRetryAfterValue('45', now: now);
+
+      expect(parsed, const Duration(seconds: 45));
+    });
+
+    test('parseRetryAfterHeaders parses HTTP-date from headers', () {
+      final target = now.add(const Duration(seconds: 30));
+
+      final parsed = parseRetryAfterHeaders(
+        Headers.fromMap(<String, List<String>>{
+          'retry-after': [HttpDate.format(target)],
+        }),
+        now: now,
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.inSeconds, inInclusiveRange(29, 30));
+    });
+
+    test('parseRetryAfterValue returns zero for past dates', () {
+      final target = now.subtract(const Duration(seconds: 30));
+
+      final parsed = parseRetryAfterValue(HttpDate.format(target), now: now);
+
+      expect(parsed, Duration.zero);
+    });
+
+    test('parseRetryAfterValue returns null for empty values', () {
+      final parsed = parseRetryAfterValue('   ', now: now);
+
+      expect(parsed, isNull);
+    });
+
+    test('parseRetryAfterValue returns null for invalid values', () {
+      final parsed = parseRetryAfterValue('not-a-date', now: now);
+
+      expect(parsed, isNull);
+    });
+  });
+
   group('ApiRateLimitCoordinator', () {
     test('parses Retry-After seconds', () {
       final now = DateTime.utc(2026, 2, 14, 12, 0, 0);

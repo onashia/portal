@@ -21,6 +21,53 @@ Map<String, dynamic> apiRequestLaneExtra(ApiRequestLane lane) {
   return <String, dynamic>{portalApiLaneExtraKey: lane.name};
 }
 
+Duration? parseRetryAfterValue(
+  Object? retryAfterHeaderValue, {
+  required DateTime now,
+}) {
+  if (retryAfterHeaderValue == null) {
+    return null;
+  }
+
+  final raw = retryAfterHeaderValue.toString().trim();
+  if (raw.isEmpty) {
+    return null;
+  }
+
+  final asSeconds = int.tryParse(raw);
+  if (asSeconds != null) {
+    if (asSeconds <= 0) {
+      return Duration.zero;
+    }
+    return Duration(seconds: asSeconds);
+  }
+
+  final asDate = DateTime.tryParse(raw);
+  if (asDate != null) {
+    final delta = asDate.toUtc().difference(now.toUtc());
+    if (delta.isNegative) {
+      return Duration.zero;
+    }
+    return delta;
+  }
+
+  try {
+    final httpDate = HttpDate.parse(raw);
+    final delta = httpDate.toUtc().difference(now.toUtc());
+    if (delta.isNegative) {
+      return Duration.zero;
+    }
+    return delta;
+  } catch (_) {
+    return null;
+  }
+}
+
+Duration? parseRetryAfterHeaders(Headers? headers, {required DateTime now}) {
+  final retryAfterValue = headers?.value('retry-after');
+  return parseRetryAfterValue(retryAfterValue, now: now);
+}
+
 ApiRequestLane? apiRequestLaneFromExtraValue(Object? value) {
   if (value is ApiRequestLane) {
     return value;
@@ -99,48 +146,14 @@ class ApiRateLimitCoordinator {
   }
 
   Duration? parseRetryAfter(Object? retryAfterHeaderValue, {DateTime? now}) {
-    if (retryAfterHeaderValue == null) {
-      return null;
-    }
-
-    final currentTime = now ?? _nowProvider();
-    final raw = retryAfterHeaderValue.toString().trim();
-    if (raw.isEmpty) {
-      return null;
-    }
-
-    final asSeconds = int.tryParse(raw);
-    if (asSeconds != null) {
-      if (asSeconds <= 0) {
-        return Duration.zero;
-      }
-      return Duration(seconds: asSeconds);
-    }
-
-    final asDate = DateTime.tryParse(raw);
-    if (asDate != null) {
-      final delta = asDate.toUtc().difference(currentTime.toUtc());
-      if (delta.isNegative) {
-        return Duration.zero;
-      }
-      return delta;
-    }
-
-    try {
-      final httpDate = HttpDate.parse(raw);
-      final delta = httpDate.toUtc().difference(currentTime.toUtc());
-      if (delta.isNegative) {
-        return Duration.zero;
-      }
-      return delta;
-    } catch (_) {
-      return null;
-    }
+    return parseRetryAfterValue(
+      retryAfterHeaderValue,
+      now: now ?? _nowProvider(),
+    );
   }
 
   Duration? parseRetryAfterFromHeaders(Headers? headers, {DateTime? now}) {
-    final retryAfterValue = headers?.value('retry-after');
-    return parseRetryAfter(retryAfterValue, now: now);
+    return parseRetryAfterHeaders(headers, now: now ?? _nowProvider());
   }
 
   Duration _fallbackBackoffForStreak(int streak) {

@@ -40,11 +40,7 @@ Duration? parseRelayRetryAfter({
     return payloadRetryAfter;
   }
 
-  final coordinator = ApiRateLimitCoordinator(nowProvider: now);
-  final headerRetryAfter = coordinator.parseRetryAfterFromHeaders(
-    headers,
-    now: now(),
-  );
+  final headerRetryAfter = parseRetryAfterHeaders(headers, now: now());
   if (headerRetryAfter == null) {
     return null;
   }
