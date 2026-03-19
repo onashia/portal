@@ -37,10 +37,32 @@ class _LoginPageState extends ConsumerState<LoginPage>
   @override
   void initState() {
     super.initState();
+    ref.listenManual<AsyncValue<AuthState>>(authProvider, (previous, next) {
+      final wasTwoFactor =
+          previous?.asData?.value.requiresTwoFactorAuth ?? false;
+      final isTwoFactor = next.asData?.value.requiresTwoFactorAuth ?? false;
+      if (!wasTwoFactor && isTwoFactor) {
+        _scheduleTwoFactorFocus();
+      }
+    }, fireImmediately: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      final authState = ref.read(authProvider).value;
+      if (mounted && !(authState?.requiresTwoFactorAuth ?? false)) {
         _usernameFocusNode.requestFocus();
       }
+    });
+  }
+
+  void _scheduleTwoFactorFocus() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authState = ref.read(authProvider).value;
+      if (!mounted || !(authState?.requiresTwoFactorAuth ?? false)) {
+        return;
+      }
+      if (!_twoFactorFocusNode.canRequestFocus) {
+        return;
+      }
+      _twoFactorFocusNode.requestFocus();
     });
   }
 
