@@ -7,6 +7,7 @@ const BOOTSTRAP_WINDOW_MS = 10_000;
 const MAX_BOOTSTRAP_PER_WINDOW = 8;
 const MAX_CONNECTIONS_PER_ROOM = 100;
 const BOOTSTRAP_RETRY_AFTER_SECONDS = Math.ceil(BOOTSTRAP_WINDOW_MS / 1000);
+const UTF8_ENCODER = new TextEncoder();
 
 export default {
   async fetch(request, env) {
@@ -332,7 +333,7 @@ export class RelayRoom {
       return;
     }
 
-    if (message.length > MAX_PAYLOAD_BYTES) {
+    if (utf8ByteLength(message) > MAX_PAYLOAD_BYTES) {
       ws.send(
         JSON.stringify({
           type: 'error',
@@ -504,6 +505,10 @@ export class RelayRoom {
       }
     }
   }
+}
+
+function utf8ByteLength(value) {
+  return UTF8_ENCODER.encode(value).length;
 }
 
 export class BootstrapRateLimiter {

@@ -607,6 +607,37 @@ void main() {
       expect(hints, isEmpty);
     });
 
+    test('multibyte_message_over_byte_limit_is_silently_dropped', () async {
+      final channel = _FakeWebSocketChannel();
+      final service = await connectService(channel);
+      final hints = <RelayHintMessage>[];
+      final sub = service.hints.listen(hints.add);
+      addTearDown(sub.cancel);
+
+      final oversizedByBytesOnly = jsonEncode({
+        'type': 'hint',
+        'payload': validHintJson,
+        'padding': 'é' * 4100,
+      });
+      expect(
+        oversizedByBytesOnly.length,
+        lessThan(AppConstants.relayMaxInboundMessageBytes),
+      );
+      expect(
+        utf8.encode(oversizedByBytesOnly).length,
+        greaterThan(AppConstants.relayMaxInboundMessageBytes),
+      );
+
+      channel.emit(oversizedByBytesOnly);
+      await pumpEventQueue();
+
+      expect(
+        hints,
+        isEmpty,
+        reason: 'frames over the byte cap must be dropped before hint parsing',
+      );
+    });
+
     group('publishHint', () {
       test('publishHint_sends_serialized_hint_to_sink', () async {
         final channel = _FakeWebSocketChannel();
@@ -685,6 +716,47 @@ void main() {
           channel.sentMessages.length,
           sinkSizeBefore,
           reason: 'oversized publish_hint must not be written to the sink',
+        );
+      });
+
+      test('publishHint_drops_payload_oversized_by_multibyte_utf8', () async {
+        final channel = _FakeWebSocketChannel();
+        final service = await connectService(channel);
+
+        final oversizedMultibyteHint = RelayHintMessage(
+          version: '1',
+          hintId: 'é' * 910,
+          groupId: 'grp_alpha',
+          worldId: 'wrld_12345678-1234-1234-1234-123456789abc',
+          instanceId: '12345~alpha',
+          nUsers: 5,
+          detectedAt: DateTime.fromMillisecondsSinceEpoch(0),
+          expiresAt: DateTime.fromMillisecondsSinceEpoch(0),
+          sourceClientId: 'client',
+        );
+        final encoded = jsonEncode({
+          'type': 'publish_hint',
+          'payload': oversizedMultibyteHint.toJson(),
+        });
+        expect(
+          encoded.length,
+          lessThan(AppConstants.relayMaxOutboundPayloadBytes),
+        );
+        expect(
+          utf8.encode(encoded).length,
+          greaterThan(AppConstants.relayMaxOutboundPayloadBytes),
+        );
+
+        final sinkSizeBefore = channel.sentMessages.length;
+        final result = await service.publishHint(oversizedMultibyteHint);
+        await pumpEventQueue();
+
+        expect(result, RelayPublishOutcome.skippedOversize);
+        expect(
+          channel.sentMessages.length,
+          sinkSizeBefore,
+          reason:
+              'multibyte publish_hint frames over the byte cap must not be sent',
         );
       });
 
