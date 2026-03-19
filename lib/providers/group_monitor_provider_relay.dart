@@ -234,12 +234,6 @@ class _GroupMonitorRelayController {
       return;
     }
 
-    _publishDedupe.record(
-      publishKey,
-      now: now,
-      ttl: const Duration(seconds: AppConstants.relayPublishDedupeSeconds),
-    );
-
     final hint = RelayHintMessage.create(
       groupId: target.groupId,
       worldId: target.instance.worldId,
@@ -249,11 +243,7 @@ class _GroupMonitorRelayController {
       now: detectedAt,
     );
 
-    unawaited(service.publishHint(hint));
-    notifier.state = notifier.state.copyWith(
-      relayHintsPublished: notifier.state.relayHintsPublished + 1,
-      lastRelayError: null,
-    );
+    unawaited(_publishHint(publishKey: publishKey, hint: hint));
   }
 
   void recordFailure({required String reason}) {
@@ -286,6 +276,38 @@ class _GroupMonitorRelayController {
   void _pruneDedupeState(DateTime now) {
     _hintDedupe.prune(now);
     _publishDedupe.prune(now);
+  }
+
+  Future<void> _publishHint({
+    required String publishKey,
+    required RelayHintMessage hint,
+  }) async {
+    final outcome = await service.publishHint(hint);
+    if (!notifier.ref.mounted) {
+      return;
+    }
+
+    switch (outcome) {
+      case RelayPublishOutcome.published:
+        _recordPublishedHint(publishKey, now: DateTime.now());
+        return;
+      case RelayPublishOutcome.skippedBackoff:
+      case RelayPublishOutcome.skippedDisconnected:
+      case RelayPublishOutcome.skippedOversize:
+        return;
+    }
+  }
+
+  void _recordPublishedHint(String publishKey, {required DateTime now}) {
+    _publishDedupe.record(
+      publishKey,
+      now: now,
+      ttl: const Duration(seconds: AppConstants.relayPublishDedupeSeconds),
+    );
+    notifier.state = notifier.state.copyWith(
+      relayHintsPublished: notifier.state.relayHintsPublished + 1,
+      lastRelayError: null,
+    );
   }
 
   void _cancelAllInviteTokens() {

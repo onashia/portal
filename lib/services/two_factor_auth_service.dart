@@ -1,7 +1,10 @@
+import 'package:dio_response_validator/dio_response_validator.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 import '../utils/app_logger.dart';
 import '../utils/dio_error_logger.dart';
 import '../utils/error_utils.dart';
+import 'api_rate_limit_coordinator.dart';
+import 'portal_api_request_runner.dart';
 
 enum TwoFactorAuthResultStatus { success, failure }
 
@@ -19,18 +22,33 @@ class TwoFactorAuthResult {
 
 class TwoFactorAuthService {
   final VrchatDart api;
+  final PortalApiRequestRunner _runner;
 
-  TwoFactorAuthService(this.api);
+  TwoFactorAuthService(this.api, {required PortalApiRequestRunner runner})
+    : _runner = runner;
 
-  Future<TwoFactorAuthResult> verify2FA(String code) async {
+  Future<TwoFactorAuthResult> verify2FA(
+    String code, {
+    required TwoFactorAuthType method,
+  }) async {
     AppLogger.info('2FA verification started', subCategory: 'auth');
 
     try {
-      AppLogger.debug('Calling VRChat API verify2fa', subCategory: 'auth');
+      AppLogger.debug(
+        'Calling VRChat API verify2fa for ${method.name}',
+        subCategory: 'auth',
+      );
 
-      final verify2faResponse = await api.auth.verify2fa(code);
-
-      final (success, failure) = verify2faResponse;
+      final failure = await switch (method) {
+        TwoFactorAuthType.totp => _verifyTotp(code),
+        TwoFactorAuthType.emailOtp => _verifyEmailCode(code),
+        TwoFactorAuthType.otp => Future<InvalidResponse?>.value(
+          InvalidResponse(
+            'Recovery-code sign-in is not supported in Portal',
+            StackTrace.current,
+          ),
+        ),
+      };
 
       if (failure != null) {
         final failureSummary = summarizeErrorForLog(failure);
@@ -49,7 +67,32 @@ class TwoFactorAuthService {
         subCategory: 'auth',
       );
 
-      final currentUser = api.auth.currentUser;
+      final currentUserResponse = await _runner
+          .runValidatedTransform<CurrentUser, CurrentUser>(
+            lane: ApiRequestLane.authSession,
+            request: (extra) => api.rawApi
+                .getAuthenticationApi()
+                .getCurrentUser(extra: extra)
+                .validateVrc(),
+          );
+
+      final (currentUserSuccess, currentUserFailure) = currentUserResponse;
+      if (currentUserFailure != null) {
+        final failureSummary = summarizeErrorForLog(currentUserFailure);
+        AppLogger.warning(
+          'Fetching current user after 2FA failed: $failureSummary',
+          subCategory: 'auth',
+        );
+        return TwoFactorAuthResult(
+          status: TwoFactorAuthResultStatus.failure,
+          errorMessage: formatApiError(
+            '2FA verification failed',
+            currentUserFailure,
+          ),
+        );
+      }
+
+      final currentUser = currentUserSuccess?.data;
       if (currentUser != null) {
         AppLogger.info('2FA verification successful', subCategory: 'auth');
         return TwoFactorAuthResult(
@@ -73,5 +116,40 @@ class TwoFactorAuthService {
         errorMessage: formatApiError('2FA verification failed', e),
       );
     }
+  }
+
+  Future<InvalidResponse?> _verifyTotp(String code) async {
+    final (_, failure) = await _runner
+        .runValidatedTransform<Verify2FAResult, Verify2FAResult>(
+          lane: ApiRequestLane.authTwoFactor,
+          request: (extra) => api.rawApi
+              .getAuthenticationApi()
+              .verify2FA(
+                twoFactorAuthCode: TwoFactorAuthCode(code: code),
+                extra: extra,
+              )
+              .validateVrc(),
+        );
+
+    return failure;
+  }
+
+  Future<InvalidResponse?> _verifyEmailCode(String code) async {
+    final (_, failure) = await _runner
+        .runValidatedTransform<
+          Verify2FAEmailCodeResult,
+          Verify2FAEmailCodeResult
+        >(
+          lane: ApiRequestLane.authTwoFactor,
+          request: (extra) => api.rawApi
+              .getAuthenticationApi()
+              .verify2FAEmailCode(
+                twoFactorEmailCode: TwoFactorEmailCode(code: code),
+                extra: extra,
+              )
+              .validateVrc(),
+        );
+
+    return failure;
   }
 }

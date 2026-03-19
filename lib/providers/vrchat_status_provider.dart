@@ -5,14 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/vrchat_status.dart';
-import 'api_call_counter.dart';
-import 'api_rate_limit_provider.dart';
 import 'auth_provider.dart';
 import '../services/api_rate_limit_coordinator.dart';
 import '../services/vrchat_status_service.dart';
 import '../utils/timing_utils.dart';
 import '../constants/app_constants.dart';
 import '../utils/app_logger.dart';
+import 'portal_status_request_runner_provider.dart';
 import 'polling_lifecycle.dart';
 import 'refresh_cooldown_handler.dart';
 
@@ -161,8 +160,9 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
 
     _statusLoop.cancelTimer();
 
+    final runner = ref.read(portalStatusRequestRunnerProvider);
     if (RefreshCooldownHandler.shouldDeferForCooldown(
-      ref: ref,
+      cooldownTracker: runner,
       bypassRateLimit: bypassRateLimit,
       lane: ApiRequestLane.status,
       logContext: 'vrchat_status',
@@ -175,11 +175,9 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
     _isRefreshing = true;
     try {
       AppLogger.info('Refreshing VRChat status', subCategory: 'vrchat_status');
-      ref
-          .read(apiCallCounterProvider.notifier)
-          .incrementApiCall(lane: ApiRequestLane.status);
-      final status = await _service.fetchStatus(
-        extra: apiRequestLaneExtra(ApiRequestLane.status),
+      final status = await runner.run<VrchatStatus>(
+        lane: ApiRequestLane.status,
+        request: (extra) => _service.fetchStatus(extra: extra),
       );
       if (!_canCommitRefreshResult()) {
         return;
@@ -225,7 +223,6 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
 }
 
 final dioProvider = Provider<Dio>((ref) {
-  final coordinator = ref.read(apiRateLimitCoordinatorProvider);
   final dio = Dio();
   // Configure User-Agent header as required by VRChat API
   dio.options.headers['User-Agent'] =
@@ -233,7 +230,6 @@ final dioProvider = Provider<Dio>((ref) {
   // Add reasonable timeouts to prevent hanging on network issues
   dio.options.connectTimeout = const Duration(seconds: 10);
   dio.options.receiveTimeout = const Duration(seconds: 10);
-  ensureApiRateLimitInterceptor(dio, coordinator);
   return dio;
 });
 

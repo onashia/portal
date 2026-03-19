@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,9 +17,14 @@ import 'package:portal/providers/group_monitor_storage.dart';
 import 'package:portal/providers/polling_lifecycle.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
 import 'package:portal/services/invite_service.dart';
+import 'package:portal/services/portal_request_runner_common.dart';
+import 'package:portal/services/relay_bootstrap_client.dart';
+import 'package:portal/services/relay_heartbeat_monitor.dart';
 import 'package:portal/services/relay_hint_service.dart';
+import 'package:portal/services/relay_reconnect_scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vrchat_dart/vrchat_dart.dart' hide Response;
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'test_helpers/auth_test_harness.dart';
 import 'test_helpers/fake_group_monitor_api.dart';
@@ -33,7 +39,10 @@ class _RelayHintServiceFake extends RelayHintService {
   final StreamController<RelayConnectionStatus> _statuses =
       StreamController<RelayConnectionStatus>.broadcast();
   bool _isDisposed = false;
+  final List<RelayHintMessage> attemptedHints = <RelayHintMessage>[];
   final List<RelayHintMessage> publishedHints = <RelayHintMessage>[];
+  final List<RelayPublishOutcome> publishOutcomes = <RelayPublishOutcome>[];
+  Duration publishBackoffDuration = const Duration(milliseconds: 5);
 
   /// Counts how many times [connect] has been called.
   int connectCallCount = 0;
@@ -42,6 +51,7 @@ class _RelayHintServiceFake extends RelayHintService {
   /// simulate the service's own cooldown value being read by
   /// [_reconcileRelayConnection].
   DateTime? runtimeDisabledUntilOverride;
+  DateTime? publishBlockedUntilOverride;
 
   @override
   Stream<RelayHintMessage> get hints => _hints.stream;
@@ -54,6 +64,16 @@ class _RelayHintServiceFake extends RelayHintService {
 
   @override
   DateTime? get runtimeDisabledUntil => runtimeDisabledUntilOverride;
+
+  @override
+  DateTime? get publishBlockedUntil {
+    final blockedUntil = publishBlockedUntilOverride;
+    if (blockedUntil == null || !blockedUntil.isAfter(DateTime.now())) {
+      publishBlockedUntilOverride = null;
+      return null;
+    }
+    return blockedUntil;
+  }
 
   @override
   Future<void> connect({
@@ -74,8 +94,24 @@ class _RelayHintServiceFake extends RelayHintService {
   }
 
   @override
-  Future<void> publishHint(RelayHintMessage hint) async {
-    publishedHints.add(hint);
+  Future<RelayPublishOutcome> publishHint(RelayHintMessage hint) async {
+    attemptedHints.add(hint);
+    final outcome = publishOutcomes.isNotEmpty
+        ? publishOutcomes.removeAt(0)
+        : RelayPublishOutcome.published;
+    switch (outcome) {
+      case RelayPublishOutcome.published:
+        publishedHints.add(hint);
+        return outcome;
+      case RelayPublishOutcome.skippedBackoff:
+        publishBlockedUntilOverride = DateTime.now().add(
+          publishBackoffDuration,
+        );
+        return outcome;
+      case RelayPublishOutcome.skippedDisconnected:
+      case RelayPublishOutcome.skippedOversize:
+        return outcome;
+    }
   }
 
   Future<void> emitHint(RelayHintMessage hint) async {
@@ -99,6 +135,110 @@ class _RelayHintServiceFake extends RelayHintService {
     await _hints.close();
     await _statuses.close();
   }
+}
+
+class _TestRelayBootstrapClient extends Fake implements RelayBootstrapClient {
+  _TestRelayBootstrapClient(this._uri);
+
+  final Uri _uri;
+
+  @override
+  bool get isConfigured => true;
+
+  @override
+  Future<Uri> bootstrap({
+    required String groupId,
+    required String clientId,
+    required DateTime Function() now,
+    required void Function(DateTime disabledUntil) onRuntimeDisabled,
+  }) async => _uri;
+}
+
+class _TestRelayHeartbeatMonitor extends Fake implements RelayHeartbeatMonitor {
+  @override
+  void start({
+    required void Function(DateTime now) sendPing,
+    required void Function() onStale,
+  }) {}
+
+  @override
+  void stop() {}
+
+  @override
+  void recordPong() {}
+
+  @override
+  bool get isStale => false;
+
+  @override
+  DateTime? get lastPongAt => null;
+}
+
+class _TestRelayReconnectScheduler extends Fake implements ReconnectScheduler {
+  @override
+  void schedule(void Function() callback) {}
+
+  @override
+  void cancel() {}
+
+  @override
+  void reset() {}
+
+  @override
+  int get attemptCount => 0;
+}
+
+class _TestWebSocketSink implements WebSocketSink {
+  _TestWebSocketSink(this.onAdd);
+
+  final void Function(Object? data) onAdd;
+
+  @override
+  void add(Object? data) => onAdd(data);
+
+  @override
+  void addError(Object error, [StackTrace? stackTrace]) {}
+
+  @override
+  Future<void> addStream(Stream<Object?> stream) async {}
+
+  @override
+  Future<void> close([int? closeCode, String? closeReason]) async {}
+
+  @override
+  Future<void> get done async {}
+}
+
+class _TestWebSocketChannel extends Fake implements WebSocketChannel {
+  _TestWebSocketChannel() : sink = _TestWebSocketSink((_) {});
+
+  final StreamController<dynamic> _incomingController =
+      StreamController<dynamic>.broadcast();
+
+  @override
+  Future<void> get ready async {}
+
+  @override
+  final WebSocketSink sink;
+
+  @override
+  Stream<dynamic> get stream => _incomingController.stream;
+
+  void emit(Object? payload) {
+    if (!_incomingController.isClosed) {
+      _incomingController.add(payload);
+    }
+  }
+}
+
+class _FakeCooldownTracker implements PortalCooldownTracker {
+  Duration? remaining;
+
+  @override
+  Duration? remainingCooldown(ApiRequestLane lane) => remaining;
+
+  @override
+  void recordThrottledSkip({required ApiRequestLane lane}) {}
 }
 
 class _CancelableInviteServiceFake implements InviteService {
@@ -234,6 +374,87 @@ class _DelayedGroupMonitorApi extends FakeGroupMonitorApi {
   }
 }
 
+class _RateLimitingGroupMonitorApi extends FakeGroupMonitorApi {
+  _RateLimitingGroupMonitorApi({
+    required ApiRateLimitCoordinator coordinator,
+    super.groupInstancesByGroupId,
+    super.enrichedInstancesByKey,
+    this.getGroupInstancesDelay = Duration.zero,
+  }) : _coordinator = coordinator;
+
+  final ApiRateLimitCoordinator _coordinator;
+  final Duration getGroupInstancesDelay;
+  Duration? _armedRetryAfter;
+
+  void armRateLimit(Duration retryAfter) {
+    _armedRetryAfter = retryAfter;
+  }
+
+  @override
+  Future<Response<List<GroupInstance>>> getGroupInstances({
+    required String groupId,
+    required ApiRequestLane lane,
+  }) async {
+    await Future<void>.delayed(getGroupInstancesDelay);
+    final response = await super.getGroupInstances(
+      groupId: groupId,
+      lane: lane,
+    );
+    if (_armedRetryAfter != null && groupId == 'grp_d') {
+      _coordinator.recordRateLimited(
+        ApiRequestLane.groupBaseline,
+        retryAfter: _armedRetryAfter,
+      );
+      _armedRetryAfter = null;
+    }
+    return response;
+  }
+}
+
+class _CountingGroupMonitorApi implements GroupMonitorApi {
+  _CountingGroupMonitorApi(this._delegate, this._counter);
+
+  final GroupMonitorApi _delegate;
+  final ApiCallCounterNotifier _counter;
+
+  @override
+  Future<Response<List<LimitedUserGroups>>> getUserGroups({
+    required String userId,
+  }) {
+    _counter.incrementApiCall(lane: ApiRequestLane.userGroups);
+    return _delegate.getUserGroups(userId: userId);
+  }
+
+  @override
+  Future<Response<List<GroupInstance>>> getGroupInstances({
+    required String groupId,
+    required ApiRequestLane lane,
+  }) {
+    _counter.incrementApiCall(lane: lane);
+    return _delegate.getGroupInstances(groupId: groupId, lane: lane);
+  }
+
+  @override
+  Future<Response<Instance>> getInstance({
+    required String worldId,
+    required String instanceId,
+    required ApiRequestLane lane,
+  }) {
+    _counter.incrementApiCall(lane: lane);
+    return _delegate.getInstance(
+      worldId: worldId,
+      instanceId: instanceId,
+      lane: lane,
+    );
+  }
+
+  @override
+  Future<Response<World>> getWorld({required String worldId}) {
+    _counter.incrementApiCall(lane: ApiRequestLane.worldDetails);
+    return _delegate.getWorld(worldId: worldId);
+  }
+}
+
 ({
   ProviderContainer container,
   TestAuthNotifier authNotifier,
@@ -253,7 +474,12 @@ createGroupMonitorHarness({
   final authHarness = createAuthHarness(
     initialAuthState: initialAuthState,
     overrides: [
-      groupMonitorApiProvider.overrideWithValue(monitorApi),
+      groupMonitorApiProvider.overrideWith((ref) {
+        return _CountingGroupMonitorApi(
+          monitorApi,
+          ref.read(apiCallCounterProvider.notifier),
+        );
+      }),
       inviteServiceProvider.overrideWithValue(effectiveInviteService),
       ...overrides,
     ],
@@ -1216,6 +1442,7 @@ void main() {
         'grp_gamma',
         'grp_delta',
       ];
+      final cooldownTracker = _FakeCooldownTracker();
       final releaseByGroup = {
         for (final groupId in orderedGroupIds) groupId: Completer<void>(),
       };
@@ -1225,6 +1452,8 @@ void main() {
 
       final resultFuture = fetchGroupInstancesChunked(
         orderedGroupIds: orderedGroupIds,
+        cooldownTracker: cooldownTracker,
+        lane: ApiRequestLane.groupBaseline,
         maxConcurrentRequests: 2,
         fetchGroupInstances: (groupId) async {
           started.add(groupId);
@@ -1256,21 +1485,67 @@ void main() {
 
       expect(peakConcurrentRequests, lessThanOrEqualTo(2));
       expect(
-        results.map((entry) => entry.groupId).toList(growable: false),
+        results.responses.map((entry) => entry.groupId).toList(growable: false),
         equals(orderedGroupIds),
       );
     });
 
     test('throws when maxConcurrentRequests is less than 1', () async {
+      final cooldownTracker = _FakeCooldownTracker();
       expect(
         () => fetchGroupInstancesChunked(
           orderedGroupIds: const ['grp_alpha'],
+          cooldownTracker: cooldownTracker,
+          lane: ApiRequestLane.groupBaseline,
           maxConcurrentRequests: 0,
           fetchGroupInstances: (_) async => null,
         ),
         throwsArgumentError,
       );
     });
+
+    test(
+      'stops launching later chunks once group baseline cooldown becomes active',
+      () async {
+        final cooldownTracker = _FakeCooldownTracker();
+        final started = <String>[];
+
+        final results = await fetchGroupInstancesChunked<String>(
+          orderedGroupIds: const [
+            'grp_alpha',
+            'grp_beta',
+            'grp_gamma',
+            'grp_delta',
+          ],
+          cooldownTracker: cooldownTracker,
+          lane: ApiRequestLane.groupBaseline,
+          maxConcurrentRequests: 2,
+          fetchGroupInstances: (groupId) async {
+            started.add(groupId);
+            if (groupId == 'grp_beta') {
+              cooldownTracker.remaining = const Duration(seconds: 60);
+            }
+            return 'response_$groupId';
+          },
+        );
+
+        expect(results.interruptedByCooldown, isTrue);
+        expect(results.cooldownRemaining, const Duration(seconds: 60));
+        expect(started, const ['grp_alpha', 'grp_beta']);
+        expect(
+          results.responses
+              .map((entry) => entry.groupId)
+              .toList(growable: false),
+          const ['grp_alpha', 'grp_beta', 'grp_gamma', 'grp_delta'],
+        );
+        expect(results.responses[0].response, 'response_grp_alpha');
+        expect(results.responses[1].response, 'response_grp_beta');
+        expect(results.responses[2].response, isNull);
+        expect(results.responses[2].skippedDueToCooldown, isTrue);
+        expect(results.responses[3].response, isNull);
+        expect(results.responses[3].skippedDueToCooldown, isTrue);
+      },
+    );
   });
 
   group('shouldAttemptSelfInviteForInstance', () {
@@ -2135,6 +2410,239 @@ void main() {
       expect(state.lastBaselineTotalInstances, isNotNull);
       expect(state.lastBaselineSkipReason, isNull);
     });
+
+    test(
+      'partial cooldown baseline retries on cooldown timer instead of normal interval',
+      () async {
+        final coordinator = ApiRateLimitCoordinator();
+        final monitorApi = _RateLimitingGroupMonitorApi(
+          coordinator: coordinator,
+          groupInstancesByGroupId: {
+            'grp_a': const <GroupInstance>[],
+            'grp_b': const <GroupInstance>[],
+            'grp_c': const <GroupInstance>[],
+            'grp_d': const <GroupInstance>[],
+            'grp_e': const <GroupInstance>[],
+          },
+        );
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: monitorApi,
+          overrides: [
+            apiRateLimitCoordinatorProvider.overrideWithValue(coordinator),
+          ],
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = const GroupMonitorState(
+          selectedGroupIds: {'grp_a', 'grp_b', 'grp_c', 'grp_d', 'grp_e'},
+          isMonitoring: true,
+        );
+
+        monitorApi.armRateLimit(const Duration(milliseconds: 30));
+        await notifier.fetchGroupInstances();
+
+        expect(
+          container.read(apiCallCounterProvider).callsByLane['groupBaseline'],
+          4,
+        );
+        expect(
+          container.read(provider).groupInstances.containsKey('grp_e'),
+          isFalse,
+        );
+        expect(
+          container.read(
+            groupMonitorHasIncompleteCooldownDataProvider('usr_test'),
+          ),
+          isTrue,
+        );
+        expect(container.read(provider).lastBaselineSuccessAt, isNull);
+        expect(container.read(provider).lastBaselineSkipReason, 'cooldown');
+
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        expect(
+          container.read(apiCallCounterProvider).callsByLane['groupBaseline'],
+          4,
+        );
+
+        await Future<void>.delayed(const Duration(milliseconds: 800));
+        expect(
+          container.read(apiCallCounterProvider).callsByLane['groupBaseline'],
+          9,
+        );
+        expect(
+          container.read(
+            groupMonitorHasIncompleteCooldownDataProvider('usr_test'),
+          ),
+          isFalse,
+        );
+        expect(container.read(provider).lastBaselineSuccessAt, isNotNull);
+        expect(container.read(provider).lastBaselineSkipReason, isNull);
+      },
+    );
+
+    test(
+      'partial cooldown baseline does not unlock auto-invite for queued boost poll',
+      () async {
+        final coordinator = ApiRateLimitCoordinator();
+        final relayService = _RelayHintServiceFake();
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
+        final existingBoostInstance = buildTestGroupInstance(
+          instanceId: 'existing~group(grp_f)~region(us)',
+          location: 'wrld_alpha:existing~group(grp_f)~region(us)',
+          world: world,
+          memberCount: 2,
+        );
+        final monitorApi = _RateLimitingGroupMonitorApi(
+          coordinator: coordinator,
+          getGroupInstancesDelay: const Duration(milliseconds: 20),
+          groupInstancesByGroupId: {
+            'grp_alpha': const <GroupInstance>[],
+            'grp_b': const <GroupInstance>[],
+            'grp_c': const <GroupInstance>[],
+            'grp_d': const <GroupInstance>[],
+            'grp_e': const <GroupInstance>[],
+            'grp_f': [existingBoostInstance],
+          },
+          enrichedInstancesByKey: {
+            '${world.id}|${existingBoostInstance.instanceId}':
+                _buildMonitorInstance(
+                  instanceId: existingBoostInstance.instanceId,
+                  world: world,
+                  userCount: 2,
+                  hasCapacityForYou: true,
+                ),
+          },
+        );
+        final inviteService = _RecordingInviteServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: monitorApi,
+          inviteService: inviteService,
+          overrides: [
+            apiRateLimitCoordinatorProvider.overrideWithValue(coordinator),
+            relayHintServiceProvider.overrideWithValue(relayService),
+          ],
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {
+            'grp_alpha',
+            'grp_b',
+            'grp_c',
+            'grp_d',
+            'grp_e',
+            'grp_f',
+          },
+          autoInviteEnabled: true,
+          relayAssistEnabled: true,
+          relayConnected: true,
+          isMonitoring: true,
+        );
+
+        monitorApi.armRateLimit(const Duration(milliseconds: 30));
+        unawaited(notifier.fetchGroupInstances());
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+        await notifier.setBoostedGroup('grp_f');
+
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+
+        expect(
+          container.read(apiCallCounterProvider).callsByLane['groupBaseline'],
+          4,
+        );
+        expect(
+          container.read(apiCallCounterProvider).callsByLane['groupBoost'],
+          greaterThanOrEqualTo(1),
+        );
+        expect(container.read(provider).lastBaselineSkipReason, 'cooldown');
+        expect(inviteService.invitedInstances, isEmpty);
+        expect(container.read(provider).relayHintsPublished, 0);
+        expect(relayService.attemptedHints, isEmpty);
+        expect(relayService.publishedHints, isEmpty);
+      },
+    );
+
+    test(
+      'cached skipped groups do not mark baseline data incomplete during cooldown',
+      () async {
+        final coordinator = ApiRateLimitCoordinator();
+        final monitorApi = _RateLimitingGroupMonitorApi(
+          coordinator: coordinator,
+          groupInstancesByGroupId: {
+            'grp_a': const <GroupInstance>[],
+            'grp_b': const <GroupInstance>[],
+            'grp_c': const <GroupInstance>[],
+            'grp_d': const <GroupInstance>[],
+            'grp_e': const <GroupInstance>[],
+          },
+        );
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: monitorApi,
+          overrides: [
+            apiRateLimitCoordinatorProvider.overrideWithValue(coordinator),
+          ],
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = const GroupMonitorState(
+          selectedGroupIds: {'grp_a', 'grp_b', 'grp_c', 'grp_d', 'grp_e'},
+          isMonitoring: true,
+          groupInstances: {'grp_e': <GroupInstanceWithGroup>[]},
+        );
+
+        monitorApi.armRateLimit(const Duration(milliseconds: 30));
+        await notifier.fetchGroupInstances();
+
+        expect(
+          container.read(provider).groupInstances.containsKey('grp_e'),
+          isTrue,
+        );
+        expect(
+          container.read(
+            groupMonitorHasIncompleteCooldownDataProvider('usr_test'),
+          ),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'cooldown-incomplete data is ignored when monitoring is off',
+      () async {
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+        );
+        final container = harness.container;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = const GroupMonitorState(
+          selectedGroupIds: {'grp_a', 'grp_b'},
+          groupInstances: {'grp_a': <GroupInstanceWithGroup>[]},
+          groupErrors: {},
+          lastBaselineSkipReason: 'cooldown',
+        );
+
+        expect(
+          container.read(
+            groupMonitorHasIncompleteCooldownDataProvider('usr_test'),
+          ),
+          isFalse,
+        );
+      },
+    );
 
     test('startMonitoring records a baseline attempt', () async {
       final harness = createGroupMonitorHarness(
@@ -3099,6 +3607,73 @@ void main() {
         );
       },
     );
+
+    test(
+      'backoff-skipped publish is attempted once and not retried later',
+      () async {
+        final world = buildTestWorld(id: 'wrld_alpha', name: 'World Alpha');
+        final relayService = _RelayHintServiceFake()
+          ..publishOutcomes.add(RelayPublishOutcome.skippedBackoff)
+          ..publishBackoffDuration = const Duration(milliseconds: 5);
+        final blockedInstance = buildTestGroupInstance(
+          instanceId: '67890~group(grp_alpha)~region(us)',
+          location: 'wrld_alpha:67890~group(grp_alpha)~region(us)',
+          world: world,
+          memberCount: 2,
+        );
+        final fakeApi = FakeGroupMonitorApi(
+          groupInstancesByGroupId: {'grp_alpha': const <GroupInstance>[]},
+          enrichedInstancesByKey: {
+            '${world.id}|${blockedInstance.instanceId}': _buildMonitorInstance(
+              instanceId: blockedInstance.instanceId,
+              world: world,
+              userCount: 2,
+              hasCapacityForYou: true,
+            ),
+          },
+        );
+        final inviteService = _RecordingInviteServiceFake();
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          groupMonitorApi: fakeApi,
+          inviteService: inviteService,
+          overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
+        addTearDown(container.dispose);
+
+        notifier.state = GroupMonitorState(
+          selectedGroupIds: const {'grp_alpha'},
+          autoInviteEnabled: true,
+          isMonitoring: true,
+          isBoostActive: true,
+          boostedGroupId: 'grp_alpha',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+          relayAssistEnabled: true,
+          relayConnected: true,
+        );
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+        fakeApi.groupInstancesByGroupId['grp_alpha'] = [blockedInstance];
+
+        await notifier.fetchBoostedGroupInstances(bypassRateLimit: true);
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await relayService.emitStatus(
+          const RelayConnectionStatus(connected: false),
+        );
+        await relayService.emitStatus(
+          const RelayConnectionStatus(connected: true),
+        );
+        await pumpEventQueue();
+
+        expect(container.read(provider).relayHintsPublished, 0);
+        expect(relayService.attemptedHints, hasLength(1));
+        expect(relayService.publishedHints, isEmpty);
+      },
+    );
   });
 
   group('relay hint lifecycle cancellation', () {
@@ -3398,6 +3973,64 @@ void main() {
       );
       expect(container.read(provider).relayConnected, isTrue);
     });
+
+    test(
+      'publish_rate_limited frame does not disable relay or trip the circuit breaker',
+      () async {
+        final channel = _TestWebSocketChannel();
+        final relayService = RelayHintService(
+          bootstrapClient: _TestRelayBootstrapClient(
+            Uri.parse('ws://relay.test'),
+          ),
+          heartbeatMonitor: _TestRelayHeartbeatMonitor(),
+          reconnectScheduler: _TestRelayReconnectScheduler(),
+          channelConnector: (_) => channel,
+        );
+        final harness = createGroupMonitorHarness(
+          initialAuthState: authenticatedAuthState(userId: 'usr_test'),
+          overrides: [relayHintServiceProvider.overrideWithValue(relayService)],
+        );
+        final container = harness.container;
+        final provider = harness.provider;
+        final notifier = harness.notifier;
+        addTearDown(() async {
+          await relayService.dispose();
+          container.dispose();
+        });
+
+        notifier.state = notifier.state.copyWith(
+          isMonitoring: true,
+          autoInviteEnabled: true,
+          isBoostActive: true,
+          selectedGroupIds: const {'grp_11111111-1111-1111-1111-111111111111'},
+          boostedGroupId: 'grp_11111111-1111-1111-1111-111111111111',
+          boostExpiresAt: DateTime.now().add(const Duration(minutes: 5)),
+        );
+
+        await notifier.toggleRelayAssist();
+        await Future<void>.delayed(Duration.zero);
+        await notifier.toggleRelayAssist();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(container.read(provider).relayConnected, isTrue);
+
+        for (var i = 0; i < AppConstants.relayCircuitBreakerThreshold; i++) {
+          channel.emit(
+            jsonEncode({
+              'type': 'error',
+              'code': 'publish_rate_limited',
+              'retryAfterSeconds': 45,
+            }),
+          );
+          await Future<void>.delayed(Duration.zero);
+        }
+
+        final state = container.read(provider);
+        expect(state.relayConnected, isTrue);
+        expect(state.relayTemporarilyDisabledUntil, isNull);
+        expect(state.lastRelayError, isNull);
+      },
+    );
   });
 
   group('relay hint filtering and deduplication', () {

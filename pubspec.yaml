@@ -48,6 +48,7 @@ dependencies:
   
   # HTTP Client
   dio: ^5.9.0
+  dio_response_validator: ^0.3.1
   web_socket_channel: ^3.0.3
   
   # Shared Preferences

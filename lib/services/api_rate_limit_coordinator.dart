@@ -1,14 +1,16 @@
 import 'dart:io';
 
-import 'package:dio/dio.dart';
-
-import '../constants/http_status_codes.dart';
+import 'package:dio/dio.dart' show Headers;
 
 enum ApiRequestLane {
+  authSession,
+  authTwoFactor,
   userGroups,
   groupBaseline,
   groupBoost,
+  worldDetails,
   calendar,
+  invite,
   status,
   image,
 }
@@ -17,6 +19,53 @@ const String portalApiLaneExtraKey = 'portal_lane';
 
 Map<String, dynamic> apiRequestLaneExtra(ApiRequestLane lane) {
   return <String, dynamic>{portalApiLaneExtraKey: lane.name};
+}
+
+Duration? parseRetryAfterValue(
+  Object? retryAfterHeaderValue, {
+  required DateTime now,
+}) {
+  if (retryAfterHeaderValue == null) {
+    return null;
+  }
+
+  final raw = retryAfterHeaderValue.toString().trim();
+  if (raw.isEmpty) {
+    return null;
+  }
+
+  final asSeconds = int.tryParse(raw);
+  if (asSeconds != null) {
+    if (asSeconds <= 0) {
+      return Duration.zero;
+    }
+    return Duration(seconds: asSeconds);
+  }
+
+  final asDate = DateTime.tryParse(raw);
+  if (asDate != null) {
+    final delta = asDate.toUtc().difference(now.toUtc());
+    if (delta.isNegative) {
+      return Duration.zero;
+    }
+    return delta;
+  }
+
+  try {
+    final httpDate = HttpDate.parse(raw);
+    final delta = httpDate.toUtc().difference(now.toUtc());
+    if (delta.isNegative) {
+      return Duration.zero;
+    }
+    return delta;
+  } catch (_) {
+    return null;
+  }
+}
+
+Duration? parseRetryAfterHeaders(Headers? headers, {required DateTime now}) {
+  final retryAfterValue = headers?.value('retry-after');
+  return parseRetryAfterValue(retryAfterValue, now: now);
 }
 
 ApiRequestLane? apiRequestLaneFromExtraValue(Object? value) {
@@ -59,7 +108,6 @@ class ApiRateLimitCoordinator {
     final currentTime = now ?? _nowProvider();
     final blockedUntil = _blockedUntilByLane[lane];
     if (blockedUntil == null || !blockedUntil.isAfter(currentTime)) {
-      _blockedUntilByLane.remove(lane);
       return null;
     }
 
@@ -68,7 +116,7 @@ class ApiRateLimitCoordinator {
 
   void recordSuccess(ApiRequestLane lane, {DateTime? now}) {
     _consecutiveRateLimitHitsByLane.remove(lane);
-    remainingCooldown(lane, now: now);
+    _pruneExpiredCooldown(lane, now ?? _nowProvider());
   }
 
   void recordRateLimited(
@@ -92,48 +140,14 @@ class ApiRateLimitCoordinator {
   }
 
   Duration? parseRetryAfter(Object? retryAfterHeaderValue, {DateTime? now}) {
-    if (retryAfterHeaderValue == null) {
-      return null;
-    }
-
-    final currentTime = now ?? _nowProvider();
-    final raw = retryAfterHeaderValue.toString().trim();
-    if (raw.isEmpty) {
-      return null;
-    }
-
-    final asSeconds = int.tryParse(raw);
-    if (asSeconds != null) {
-      if (asSeconds <= 0) {
-        return Duration.zero;
-      }
-      return Duration(seconds: asSeconds);
-    }
-
-    final asDate = DateTime.tryParse(raw);
-    if (asDate != null) {
-      final delta = asDate.toUtc().difference(currentTime.toUtc());
-      if (delta.isNegative) {
-        return Duration.zero;
-      }
-      return delta;
-    }
-
-    try {
-      final httpDate = HttpDate.parse(raw);
-      final delta = httpDate.toUtc().difference(currentTime.toUtc());
-      if (delta.isNegative) {
-        return Duration.zero;
-      }
-      return delta;
-    } catch (_) {
-      return null;
-    }
+    return parseRetryAfterValue(
+      retryAfterHeaderValue,
+      now: now ?? _nowProvider(),
+    );
   }
 
   Duration? parseRetryAfterFromHeaders(Headers? headers, {DateTime? now}) {
-    final retryAfterValue = headers?.value('retry-after');
-    return parseRetryAfter(retryAfterValue, now: now);
+    return parseRetryAfterHeaders(headers, now: now ?? _nowProvider());
   }
 
   Duration _fallbackBackoffForStreak(int streak) {
@@ -151,50 +165,11 @@ class ApiRateLimitCoordinator {
     }
     return value;
   }
-}
 
-class ApiRateLimitInterceptor extends Interceptor {
-  ApiRateLimitInterceptor(this._coordinator);
-
-  final ApiRateLimitCoordinator _coordinator;
-
-  @override
-  void onResponse(Response response, ResponseInterceptorHandler handler) {
-    final lane = _laneForOptions(response.requestOptions);
-    if (lane != null) {
-      _coordinator.recordSuccess(lane);
+  void _pruneExpiredCooldown(ApiRequestLane lane, DateTime currentTime) {
+    final blockedUntil = _blockedUntilByLane[lane];
+    if (blockedUntil == null || !blockedUntil.isAfter(currentTime)) {
+      _blockedUntilByLane.remove(lane);
     }
-    handler.next(response);
   }
-
-  @override
-  void onError(DioException err, ErrorInterceptorHandler handler) {
-    final lane = _laneForOptions(err.requestOptions);
-    if (lane != null &&
-        err.response?.statusCode == AppHttpStatus.tooManyRequests) {
-      final retryAfter = _coordinator.parseRetryAfterFromHeaders(
-        err.response?.headers,
-      );
-      _coordinator.recordRateLimited(lane, retryAfter: retryAfter);
-    }
-    handler.next(err);
-  }
-
-  ApiRequestLane? _laneForOptions(RequestOptions options) {
-    return apiRequestLaneFromExtraValue(options.extra[portalApiLaneExtraKey]);
-  }
-}
-
-void ensureApiRateLimitInterceptor(
-  Dio dio,
-  ApiRateLimitCoordinator coordinator,
-) {
-  final alreadyPresent = dio.interceptors
-      .whereType<ApiRateLimitInterceptor>()
-      .isNotEmpty;
-  if (alreadyPresent) {
-    return;
-  }
-
-  dio.interceptors.add(ApiRateLimitInterceptor(coordinator));
 }

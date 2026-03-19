@@ -15,7 +15,9 @@ typedef FetchExecutionResult = ({
   Map<String, String> newGroupErrors,
   GroupInstanceWithGroup? newestInstance,
   bool didInstancesChange,
-  List<({String groupId, dynamic response})> responses,
+  List<GroupInstanceChunkResponse<dynamic>> responses,
+  bool interruptedByCooldown,
+  Duration? cooldownRemaining,
   bool isMounted,
 });
 
@@ -78,8 +80,9 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
   }
 
   Future<FetchExecutionResult> _executeChunkedFetch(
-    FetchContext context,
-  ) async {
+    FetchContext context, {
+    required bool bypassRateLimit,
+  }) async {
     AppLogger.debug(
       'Fetching instances for ${context.selectedGroupIds.length} groups',
       subCategory: 'group_monitor',
@@ -112,13 +115,15 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       groupInstances: previousGroupInstances,
     );
 
-    final responses = await fetchGroupInstancesChunked(
+    final runner = ref.read(portalApiRequestRunnerProvider);
+
+    final fetchResult = await fetchGroupInstancesChunked(
       orderedGroupIds: context.selectedGroupIds,
+      cooldownTracker: runner,
+      lane: ApiRequestLane.groupBaseline,
+      respectCooldownBetweenChunks: !bypassRateLimit,
       maxConcurrentRequests: AppConstants.groupInstancesMaxConcurrentRequests,
       fetchGroupInstances: (groupId) async {
-        ref
-            .read(apiCallCounterProvider.notifier)
-            .incrementApiCall(lane: ApiRequestLane.groupBaseline);
         try {
           return await api
               .getGroupInstances(
@@ -141,6 +146,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         }
       },
     );
+    final responses = fetchResult.responses;
     if (!ref.mounted) {
       return (
         api: api,
@@ -151,6 +157,8 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         newestInstance: newestInstance,
         didInstancesChange: didInstancesChange,
         responses: responses,
+        interruptedByCooldown: fetchResult.interruptedByCooldown,
+        cooldownRemaining: fetchResult.cooldownRemaining,
         isMounted: false,
       );
     }
@@ -164,6 +172,8 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       newestInstance: newestInstance,
       didInstancesChange: didInstancesChange,
       responses: responses,
+      interruptedByCooldown: fetchResult.interruptedByCooldown,
+      cooldownRemaining: fetchResult.cooldownRemaining,
       isMounted: true,
     );
   }
@@ -196,6 +206,20 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       final previousInstances = previousGroupInstances[groupId] ?? [];
 
       if (response == null) {
+        if (groupResponse.skippedDueToCooldown) {
+          final previousError = executionResult.previousGroupErrors[groupId];
+          if (previousError != null) {
+            newGroupErrors[groupId] = previousError;
+          }
+          if (previousGroupInstances.containsKey(groupId)) {
+            newGroupInstances[groupId] = previousInstances;
+            for (final previous in previousInstances) {
+              newestInstance = pickNewestInstance(newestInstance, previous);
+            }
+          }
+          continue;
+        }
+
         AppLogger.error(
           'Failed to fetch instances for group $groupId',
           subCategory: 'group_monitor',
@@ -254,7 +278,7 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     );
   }
 
-  void _finalizeFetch(
+  Duration? _finalizeFetch(
     FetchProcessingResult processingResult,
     FetchExecutionResult executionResult,
     FetchContext context,
@@ -286,11 +310,20 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       );
     }
 
-    _hasBaseline = true;
-    _loopController.recordBaselineSuccess(
-      polledGroupCount: context.selectedGroupIds.length,
-      totalInstances: totalInstances,
-    );
+    Duration? cooldownRetryDelay;
+    if (executionResult.interruptedByCooldown) {
+      _loopController.recordBaselineSkip('cooldown', context.attemptAt);
+      cooldownRetryDelay = resolveCooldownAwareDelay(
+        remainingCooldown: executionResult.cooldownRemaining,
+        fallbackDelay: _loopController.nextPollDelay(),
+      );
+    } else {
+      _hasBaseline = true;
+      _loopController.recordBaselineSuccess(
+        polledGroupCount: context.selectedGroupIds.length,
+        totalInstances: totalInstances,
+      );
+    }
     _pruneEnrichmentState(
       DateTime.now(),
       retainedKeys: _activeEnrichmentKeysFor(nextGroupInstances),
@@ -303,6 +336,8 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         subCategory: 'group_monitor',
       );
     }
+
+    return cooldownRetryDelay;
   }
 
   Future<void> _handleFetchError(
@@ -335,10 +370,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
 
     try {
       AppLogger.debug('Fetching groups for user', subCategory: 'group_monitor');
-
-      ref
-          .read(apiCallCounterProvider.notifier)
-          .incrementApiCall(lane: ApiRequestLane.userGroups);
 
       final response = await ref
           .read(groupMonitorApiProvider)
@@ -465,10 +496,12 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
 
     _baselineLoop.cancelTimer();
     _isFetchingBaseline = true;
+    Duration? baselineOverrideDelay;
 
     try {
+      final runner = ref.read(portalApiRequestRunnerProvider);
       if (RefreshCooldownHandler.shouldDeferForCooldown(
-        ref: ref,
+        cooldownTracker: runner,
         bypassRateLimit: bypassRateLimit,
         lane: ApiRequestLane.groupBaseline,
         logContext: 'group_monitor',
@@ -486,7 +519,10 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         return;
       }
 
-      final executionResult = await _executeChunkedFetch(context);
+      final executionResult = await _executeChunkedFetch(
+        context,
+        bypassRateLimit: bypassRateLimit,
+      );
       if (!executionResult.isMounted) {
         return;
       }
@@ -497,7 +533,11 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
       if (!ref.mounted) {
         return;
       }
-      _finalizeFetch(processingResult, executionResult, context);
+      baselineOverrideDelay = _finalizeFetch(
+        processingResult,
+        executionResult,
+        context,
+      );
     } catch (e, s) {
       if (!ref.mounted) {
         return;
@@ -506,7 +546,9 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
     } finally {
       _isFetchingBaseline = false;
       if (ref.mounted) {
-        _loopController.drainPendingRefreshesOrScheduleTicks();
+        _loopController.drainPendingRefreshesOrScheduleTicks(
+          baselineOverrideDelay: baselineOverrideDelay,
+        );
       }
     }
   }
@@ -548,8 +590,9 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         return;
       }
 
+      final runner = ref.read(portalApiRequestRunnerProvider);
       if (RefreshCooldownHandler.shouldDeferForCooldown(
-        ref: ref,
+        cooldownTracker: runner,
         bypassRateLimit: bypassRateLimit,
         lane: ApiRequestLane.groupBoost,
         logContext: 'group_monitor',
@@ -568,9 +611,6 @@ extension GroupMonitorFetchExtension on GroupMonitorNotifier {
         subCategory: 'group_monitor',
       );
 
-      ref
-          .read(apiCallCounterProvider.notifier)
-          .incrementApiCall(lane: ApiRequestLane.groupBoost);
       final api = ref.read(groupMonitorApiProvider);
       final response = await api
           .getGroupInstances(groupId: groupId, lane: ApiRequestLane.groupBoost)

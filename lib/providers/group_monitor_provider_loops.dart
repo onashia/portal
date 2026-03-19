@@ -270,7 +270,7 @@ class _GroupMonitorLoopController {
     );
   }
 
-  void drainPendingRefreshesOrScheduleTicks() {
+  void drainPendingRefreshesOrScheduleTicks({Duration? baselineOverrideDelay}) {
     if (!notifier.ref.mounted || notifier._isAnyFetchInFlight) {
       return;
     }
@@ -307,7 +307,7 @@ class _GroupMonitorLoopController {
       isActive: baselineActiveNow,
       isInFlight: notifier._isAnyFetchInFlight,
     )) {
-      scheduleNextBaselineTick();
+      scheduleNextBaselineTick(overrideDelay: baselineOverrideDelay);
     } else if (!baselineActiveNow) {
       notifier._baselineLoop.reset();
     }

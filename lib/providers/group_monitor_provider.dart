@@ -17,7 +17,6 @@ import '../services/relay_hint_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/collection_equivalence.dart' as collection_eq;
 import '../utils/dedupe_tracker.dart';
-import 'api_call_counter.dart';
 import 'auth_provider.dart';
 import 'group_instance_merging.dart';
 import 'group_monitor_api.dart';
@@ -30,6 +29,7 @@ import 'group_monitor_storage.dart';
 import 'polling_lifecycle.dart';
 import 'refresh_cooldown_handler.dart';
 import '../utils/timing_utils.dart';
+import 'portal_api_request_runner_provider.dart';
 
 export 'group_instance_merging.dart';
 export 'group_instance_selection.dart';
@@ -90,9 +90,6 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
             required String instanceId,
             required ApiRequestLane lane,
           }) {
-            ref
-                .read(apiCallCounterProvider.notifier)
-                .incrementApiCall(lane: lane);
             return ref
                 .read(groupMonitorApiProvider)
                 .getInstance(
@@ -334,7 +331,7 @@ class GroupMonitorNotifier extends Notifier<GroupMonitorState> {
 
 final inviteServiceProvider = Provider<InviteService>((ref) {
   final api = ref.read(vrchatApiProvider);
-  return InviteService(api);
+  return InviteService(api, runner: ref.read(portalApiRequestRunnerProvider));
 });
 
 final relayHintServiceProvider = Provider<RelayHintService>((ref) {
@@ -396,6 +393,20 @@ final groupMonitorSortedInstancesProvider =
       );
       return sortGroupInstances(
         groupInstances.values.expand((instances) => instances),
+      );
+    });
+
+final groupMonitorHasIncompleteCooldownDataProvider =
+    Provider.family<bool, String>((ref, userId) {
+      final state = ref.watch(groupMonitorProvider(userId));
+      if (!state.isMonitoring || state.lastBaselineSkipReason != 'cooldown') {
+        return false;
+      }
+
+      return state.selectedGroupIds.any(
+        (groupId) =>
+            !state.groupInstances.containsKey(groupId) &&
+            !state.groupErrors.containsKey(groupId),
       );
     });
 

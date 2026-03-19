@@ -6,9 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
 import '../models/group_calendar_event.dart';
-import '../providers/api_call_counter.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_monitor_provider.dart';
+import '../providers/portal_api_request_runner_provider.dart';
+import '../providers/portal_vrchat_api.dart';
 import '../providers/polling_lifecycle.dart';
 import '../services/api_rate_limit_coordinator.dart';
 import '../utils/app_logger.dart';
@@ -257,7 +258,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
   /// If a refresh was queued while the previous fetch was in-flight, run it
   /// now. Otherwise schedule the next periodic tick (or reconcile if the loop
   /// is no longer active).
-  void _drainPendingRefreshesOrScheduleTick() {
+  void _drainPendingRefreshesOrScheduleTick({Duration? overrideDelay}) {
     if (!ref.mounted || _isFetching) {
       return;
     }
@@ -271,7 +272,8 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       runNow: ({required bypassRateLimit}) {
         unawaited(refresh(bypassRateLimit: bypassRateLimit));
       },
-      scheduleNextTick: () => _scheduleNextCalendarTick(),
+      scheduleNextTick: () =>
+          _scheduleNextCalendarTick(overrideDelay: overrideDelay),
       reconcile: _reconcileCalendarLoop,
     );
   }
@@ -304,8 +306,9 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       return;
     }
 
+    final runner = ref.read(portalApiRequestRunnerProvider);
     if (RefreshCooldownHandler.shouldDeferForCooldown(
-      ref: ref,
+      cooldownTracker: runner,
       bypassRateLimit: bypassRateLimit,
       lane: ApiRequestLane.calendar,
       logContext: 'calendar',
@@ -316,6 +319,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
     }
 
     _isFetching = true;
+    Duration? cooldownRetryDelay;
     final previousState = state;
     final shouldEnterForegroundLoading =
         shouldEnterForegroundCalendarLoading(previousState) &&
@@ -328,7 +332,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       await _ensureGroupDetails(monitorState);
       final refreshedMonitor = ref.read(groupMonitorProvider(userId));
       final groupLookup = ref.read(groupMonitorAllGroupsByIdProvider(userId));
-      final api = ref.read(vrchatApiProvider);
+      final api = ref.read(portalCalendarApiProvider);
       final orderedGroupIds = refreshedMonitor.selectedGroupIds.toList(
         growable: false,
       )..sort();
@@ -339,19 +343,16 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       final fetched = await fetchGroupCalendarEventsChunked(
         orderedGroupIds: orderedGroupIds,
         previousEventsByGroup: state.eventsByGroup,
+        previousGroupErrors: state.groupErrors,
+        cooldownTracker: runner,
+        lane: ApiRequestLane.calendar,
+        respectCooldownBetweenChunks: !bypassRateLimit,
         maxConcurrentRequests: _maxConcurrentRequests,
         fetchEvents: (groupId) async {
-          ref
-              .read(apiCallCounterProvider.notifier)
-              .incrementApiCall(lane: ApiRequestLane.calendar);
-          final response = await api.rawApi
-              .getCalendarApi()
-              .getGroupCalendarEvents(
-                groupId: groupId,
-                n: _eventsPerGroup,
-                extra: apiRequestLaneExtra(ApiRequestLane.calendar),
-              );
-          return response.data?.results ?? [];
+          return api.getGroupCalendarEvents(
+            groupId: groupId,
+            n: _eventsPerGroup,
+          );
         },
         onFetchError: (groupId, error, stackTrace) {
           AppLogger.error(
@@ -364,6 +365,19 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       );
       final updatedEventsByGroup = fetched.eventsByGroup;
       final updatedErrors = fetched.groupErrors;
+      final shouldKeepLoading =
+          fetched.interruptedByCooldown &&
+          orderedGroupIds.any(
+            (groupId) =>
+                !updatedEventsByGroup.containsKey(groupId) &&
+                !updatedErrors.containsKey(groupId),
+          );
+      if (fetched.interruptedByCooldown) {
+        cooldownRetryDelay = resolveCooldownAwareDelay(
+          remainingCooldown: fetched.cooldownRemaining,
+          fallbackDelay: const Duration(minutes: _refreshMinutes),
+        );
+      }
 
       final today = DateTime.now();
       final todayEvents = _buildTodayEvents(
@@ -381,13 +395,14 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       final shouldEmitState = shouldEmitCalendarRefreshStateUpdate(
         currentState: state,
         didDataChange: selectedData.didDataChange,
+        nextIsLoading: shouldKeepLoading,
       );
       if (shouldEmitState) {
         state = state.copyWith(
           eventsByGroup: selectedData.effectiveEventsByGroup,
           todayEvents: selectedData.effectiveTodayEvents,
           groupErrors: selectedData.effectiveGroupErrors,
-          isLoading: false,
+          isLoading: shouldKeepLoading,
           lastDataChangedAt: selectedData.didDataChange
               ? DateTime.now()
               : state.lastDataChangedAt,
@@ -405,7 +420,7 @@ class GroupCalendarNotifier extends Notifier<GroupCalendarState> {
       }
     } finally {
       _isFetching = false;
-      _drainPendingRefreshesOrScheduleTick();
+      _drainPendingRefreshesOrScheduleTick(overrideDelay: cooldownRetryDelay);
     }
   }
 

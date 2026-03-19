@@ -1,9 +1,54 @@
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
 
 void main() {
+  group('Retry-After parsing helpers', () {
+    final now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+
+    test('parseRetryAfterValue parses seconds', () {
+      final parsed = parseRetryAfterValue('45', now: now);
+
+      expect(parsed, const Duration(seconds: 45));
+    });
+
+    test('parseRetryAfterHeaders parses HTTP-date from headers', () {
+      final target = now.add(const Duration(seconds: 30));
+
+      final parsed = parseRetryAfterHeaders(
+        Headers.fromMap(<String, List<String>>{
+          'retry-after': [HttpDate.format(target)],
+        }),
+        now: now,
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.inSeconds, inInclusiveRange(29, 30));
+    });
+
+    test('parseRetryAfterValue returns zero for past dates', () {
+      final target = now.subtract(const Duration(seconds: 30));
+
+      final parsed = parseRetryAfterValue(HttpDate.format(target), now: now);
+
+      expect(parsed, Duration.zero);
+    });
+
+    test('parseRetryAfterValue returns null for empty values', () {
+      final parsed = parseRetryAfterValue('   ', now: now);
+
+      expect(parsed, isNull);
+    });
+
+    test('parseRetryAfterValue returns null for invalid values', () {
+      final parsed = parseRetryAfterValue('not-a-date', now: now);
+
+      expect(parsed, isNull);
+    });
+  });
+
   group('ApiRateLimitCoordinator', () {
     test('parses Retry-After seconds', () {
       final now = DateTime.utc(2026, 2, 14, 12, 0, 0);
@@ -75,6 +120,70 @@ void main() {
         isFalse,
       );
     });
+
+    test('recordSuccess does not clear an active cooldown for the lane', () {
+      var now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+      final coordinator = ApiRateLimitCoordinator(nowProvider: () => now);
+
+      coordinator.recordRateLimited(
+        ApiRequestLane.authSession,
+        retryAfter: const Duration(seconds: 60),
+      );
+      expect(
+        coordinator.remainingCooldown(ApiRequestLane.authSession, now: now),
+        const Duration(seconds: 60),
+      );
+
+      coordinator.recordSuccess(ApiRequestLane.authSession, now: now);
+
+      expect(
+        coordinator.remainingCooldown(ApiRequestLane.authSession, now: now),
+        const Duration(seconds: 60),
+      );
+    });
+
+    test('recordSuccess clears cooldown once it has already expired', () {
+      var now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+      final coordinator = ApiRateLimitCoordinator(nowProvider: () => now);
+
+      coordinator.recordRateLimited(
+        ApiRequestLane.authSession,
+        retryAfter: const Duration(seconds: 60),
+      );
+
+      now = now.add(const Duration(seconds: 61));
+      coordinator.recordSuccess(ApiRequestLane.authSession, now: now);
+
+      expect(
+        coordinator.remainingCooldown(ApiRequestLane.authSession, now: now),
+        isNull,
+      );
+    });
+
+    test(
+      'recordSuccess resets fallback streak even while cooldown remains active',
+      () {
+        var now = DateTime.utc(2026, 2, 14, 12, 0, 0);
+        final coordinator = ApiRateLimitCoordinator(nowProvider: () => now);
+
+        coordinator.recordRateLimited(
+          ApiRequestLane.authSession,
+          retryAfter: const Duration(seconds: 60),
+          now: now,
+        );
+
+        now = now.add(const Duration(seconds: 1));
+        coordinator.recordSuccess(ApiRequestLane.authSession, now: now);
+
+        now = now.add(const Duration(seconds: 60));
+        coordinator.recordRateLimited(ApiRequestLane.authSession, now: now);
+
+        expect(
+          coordinator.remainingCooldown(ApiRequestLane.authSession, now: now),
+          coordinator.initialFallbackBackoff,
+        );
+      },
+    );
 
     test('preserves server-provided Retry-After without clamping', () {
       final now = DateTime.utc(2026, 2, 14, 12, 0, 0);

@@ -4,6 +4,7 @@ import 'package:dio/dio.dart' as dio;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/api_rate_limit_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
 import 'package:portal/providers/vrchat_status_provider.dart';
@@ -11,17 +12,6 @@ import 'package:portal/services/api_rate_limit_coordinator.dart';
 import 'test_helpers/auth_test_harness.dart';
 
 class _MockDio extends Mock implements dio.Dio {}
-
-class _NoopErrorInterceptorHandler extends dio.ErrorInterceptorHandler {
-  @override
-  void next(dio.DioException error) {}
-
-  @override
-  void reject(dio.DioException error) {}
-
-  @override
-  void resolve(dio.Response<dynamic> response) {}
-}
 
 dio.Response<Map<String, dynamic>> _statusResponse() {
   return dio.Response<Map<String, dynamic>>(
@@ -153,6 +143,9 @@ void main() {
         );
 
     final notifier = container.read(vrchatStatusProvider.notifier);
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    clearInteractions(mockDio);
     await notifier.refresh(bypassRateLimit: true);
 
     verify(() => mockDio.get(any(), options: any(named: 'options'))).called(1);
@@ -191,30 +184,6 @@ void main() {
     verifyNever(() => mockDio.get(any(), options: any(named: 'options')));
   });
 
-  test('429 response enters cooldown for status lane', () async {
-    final coordinator = ApiRateLimitCoordinator();
-    final interceptor = ApiRateLimitInterceptor(coordinator);
-    final requestOptions = dio.RequestOptions(
-      path: '/summary.json',
-      extra: apiRequestLaneExtra(ApiRequestLane.status),
-    );
-    final error = dio.DioException.badResponse(
-      statusCode: 429,
-      requestOptions: requestOptions,
-      response: dio.Response<Map<String, dynamic>>(
-        statusCode: 429,
-        requestOptions: requestOptions,
-        headers: dio.Headers.fromMap({
-          'retry-after': <String>['60'],
-        }),
-      ),
-    );
-
-    interceptor.onError(error, _NoopErrorInterceptorHandler());
-    expect(coordinator.canRequest(ApiRequestLane.status), isFalse);
-    expect(coordinator.remainingCooldown(ApiRequestLane.status), isNotNull);
-  });
-
   test('polling resumes after auth transitions to authenticated', () async {
     final mockDio = _MockDio();
     when(
@@ -251,6 +220,46 @@ void main() {
 
     verify(() => mockDio.get(any(), options: any(named: 'options'))).called(1);
   });
+
+  test(
+    'successful refresh increments API counters through the status runner',
+    () async {
+      final mockDio = _MockDio();
+      when(
+        () => mockDio.get(any(), options: any(named: 'options')),
+      ).thenAnswer((_) async => _statusResponse());
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(
+            () => TestAuthNotifier(
+              AuthState(
+                status: AuthStatus.authenticated,
+                currentUser: mockCurrentUser('usr_test'),
+              ),
+            ),
+          ),
+          dioProvider.overrideWith((ref) => mockDio),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(vrchatStatusProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      final counterBefore = container.read(apiCallCounterProvider);
+      final callsBefore = counterBefore.totalCalls;
+      final laneCallsBefore =
+          counterBefore.callsByLane[ApiRequestLane.status.name] ?? 0;
+      await notifier.refresh(bypassRateLimit: true);
+
+      final counterState = container.read(apiCallCounterProvider);
+      expect(counterState.totalCalls, callsBefore + 1);
+      expect(
+        counterState.callsByLane[ApiRequestLane.status.name],
+        laneCallsBefore + 1,
+      );
+    },
+  );
 
   test(
     'in-flight success completion after logout does not overwrite unauthenticated safe state',

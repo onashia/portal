@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart' as dio;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:portal/services/api_rate_limit_coordinator.dart';
+import 'package:portal/services/portal_api_request_runner.dart';
 import 'package:portal/services/invite_service.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
 
@@ -211,7 +213,14 @@ void main() {
       mockApi = _MockVrchatDart();
       mockRawApi = _MockVrchatRawApi();
       mockInviteApi = _MockInviteApi();
-      service = InviteService(mockApi);
+      service = InviteService(
+        mockApi,
+        runner: PortalApiRequestRunner(
+          coordinator: ApiRateLimitCoordinator(),
+          recordApiCall: ({lane}) {},
+          recordThrottledSkip: ({lane}) {},
+        ),
+      );
 
       when(() => mockApi.rawApi).thenReturn(mockRawApi);
       when(() => mockRawApi.getInviteApi()).thenReturn(mockInviteApi);
@@ -223,6 +232,7 @@ void main() {
           worldId: 'wrld_alpha',
           instanceId: 'inst_a',
           cancelToken: null,
+          extra: any(named: 'extra'),
         ),
       ).thenThrow(_inviteError(statusCode: 403));
 
@@ -242,6 +252,7 @@ void main() {
             worldId: 'wrld_alpha',
             instanceId: 'inst_a',
             cancelToken: null,
+            extra: any(named: 'extra'),
           ),
         ).thenThrow(_inviteError(statusCode: 429));
 
@@ -262,6 +273,7 @@ void main() {
             worldId: 'wrld_alpha',
             instanceId: 'inst_a',
             cancelToken: null,
+            extra: any(named: 'extra'),
           ),
         ).thenThrow(_inviteError(statusCode: 418));
 
@@ -280,6 +292,7 @@ void main() {
           worldId: 'wrld_alpha',
           instanceId: 'inst_a',
           cancelToken: null,
+          extra: any(named: 'extra'),
         ),
       ).thenThrow(_inviteError(statusCode: 403));
 
@@ -299,6 +312,7 @@ void main() {
             worldId: 'wrld_alpha',
             instanceId: 'inst_a',
             cancelToken: null,
+            extra: any(named: 'extra'),
           ),
         ).thenThrow(_inviteError(statusCode: 429));
 
@@ -320,6 +334,7 @@ void main() {
             worldId: 'wrld_alpha',
             instanceId: 'inst_a',
             cancelToken: null,
+            extra: any(named: 'extra'),
           ),
         ).thenThrow(_inviteError(statusCode: 418));
 
@@ -338,6 +353,7 @@ void main() {
           worldId: 'wrld_alpha',
           instanceId: 'inst_a',
           cancelToken: null,
+          extra: any(named: 'extra'),
         ),
       ).thenAnswer(
         (_) async => dio.Response<SentNotification>(
@@ -372,6 +388,7 @@ void main() {
             worldId: any(named: 'worldId'),
             instanceId: any(named: 'instanceId'),
             cancelToken: any(named: 'cancelToken'),
+            extra: any(named: 'extra'),
           ),
         );
       },

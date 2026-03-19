@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../constants/app_constants.dart';
 import '../utils/app_logger.dart';
+import 'relay_retry_after.dart';
 
 /// Handles the HTTP bootstrap exchange that issues a short-lived WebSocket URI.
 ///
@@ -9,8 +10,8 @@ import '../utils/app_logger.dart';
 /// On success the server returns a signed [Uri] containing a short-lived token
 /// in the query string (a trade-off required by the WebSocket API, which does
 /// not support custom request headers during the upgrade handshake). The token
-/// TTL ([AppConstants.relayBootstrapTimeoutSeconds]) limits exposure if the URI
-/// appears in logs.
+/// TTL is defined by the relay worker and is intentionally short-lived so the
+/// URI has limited exposure if it appears in logs.
 class RelayBootstrapClient {
   RelayBootstrapClient({
     required Dio dio,
@@ -57,8 +58,7 @@ class RelayBootstrapClient {
   /// unexpected payload. Throws [DioException] for HTTP-level failures.
   ///
   /// The returned [Uri] contains a short-lived authentication token as a
-  /// query parameter and must be used before [AppConstants.relayBootstrapTimeoutSeconds]
-  /// has elapsed.
+  /// query parameter and should be used immediately.
   Future<Uri> bootstrap({
     required String groupId,
     required String clientId,
@@ -78,18 +78,33 @@ class RelayBootstrapClient {
       );
     }
 
-    final response = await _dio.post<dynamic>(
-      bootstrapUri.toString(),
-      data: {'groupId': groupId, 'clientId': clientId},
-      options: Options(
-        headers: {
-          'content-type': 'application/json',
-          // Defense-in-depth: the secret is embedded in the binary and can be
-          // reverse-engineered. Server-side rate limiting is the real barrier.
-          'x-app-secret': _appSecret,
-        },
-      ),
-    );
+    late final Response<dynamic> response;
+    try {
+      response = await _dio.post<dynamic>(
+        bootstrapUri.toString(),
+        data: {'groupId': groupId, 'clientId': clientId},
+        options: Options(
+          headers: {
+            'content-type': 'application/json',
+            // Defense-in-depth: the secret is embedded in the binary and can be
+            // reverse-engineered. Server-side rate limiting is the real barrier.
+            'x-app-secret': _appSecret,
+          },
+        ),
+      );
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 429) {
+        final retryAfter = parseRelayRetryAfter(
+          data: error.response?.data,
+          headers: error.response?.headers,
+          now: now,
+        );
+        if (retryAfter != null) {
+          onRuntimeDisabled(now().add(retryAfter));
+        }
+      }
+      rethrow;
+    }
 
     final data = response.data;
     if (data is! Map<String, dynamic>) {
@@ -98,11 +113,14 @@ class RelayBootstrapClient {
 
     final relayEnabled = data['relayEnabled'] != false;
     if (!relayEnabled) {
-      final retryAfterSeconds =
-          ((data['retryAfterSeconds'] as num?)?.toInt() ??
-                  AppConstants.relayCircuitBreakerCooldownSeconds)
-              .clamp(0, AppConstants.relayMaxRetryAfterSeconds);
-      onRuntimeDisabled(now().add(Duration(seconds: retryAfterSeconds)));
+      final retryAfter =
+          parseRelayRetryAfter(
+            data: data,
+            headers: response.headers,
+            now: now,
+          ) ??
+          Duration(seconds: AppConstants.relayCircuitBreakerCooldownSeconds);
+      onRuntimeDisabled(now().add(retryAfter));
       throw StateError('Relay runtime disabled by server');
     }
 

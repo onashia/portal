@@ -154,7 +154,7 @@ packages:
     source: hosted
     version: "3.3.0"
   dio_response_validator:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: dio_response_validator
       sha256: "82ddb2e9371c6548037197e31d536c2f0800640de34dba094187df3a8c4ffe2b"
