@@ -172,7 +172,10 @@ void main() {
       await tester.pump();
       await tester.pumpAndSettle();
 
-      expect(find.byKey(DashboardSideSheetLayout.dismissBarrierKey), findsNothing);
+      expect(
+        find.byKey(DashboardSideSheetLayout.dismissBarrierKey),
+        findsNothing,
+      );
       expect(_focusWithin<CustomTitleBar>(), isTrue);
       expect(_manageGroupsButtonHasFocus(tester), isFalse);
     },
