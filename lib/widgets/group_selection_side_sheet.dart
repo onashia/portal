@@ -11,14 +11,18 @@ import 'common/loading_state.dart';
 import 'inputs/app_text_field.dart';
 
 class GroupSelectionSideSheet extends ConsumerStatefulWidget {
+  static const Key searchFieldKey = ValueKey('group_selection_search_field');
+
   const GroupSelectionSideSheet({
     super.key,
     required this.userId,
     required this.onClose,
+    this.searchFocusNode,
   });
 
   final String userId;
   final VoidCallback onClose;
+  final FocusNode? searchFocusNode;
 
   @override
   ConsumerState<GroupSelectionSideSheet> createState() =>
@@ -130,13 +134,21 @@ class _GroupSelectionSideSheetState
                 shape: IconButtonM3EShapeVariant.round,
               ),
               SizedBox(width: m3e.spacing.sm),
-              Text('Manage Groups', style: textTheme.titleLarge),
-              const Spacer(),
+              Expanded(
+                child: Text(
+                  'Manage Groups',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.titleLarge,
+                ),
+              ),
             ],
           ),
           SizedBox(height: m3e.spacing.lg),
           AppTextField(
+            key: GroupSelectionSideSheet.searchFieldKey,
             controller: _searchController,
+            focusNode: widget.searchFocusNode,
             textInputAction: TextInputAction.search,
             decoration: const InputDecoration(
               hintText: 'Search or select groups',

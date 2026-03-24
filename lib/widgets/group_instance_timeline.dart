@@ -16,25 +16,33 @@ class GroupInstanceTimeline extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final allInstances = ref.watch(groupMonitorSortedInstancesProvider(userId));
     final allGroupsById = ref.watch(groupMonitorAllGroupsByIdProvider(userId));
+    final selectedGroupIds = ref.watch(
+      groupMonitorProvider(userId).select((state) => state.selectedGroupIds),
+    );
+    final groupInstances = ref.watch(
+      groupMonitorProvider(userId).select((state) => state.groupInstances),
+    );
+    final groupErrors = ref.watch(
+      groupMonitorProvider(userId).select((state) => state.groupErrors),
+    );
     final newestInstanceId = ref.watch(
       groupMonitorProvider(userId).select((state) => state.newestInstanceId),
-    );
-    final hasSelectedGroups = ref.watch(
-      groupMonitorProvider(
-        userId,
-      ).select((state) => state.selectedGroupIds.isNotEmpty),
-    );
-    final hasErrors = ref.watch(
-      groupMonitorProvider(
-        userId,
-      ).select((state) => state.groupErrors.isNotEmpty),
     );
     final hasIncompleteCooldownData = ref.watch(
       groupMonitorHasIncompleteCooldownDataProvider(userId),
     );
+    final hasSelectedGroups = selectedGroupIds.isNotEmpty;
+    final hasSelectedGroupResults = selectedGroupIds.any(
+      groupInstances.containsKey,
+    );
+    final hasSelectedGroupErrors = selectedGroupIds.any(
+      groupErrors.containsKey,
+    );
 
     if (allInstances.isEmpty) {
-      if (hasSelectedGroups && !hasErrors && hasIncompleteCooldownData) {
+      if (hasSelectedGroups &&
+          hasIncompleteCooldownData &&
+          !hasSelectedGroupErrors) {
         return const LoadingState(
           semanticLabel: 'Loading instances',
           message: 'Loading instances...',
@@ -42,8 +50,13 @@ class GroupInstanceTimeline extends ConsumerWidget {
       }
 
       return GroupInstancesEmptyState(
-        hasSelectedGroups: hasSelectedGroups,
-        hasErrors: hasErrors,
+        variant: !hasSelectedGroups
+            ? GroupInstancesEmptyStateVariant.noGroupsSelected
+            : hasSelectedGroupResults
+            ? GroupInstancesEmptyStateVariant.noInstancesOpen
+            : hasSelectedGroupErrors
+            ? GroupInstancesEmptyStateVariant.unableToLoadInstances
+            : GroupInstancesEmptyStateVariant.noInstancesOpen,
       );
     }
 

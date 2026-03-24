@@ -28,6 +28,7 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
           boostedGroupId: state.boostedGroupId,
           isBoostActive: state.isBoostActive,
           isMonitoring: state.isMonitoring,
+          groupErrors: state.groupErrors,
         ),
       ),
     );
@@ -83,6 +84,12 @@ class DashboardGroupMonitoringSection extends ConsumerWidget {
                       isBoosted:
                           monitorMeta.boostedGroupId == group.groupId &&
                           monitorMeta.isBoostActive,
+                      hasError:
+                          group.groupId != null &&
+                          monitorMeta.groupErrors.containsKey(group.groupId),
+                      errorMessage: group.groupId == null
+                          ? null
+                          : monitorMeta.groupErrors[group.groupId],
                       isMonitoring: monitorMeta.isMonitoring,
                       onToggleBoost: () =>
                           _toggleBoostForGroup(ref, group.groupId),

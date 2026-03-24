@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 
 class DashboardSideSheetLayout extends StatelessWidget {
   static const Key shellKey = ValueKey('dashboard_side_sheet_shell');
+  static const Key dismissBarrierKey = ValueKey(
+    'dashboard_side_sheet_dismiss_barrier',
+  );
+  static const String dismissBarrierSemanticsLabel =
+      'Dismiss Manage Groups panel';
+  static const double minVisibleOpacity = 0.02;
 
   final Widget content;
   final Widget sideSheet;
@@ -19,6 +26,15 @@ class DashboardSideSheetLayout extends StatelessWidget {
     required this.onClose,
   });
 
+  static double opacityForProgress(double progress) {
+    final clampedProgress = progress.clamp(0.0, 1.0);
+    return Curves.easeOut.transform((clampedProgress * 2).clamp(0.0, 1.0));
+  }
+
+  static bool isVisibleForProgress(double progress) {
+    return opacityForProgress(progress) > minVisibleOpacity;
+  }
+
   @override
   Widget build(BuildContext context) {
     final topInset = context.m3e.spacing.sm;
@@ -27,11 +43,8 @@ class DashboardSideSheetLayout extends StatelessWidget {
     final bottomInset = context.m3e.spacing.lg;
     final shellWidth = sheetWidth + rightInset + leftShadowGutter;
     final clampedProgress = progress.clamp(0.0, 1.0);
-    final opacityProgress = Curves.easeOut.transform(
-      (clampedProgress * 2).clamp(0.0, 1.0),
-    );
-    const minVisibleOpacity = 0.02;
-    final isVisible = opacityProgress > minVisibleOpacity;
+    final opacityProgress = opacityForProgress(progress);
+    final isVisible = isVisibleForProgress(progress);
     final sheetTranslateX = shellWidth * (1 - clampedProgress);
 
     return SizedBox.expand(
@@ -40,10 +53,16 @@ class DashboardSideSheetLayout extends StatelessWidget {
           content,
           if (isVisible)
             Positioned.fill(
-              child: GestureDetector(
+              child: Semantics(
+                key: dismissBarrierKey,
+                button: true,
+                label: dismissBarrierSemanticsLabel,
                 onTap: onClose,
-                behavior: HitTestBehavior.opaque,
-                child: const ColoredBox(color: Colors.transparent),
+                child: GestureDetector(
+                  onTap: onClose,
+                  behavior: HitTestBehavior.opaque,
+                  child: const ColoredBox(color: Colors.transparent),
+                ),
               ),
             ),
           Positioned(
@@ -67,9 +86,26 @@ class DashboardSideSheetLayout extends StatelessWidget {
                       ),
                       child: IgnorePointer(
                         ignoring: !isVisible,
-                        child: Opacity(
-                          opacity: opacityProgress,
-                          child: sideSheet,
+                        child: ExcludeFocus(
+                          excluding: !isVisible,
+                          child: ExcludeSemantics(
+                            excluding: !isVisible,
+                            child: FocusTraversalGroup(
+                              // Also handle Escape inside the sheet subtree so
+                              // the local traversal group can dismiss directly.
+                              child: CallbackShortcuts(
+                                bindings: <ShortcutActivator, VoidCallback>{
+                                  const SingleActivator(
+                                    LogicalKeyboardKey.escape,
+                                  ): onClose,
+                                },
+                                child: Opacity(
+                                  opacity: opacityProgress,
+                                  child: sideSheet,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),

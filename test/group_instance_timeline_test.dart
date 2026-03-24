@@ -201,38 +201,144 @@ void main() {
     expect(find.text('Unable to Load Instances'), findsOneWidget);
   });
 
-  testWidgets('keeps normal empty-state message when no errors exist', (
-    tester,
-  ) async {
-    const monitorState = GroupMonitorState(
-      selectedGroupIds: {'grp_alpha'},
-      groupInstances: {},
-      groupErrors: {},
-    );
+  testWidgets(
+    'renders error empty state when selected groups are unresolved except for errors',
+    (tester) async {
+      const monitorState = GroupMonitorState(
+        selectedGroupIds: {'grp_alpha', 'grp_beta'},
+        groupInstances: {},
+        groupErrors: {'grp_alpha': 'Failed to fetch instances'},
+      );
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          groupMonitorProvider(
-            'usr_test',
-          ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.lightTheme,
-          home: Scaffold(
-            body: SizedBox(
-              height: 300,
-              child: GroupInstanceTimeline(userId: 'usr_test'),
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            groupMonitorProvider(
+              'usr_test',
+            ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: Scaffold(
+              body: SizedBox(
+                height: 300,
+                child: GroupInstanceTimeline(userId: 'usr_test'),
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.pumpAndSettle();
+      await tester.pump();
 
-    expect(find.text('No Instances Open'), findsOneWidget);
-  });
+      expect(find.text('Unable to Load Instances'), findsOneWidget);
+      expect(find.text('No Instances Open'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'keeps normal empty-state message when no results or errors exist',
+    (tester) async {
+      const monitorState = GroupMonitorState(
+        selectedGroupIds: {'grp_alpha'},
+        groupInstances: {},
+        groupErrors: {},
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            groupMonitorProvider(
+              'usr_test',
+            ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: Scaffold(
+              body: SizedBox(
+                height: 300,
+                child: GroupInstanceTimeline(userId: 'usr_test'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('No Instances Open'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'prefers no-instances empty state when a selected group has a cached empty result',
+    (tester) async {
+      const monitorState = GroupMonitorState(
+        selectedGroupIds: {'grp_alpha'},
+        groupInstances: {'grp_alpha': <GroupInstanceWithGroup>[]},
+        groupErrors: {'grp_alpha': 'Failed to fetch instances'},
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            groupMonitorProvider(
+              'usr_test',
+            ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: Scaffold(
+              body: SizedBox(
+                height: 300,
+                child: GroupInstanceTimeline(userId: 'usr_test'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      expect(find.text('No Instances Open'), findsOneWidget);
+      expect(find.text('Unable to Load Instances'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'prefers no-instances empty state when another selected group has an error',
+    (tester) async {
+      const monitorState = GroupMonitorState(
+        selectedGroupIds: {'grp_alpha', 'grp_beta'},
+        groupInstances: {'grp_alpha': <GroupInstanceWithGroup>[]},
+        groupErrors: {'grp_beta': 'Failed to fetch instances'},
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            groupMonitorProvider(
+              'usr_test',
+            ).overrideWith(() => TestGroupMonitorNotifier(monitorState)),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: Scaffold(
+              body: SizedBox(
+                height: 300,
+                child: GroupInstanceTimeline(userId: 'usr_test'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      expect(find.text('No Instances Open'), findsOneWidget);
+      expect(find.text('Unable to Load Instances'), findsNothing);
+    },
+  );
 
   testWidgets('renders loading state for cooldown-incomplete instance data', (
     tester,
