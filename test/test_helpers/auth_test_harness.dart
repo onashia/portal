@@ -1,7 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:portal/providers/app_version_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
 import 'package:vrchat_dart/vrchat_dart.dart';
+
+const testAppVersion = '9.9.9';
 
 class TestAuthNotifier extends AuthNotifier {
   TestAuthNotifier(this._initialState);
@@ -56,7 +59,11 @@ createAuthHarness({
 }) {
   final authNotifier = TestAuthNotifier(initialAuthState);
   final container = ProviderContainer(
-    overrides: [authProvider.overrideWith(() => authNotifier), ...overrides],
+    overrides: [
+      appVersionProvider.overrideWithValue(testAppVersion),
+      authProvider.overrideWith(() => authNotifier),
+      ...overrides,
+    ],
   );
   return (container: container, authNotifier: authNotifier);
 }

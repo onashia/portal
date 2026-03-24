@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/api_rate_limit_provider.dart';
+import 'package:portal/providers/app_version_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
 import 'package:portal/providers/vrchat_status_provider.dart';
 import 'package:portal/services/api_rate_limit_coordinator.dart';
@@ -26,10 +27,25 @@ dio.Response<Map<String, dynamic>> _statusResponse() {
 }
 
 void main() {
+  test('dioProvider uses the shared app version in the User-Agent header', () {
+    final container = ProviderContainer(
+      overrides: [appVersionProvider.overrideWithValue('9.9.9')],
+    );
+    addTearDown(container.dispose);
+
+    final client = container.read(dioProvider);
+
+    expect(
+      client.options.headers['User-Agent'],
+      'Portal/9.9.9 (+https://github.com/onashia/portal)',
+    );
+  });
+
   test('refresh does not call status API when unauthenticated', () async {
     final mockDio = _MockDio();
     final container = ProviderContainer(
       overrides: [
+        appVersionProvider.overrideWithValue('9.9.9'),
         authProvider.overrideWith(
           () => TestAuthNotifier(
             const AuthState(status: AuthStatus.unauthenticated),
@@ -55,6 +71,7 @@ void main() {
       ).thenAnswer((_) async => _statusResponse());
       final container = ProviderContainer(
         overrides: [
+          appVersionProvider.overrideWithValue('9.9.9'),
           authProvider.overrideWith(
             () => TestAuthNotifier(
               AuthState(
@@ -89,6 +106,7 @@ void main() {
     ).thenAnswer((_) async => _statusResponse());
     final container = ProviderContainer(
       overrides: [
+        appVersionProvider.overrideWithValue('9.9.9'),
         authProvider.overrideWith(
           () => TestAuthNotifier(
             AuthState(
@@ -122,6 +140,7 @@ void main() {
     ).thenAnswer((_) async => _statusResponse());
     final container = ProviderContainer(
       overrides: [
+        appVersionProvider.overrideWithValue('9.9.9'),
         authProvider.overrideWith(
           () => TestAuthNotifier(
             AuthState(
@@ -158,6 +177,7 @@ void main() {
     ).thenAnswer((_) async => _statusResponse());
     final container = ProviderContainer(
       overrides: [
+        appVersionProvider.overrideWithValue('9.9.9'),
         authProvider.overrideWith(
           () => TestAuthNotifier(
             AuthState(
@@ -191,6 +211,7 @@ void main() {
     ).thenAnswer((_) async => _statusResponse());
     final container = ProviderContainer(
       overrides: [
+        appVersionProvider.overrideWithValue('9.9.9'),
         authProvider.overrideWith(
           () => TestAuthNotifier(
             const AuthState(status: AuthStatus.unauthenticated),
@@ -230,6 +251,7 @@ void main() {
       ).thenAnswer((_) async => _statusResponse());
       final container = ProviderContainer(
         overrides: [
+          appVersionProvider.overrideWithValue('9.9.9'),
           authProvider.overrideWith(
             () => TestAuthNotifier(
               AuthState(
@@ -271,6 +293,7 @@ void main() {
       ).thenAnswer((_) => responseCompleter.future);
       final container = ProviderContainer(
         overrides: [
+          appVersionProvider.overrideWithValue('9.9.9'),
           authProvider.overrideWith(
             () => TestAuthNotifier(
               AuthState(
@@ -322,6 +345,7 @@ void main() {
       ).thenAnswer((_) => responseCompleter.future);
       final container = ProviderContainer(
         overrides: [
+          appVersionProvider.overrideWithValue('9.9.9'),
           authProvider.overrideWith(
             () => TestAuthNotifier(
               AuthState(
@@ -375,6 +399,7 @@ void main() {
       ).thenAnswer((_) async => _statusResponse());
       final container = ProviderContainer(
         overrides: [
+          appVersionProvider.overrideWithValue('9.9.9'),
           authProvider.overrideWith(
             () => TestAuthNotifier(
               AuthState(
@@ -414,6 +439,7 @@ void main() {
     ).thenAnswer((_) async => _statusResponse());
     final container = ProviderContainer(
       overrides: [
+        appVersionProvider.overrideWithValue('9.9.9'),
         authProvider.overrideWith(
           () => TestAuthNotifier(
             AuthState(

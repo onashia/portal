@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:portal/providers/app_version_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
 import 'package:portal/providers/group_calendar_provider.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
@@ -48,6 +49,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            appVersionProvider.overrideWithValue(testAppVersion),
             authProvider.overrideWith(() => authNotifier),
             dioProvider.overrideWith((ref) => mockDio),
           ],

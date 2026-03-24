@@ -3,11 +3,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'constants/storage_keys.dart';
 import 'providers/auth_provider.dart';
+import 'providers/app_version_provider.dart';
 import 'providers/pipeline_provider.dart';
 import 'providers/theme_provider.dart';
 import 'pages/login_page.dart';
@@ -70,6 +72,8 @@ CustomTransitionPage<void> _buildAuthFadePage({
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final packageInfo = await PackageInfo.fromPlatform();
+  final appVersion = packageInfo.version;
 
   // Phase 1: Load theme preference BEFORE app starts
   try {
@@ -95,7 +99,12 @@ void main() async {
     });
   }
 
-  runApp(ProviderScope(child: PortalApp()));
+  runApp(
+    ProviderScope(
+      overrides: [appVersionProvider.overrideWithValue(appVersion)],
+      child: const PortalApp(),
+    ),
+  );
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
