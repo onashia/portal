@@ -92,6 +92,7 @@ class _TwoFactorFormHarnessState extends State<_TwoFactorFormHarness> {
                 onSubmit: () {},
                 errorMessageWidget: const SizedBox.shrink(),
                 method: widget.method,
+                isSubmitting: false,
               ),
               TextButton(
                 onPressed: () => _formKey.currentState!.validate(),

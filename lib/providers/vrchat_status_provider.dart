@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/vrchat_status.dart';
 import 'auth_provider.dart';
+import 'app_version_provider.dart';
 import '../services/api_rate_limit_coordinator.dart';
 import '../services/vrchat_status_service.dart';
 import '../utils/timing_utils.dart';
@@ -223,10 +224,11 @@ class VrchatStatusNotifier extends AsyncNotifier<VrchatStatusState> {
 }
 
 final dioProvider = Provider<Dio>((ref) {
+  final appVersion = ref.read(appVersionProvider);
   final dio = Dio();
   // Configure User-Agent header as required by VRChat API
   dio.options.headers['User-Agent'] =
-      'Portal/1.0.0 (+https://github.com/onashia/portal)';
+      'Portal/$appVersion (+https://github.com/onashia/portal)';
   // Add reasonable timeouts to prevent hanging on network issues
   dio.options.connectTimeout = const Duration(seconds: 10);
   dio.options.receiveTimeout = const Duration(seconds: 10);

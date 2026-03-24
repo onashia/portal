@@ -59,7 +59,8 @@ flutter run -d windows
 
 ```bash
 flutter run -d macos \
-  --dart-define=PORTAL_RELAY_BOOTSTRAP_URL=https://<your-worker>/relay/bootstrap
+  --dart-define=PORTAL_RELAY_BOOTSTRAP_URL=https://<your-worker>/relay/bootstrap \
+  --dart-define=PORTAL_RELAY_APP_SECRET=<your-secret>
 ```
 
 To allow a non-TLS local relay during development only:
@@ -67,8 +68,13 @@ To allow a non-TLS local relay during development only:
 ```bash
 flutter run -d macos \
   --dart-define=PORTAL_RELAY_BOOTSTRAP_URL=http://127.0.0.1:8787/relay/bootstrap \
+  --dart-define=PORTAL_RELAY_APP_SECRET=<your-secret> \
   --dart-define=PORTAL_ALLOW_INSECURE_RELAY_TRANSPORT=true
 ```
+
+When overriding the relay bootstrap URL, `PORTAL_RELAY_APP_SECRET` must match
+the worker's `PORTAL_APP_SECRET`. If it is omitted, Portal still runs, but
+relay assist stays inactive for that session.
 
 ### Test
 

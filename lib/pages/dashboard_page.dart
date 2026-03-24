@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:motor/motor.dart';
@@ -61,6 +62,11 @@ Widget buildDashboardHandoffScaffold() {
 }
 
 class DashboardPage extends ConsumerStatefulWidget {
+  @visibleForTesting
+  static const Key contentSemanticsGateKey = ValueKey(
+    'dashboard_content_semantics_gate',
+  );
+
   const DashboardPage({super.key});
 
   @override
@@ -68,12 +74,32 @@ class DashboardPage extends ConsumerStatefulWidget {
 }
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
+  static const int _focusRetryMaxAttempts = 10;
+
   bool _isSideSheetOpen = false;
+  bool _shouldRestoreManageGroupsFocus = false;
+  final FocusNode _manageGroupsFocusNode = FocusNode(
+    debugLabel: 'manage_groups_trigger',
+  );
+  final FocusNode _sideSheetFocusNode = FocusNode(
+    debugLabel: 'manage_groups_sheet',
+  );
+  final FocusNode _sideSheetSearchFocusNode = FocusNode(
+    debugLabel: 'group_selection_search',
+  );
 
   @override
   void initState() {
     super.initState();
     AppLogger.debug('Dashboard initialized', subCategory: 'dashboard');
+  }
+
+  @override
+  void dispose() {
+    _manageGroupsFocusNode.dispose();
+    _sideSheetFocusNode.dispose();
+    _sideSheetSearchFocusNode.dispose();
+    super.dispose();
   }
 
   @override
@@ -123,9 +149,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Widget _buildReadyScaffold(BuildContext context, CurrentUser currentUser) {
     final userId = currentUser.id;
 
-    return AuthPageScaffold(
-      actions: [_buildLogoutAction(userId)],
-      body: _buildDashboardBody(context, currentUser, userId),
+    return CallbackShortcuts(
+      // Keep a dashboard-level Escape fallback active while the sheet is open
+      // so dismissal still works after focus leaves the sheet subtree.
+      bindings: _isSideSheetOpen
+          ? <ShortcutActivator, VoidCallback>{
+              const SingleActivator(LogicalKeyboardKey.escape): _closeSideSheet,
+            }
+          : const <ShortcutActivator, VoidCallback>{},
+      child: AuthPageScaffold(
+        actions: [_buildLogoutAction(userId)],
+        body: _buildDashboardBody(context, currentUser, userId),
+      ),
     );
   }
 
@@ -140,24 +175,41 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           final layoutData = _resolveLayoutData(context, constraints);
           final sideSheet = KeyedSubtree(
             key: const ValueKey('groupSideSheet'),
-            child: GroupSelectionSideSheet(
-              userId: userId,
-              onClose: _closeSideSheet,
+            child: Focus(
+              focusNode: _sideSheetFocusNode,
+              canRequestFocus: false,
+              skipTraversal: true,
+              child: GroupSelectionSideSheet(
+                userId: userId,
+                onClose: _closeSideSheet,
+                searchFocusNode: _sideSheetSearchFocusNode,
+              ),
             ),
-          );
-          final content = _buildDashboardContent(
-            context,
-            currentUser,
-            userId,
-            layoutData,
           );
 
           return SingleMotionBuilder(
             motion: AnimationConstants.expressiveSpatialDefault,
             value: _isSideSheetOpen ? 1.0 : 0.0,
             from: 0.0,
+            onAnimationStatusChanged: _handleSideSheetAnimationStatusChanged,
             builder: (context, value, _) {
               final progress = value.clamp(0.0, 1.0);
+              final backgroundBlocked =
+                  _isSideSheetOpen ||
+                  DashboardSideSheetLayout.isVisibleForProgress(progress);
+              final content = ExcludeFocus(
+                excluding: backgroundBlocked,
+                child: ExcludeSemantics(
+                  key: DashboardPage.contentSemanticsGateKey,
+                  excluding: backgroundBlocked,
+                  child: _buildDashboardContent(
+                    context,
+                    currentUser,
+                    userId,
+                    layoutData,
+                  ),
+                ),
+              );
               return Stack(
                 children: [
                   DashboardSideSheetLayout(
@@ -175,6 +227,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       onManageGroups: () => _toggleSideSheetForUser(userId),
                       sheetWidth: layoutData.effectiveSheetWidth,
                       progress: progress,
+                      manageGroupsFocusNode: _manageGroupsFocusNode,
                     ),
                   ),
                 ],
@@ -289,12 +342,78 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     ref.invalidate(groupMonitorProvider(userId));
   }
 
+  void _handleSideSheetAnimationStatusChanged(AnimationStatus status) {
+    if (status == AnimationStatus.dismissed &&
+        _shouldRestoreManageGroupsFocus &&
+        !_isSideSheetOpen) {
+      _shouldRestoreManageGroupsFocus = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreManageGroupsFocus();
+      });
+    }
+  }
+
+  void _requestFocusWithRetry({
+    required FocusNode focusNode,
+    required bool Function() shouldContinue,
+    required String failureDebugMessage,
+    int attempt = 0,
+  }) {
+    if (!mounted || !shouldContinue()) {
+      return;
+    }
+    if (focusNode.hasFocus) {
+      return;
+    }
+
+    focusNode.requestFocus();
+    if (focusNode.hasFocus) {
+      return;
+    }
+
+    if (attempt >= _focusRetryMaxAttempts) {
+      AppLogger.debug(failureDebugMessage, subCategory: 'dashboard');
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestFocusWithRetry(
+        focusNode: focusNode,
+        shouldContinue: shouldContinue,
+        failureDebugMessage: failureDebugMessage,
+        attempt: attempt + 1,
+      );
+    });
+  }
+
+  void _requestSideSheetSearchFocus() {
+    _requestFocusWithRetry(
+      focusNode: _sideSheetSearchFocusNode,
+      shouldContinue: () => _isSideSheetOpen,
+      failureDebugMessage:
+          'Search field did not receive focus after retry limit',
+    );
+  }
+
+  void _restoreManageGroupsFocus() {
+    _requestFocusWithRetry(
+      focusNode: _manageGroupsFocusNode,
+      shouldContinue: () => !_isSideSheetOpen,
+      failureDebugMessage:
+          'Manage Groups button did not receive focus after retry limit',
+    );
+  }
+
   void _openSideSheet() {
     if (_isSideSheetOpen) {
       return;
     }
+    _shouldRestoreManageGroupsFocus = false;
     setState(() {
       _isSideSheetOpen = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestSideSheetSearchFocus();
     });
   }
 
@@ -307,6 +426,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     if (!_isSideSheetOpen) {
       return;
     }
+    _shouldRestoreManageGroupsFocus = _sideSheetFocusNode.hasFocus;
     setState(() {
       _isSideSheetOpen = false;
     });

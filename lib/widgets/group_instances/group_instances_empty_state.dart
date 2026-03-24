@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
 import '../common/empty_state.dart';
 
-class GroupInstancesEmptyState extends StatelessWidget {
-  final bool hasSelectedGroups;
-  final bool hasErrors;
+enum GroupInstancesEmptyStateVariant {
+  noGroupsSelected,
+  unableToLoadInstances,
+  noInstancesOpen,
+}
 
-  const GroupInstancesEmptyState({
-    super.key,
-    required this.hasSelectedGroups,
-    required this.hasErrors,
-  });
+class GroupInstancesEmptyState extends StatelessWidget {
+  final GroupInstancesEmptyStateVariant variant;
+
+  const GroupInstancesEmptyState({super.key, required this.variant});
 
   @override
   Widget build(BuildContext context) {
-    if (!hasSelectedGroups) {
+    if (variant == GroupInstancesEmptyStateVariant.noGroupsSelected) {
       return const EmptyState(
         icon: Icons.group_off,
         title: 'No Groups Selected',
@@ -23,7 +24,7 @@ class GroupInstancesEmptyState extends StatelessWidget {
 
     final scheme = Theme.of(context).colorScheme;
 
-    if (hasErrors) {
+    if (variant == GroupInstancesEmptyStateVariant.unableToLoadInstances) {
       return EmptyState(
         icon: Icons.error_outline,
         title: 'Unable to Load Instances',

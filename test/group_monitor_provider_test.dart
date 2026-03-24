@@ -10,6 +10,7 @@ import 'package:portal/models/group_instance_with_group.dart';
 import 'package:portal/models/relay_hint_message.dart';
 import 'package:portal/providers/api_call_counter.dart';
 import 'package:portal/providers/api_rate_limit_provider.dart';
+import 'package:portal/providers/app_version_provider.dart';
 import 'package:portal/providers/auth_provider.dart';
 import 'package:portal/providers/group_monitor_api.dart';
 import 'package:portal/providers/group_monitor_provider.dart';
@@ -4206,7 +4207,9 @@ void main() {
     test(
       'emits one state update and resets boost diagnostics fields',
       () async {
-        final container = ProviderContainer();
+        final container = ProviderContainer(
+          overrides: [appVersionProvider.overrideWithValue(testAppVersion)],
+        );
         addTearDown(container.dispose);
 
         final provider = groupMonitorProvider('usr_test');

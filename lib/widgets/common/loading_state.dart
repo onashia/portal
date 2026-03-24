@@ -21,8 +21,9 @@ class LoadingState extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const LoadingIndicatorM3E(
+        LoadingIndicatorM3E(
           variant: LoadingIndicatorM3EVariant.defaultStyle,
+          semanticLabel: semanticLabel,
         ),
         if (message != null) ...[
           SizedBox(height: context.m3e.spacing.md),

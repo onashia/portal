@@ -1,10 +1,22 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portal/providers/auth_provider.dart';
+import 'package:portal/providers/app_version_provider.dart';
 
 import 'test_helpers/auth_test_harness.dart';
 
 void main() {
+  test('vrchatApiProvider uses the shared app version for its user agent', () {
+    final container = ProviderContainer(
+      overrides: [appVersionProvider.overrideWithValue('9.9.9')],
+    );
+    addTearDown(container.dispose);
+
+    final api = container.read(vrchatApiProvider);
+
+    expect(api.userAgent.version, '9.9.9');
+  });
+
   test(
     'verify2FA keeps the user in 2FA state when the verification method is missing',
     () async {

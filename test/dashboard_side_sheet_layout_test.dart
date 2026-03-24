@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3e_collection/m3e_collection.dart';
 import 'package:portal/theme/app_theme.dart';
@@ -123,4 +124,32 @@ void main() {
       expect(sheetRect.top, closeTo(layoutRect.top + topInset, 0.001));
     },
   );
+
+  testWidgets('pressing Escape inside the sheet calls onClose', (tester) async {
+    var closeCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: Scaffold(
+          body: DashboardSideSheetLayout(
+            content: const SizedBox.expand(),
+            sideSheet: const Focus(
+              autofocus: true,
+              child: SizedBox(width: 64, height: 64),
+            ),
+            sheetWidth: testSheetWidth,
+            progress: 1,
+            onClose: () => closeCount += 1,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+
+    expect(closeCount, 1);
+  });
 }

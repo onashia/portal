@@ -276,10 +276,11 @@ class RelayHintService {
       'type': 'publish_hint',
       'payload': hint.toJson(),
     });
-    if (encoded.length > AppConstants.relayMaxOutboundPayloadBytes) {
+    final payloadBytes = utf8.encode(encoded).length;
+    if (payloadBytes > AppConstants.relayMaxOutboundPayloadBytes) {
       AppLogger.warning(
         'Relay: skipped publish_hint — payload too large '
-        '(${encoded.length} > ${AppConstants.relayMaxOutboundPayloadBytes} bytes)',
+        '($payloadBytes > ${AppConstants.relayMaxOutboundPayloadBytes} bytes)',
         subCategory: 'relay',
       );
       return RelayPublishOutcome.skippedOversize;
@@ -306,9 +307,10 @@ class RelayHintService {
       );
       return;
     }
-    if (event.length > AppConstants.relayMaxInboundMessageBytes) {
+    final messageBytes = utf8.encode(event).length;
+    if (messageBytes > AppConstants.relayMaxInboundMessageBytes) {
       AppLogger.debug(
-        'Relay: dropped oversized message (${event.length} bytes)',
+        'Relay: dropped oversized message ($messageBytes bytes)',
         subCategory: 'relay',
       );
       return;

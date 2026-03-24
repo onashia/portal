@@ -8,13 +8,19 @@ import '../../constants/app_constants.dart';
 import '../../constants/ui_constants.dart';
 import '../../providers/group_calendar_provider.dart';
 import '../../providers/group_monitor_provider.dart';
+import '../common/focusable_extended_fab.dart';
 import '../debug_info_card.dart';
 
 class DashboardActionArea extends ConsumerStatefulWidget {
+  static const Key manageGroupsButtonKey = ValueKey(
+    'dashboard_manage_groups_button',
+  );
+
   final String userId;
   final VoidCallback onManageGroups;
   final double sheetWidth;
   final double progress;
+  final FocusNode? manageGroupsFocusNode;
 
   const DashboardActionArea({
     super.key,
@@ -22,6 +28,7 @@ class DashboardActionArea extends ConsumerStatefulWidget {
     required this.onManageGroups,
     required this.sheetWidth,
     required this.progress,
+    this.manageGroupsFocusNode,
   });
 
   @override
@@ -157,13 +164,15 @@ class _DashboardActionAreaState extends ConsumerState<DashboardActionArea> {
             ),
           ),
           SizedBox(width: context.m3e.spacing.md),
-          ExtendedFabM3E(
+          FocusableExtendedFab(
+            key: DashboardActionArea.manageGroupsButtonKey,
             icon: const Icon(Icons.groups),
             label: const Text('Manage Groups'),
             kind: FabM3EKind.primary,
             size: FabM3ESize.regular,
             shapeFamily: FabM3EShapeFamily.round,
             onPressed: widget.onManageGroups,
+            focusNode: widget.manageGroupsFocusNode,
           ),
         ],
       ),

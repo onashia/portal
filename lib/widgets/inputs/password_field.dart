@@ -9,6 +9,9 @@ class PasswordField extends StatelessWidget {
   final ValueNotifier<bool> obscurePassword;
   final String? errorMessage;
   final Widget errorMessageWidget;
+  final ValueChanged<String>? onFieldSubmitted;
+  final TextInputAction? textInputAction;
+  final bool enabled;
 
   const PasswordField({
     super.key,
@@ -17,6 +20,9 @@ class PasswordField extends StatelessWidget {
     required this.obscurePassword,
     required this.errorMessage,
     required this.errorMessageWidget,
+    this.onFieldSubmitted,
+    this.textInputAction,
+    this.enabled = true,
   });
 
   @override
@@ -34,6 +40,9 @@ class PasswordField extends StatelessWidget {
               controller: controller,
               focusNode: focusNode,
               obscureText: obscure,
+              textInputAction: textInputAction,
+              onFieldSubmitted: onFieldSubmitted,
+              enabled: enabled,
               decoration: InputDecoration(
                 labelText: 'Password',
                 hintText: 'Enter your password',
@@ -42,7 +51,9 @@ class PasswordField extends StatelessWidget {
                   icon: const Icon(Icons.visibility),
                   selectedIcon: const Icon(Icons.visibility_off),
                   isSelected: obscure,
-                  onPressed: () => obscurePassword.value = !obscure,
+                  onPressed: enabled
+                      ? () => obscurePassword.value = !obscure
+                      : null,
                   tooltip: obscure ? 'Show password' : 'Hide password',
                   variant: IconButtonM3EVariant.standard,
                   size: IconButtonM3ESize.sm,
