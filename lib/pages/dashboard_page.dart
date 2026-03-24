@@ -353,56 +353,55 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     }
   }
 
-  void _requestSideSheetSearchFocus([int attempt = 0]) {
-    if (!mounted || !_isSideSheetOpen) {
+  void _requestFocusWithRetry({
+    required FocusNode focusNode,
+    required bool Function() shouldContinue,
+    required String failureDebugMessage,
+    int attempt = 0,
+  }) {
+    if (!mounted || !shouldContinue()) {
       return;
     }
-    if (_sideSheetSearchFocusNode.hasFocus) {
+    if (focusNode.hasFocus) {
       return;
     }
 
-    _sideSheetSearchFocusNode.requestFocus();
-    if (_sideSheetSearchFocusNode.hasFocus) {
+    focusNode.requestFocus();
+    if (focusNode.hasFocus) {
       return;
     }
 
     if (attempt >= _focusRetryMaxAttempts) {
-      AppLogger.debug(
-        'Search field did not receive focus after retry limit',
-        subCategory: 'dashboard',
-      );
+      AppLogger.debug(failureDebugMessage, subCategory: 'dashboard');
       return;
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _requestSideSheetSearchFocus(attempt + 1);
+      _requestFocusWithRetry(
+        focusNode: focusNode,
+        shouldContinue: shouldContinue,
+        failureDebugMessage: failureDebugMessage,
+        attempt: attempt + 1,
+      );
     });
   }
 
-  void _restoreManageGroupsFocus([int attempt = 0]) {
-    if (!mounted || _isSideSheetOpen) {
-      return;
-    }
-    if (_manageGroupsFocusNode.hasFocus) {
-      return;
-    }
+  void _requestSideSheetSearchFocus() {
+    _requestFocusWithRetry(
+      focusNode: _sideSheetSearchFocusNode,
+      shouldContinue: () => _isSideSheetOpen,
+      failureDebugMessage:
+          'Search field did not receive focus after retry limit',
+    );
+  }
 
-    _manageGroupsFocusNode.requestFocus();
-    if (_manageGroupsFocusNode.hasFocus) {
-      return;
-    }
-
-    if (attempt >= _focusRetryMaxAttempts) {
-      AppLogger.debug(
-        'Manage Groups button did not receive focus after retry limit',
-        subCategory: 'dashboard',
-      );
-      return;
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _restoreManageGroupsFocus(attempt + 1);
-    });
+  void _restoreManageGroupsFocus() {
+    _requestFocusWithRetry(
+      focusNode: _manageGroupsFocusNode,
+      shouldContinue: () => !_isSideSheetOpen,
+      failureDebugMessage:
+          'Manage Groups button did not receive focus after retry limit',
+    );
   }
 
   void _openSideSheet() {
